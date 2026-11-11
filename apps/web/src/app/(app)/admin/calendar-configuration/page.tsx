@@ -12,6 +12,7 @@ import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { usePermission } from '../../../../hooks/usePermission';
+import { functionLabel } from '../../../../lib/companyFunction';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { formatVisibleFunctions } from '../../calendar/utils';
@@ -40,9 +41,10 @@ export default function CalendarConfigurationPage() {
   const [deletingItem, setDeletingItem] = useState<TemplateItem | null>(null);
 
   const { data: templates = [], isLoading: templatesLoading, refetch: refetchTemplates } = trpc.seasonCalendar.listTemplates.useQuery();
-  const { data: functionsData = [] } = trpc.company.function.list.useQuery();
-  const availableFunctions = functionsData.map(f => ({ id: f.id, name: f.name }));
-  const functionsById = Object.fromEntries(availableFunctions.map(f => [f.id, f.name]));
+  // Inactive ones too: an item that still has one shows its name and can drop it (#237).
+  const { data: functionsData = [] } = trpc.company.function.list.useQuery({ includeInactive: true });
+  const availableFunctions = functionsData.map(f => ({ id: f.id, name: f.name, isActive: f.isActive }));
+  const functionsById = Object.fromEntries(availableFunctions.map(f => [f.id, functionLabel(f)]));
 
   const deleteTemplateMutation = trpc.seasonCalendar.deleteTemplate.useMutation({
     onSuccess: () => { toast.success('Template eliminato'); setDeletingTemplate(null); void refetchTemplates(); },

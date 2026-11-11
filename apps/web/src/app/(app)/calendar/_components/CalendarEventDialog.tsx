@@ -47,6 +47,7 @@ import { Input } from '../../../../components/ui/input';
 import { Textarea } from '../../../../components/ui/textarea';
 import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
+import { functionLabel, offeredFunctions } from '../../../../lib/companyFunction';
 import {
   UNTOUCHED_SIDES,
   applyLinkedEdit,
@@ -168,11 +169,6 @@ const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | u
   reason: 'reason',
 };
 
-/** A company function's name, marked when it is no longer active. */
-function functionLabel(fn: { name: string; isActive: boolean }): string {
-  return fn.isActive ? fn.name : `${fn.name} (inattiva)`;
-}
-
 /** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
 function describeBaselineDrift(event: ExistingEvent, zone: string): string | null {
   if (!event.baselineStartAt) return null;
@@ -227,9 +223,8 @@ export function CalendarEventDialog({
   // function no event uses yet (#196). Inactive ones too, for the event that still has one (#199).
   const { data: allFunctions = [] } = trpc.company.function.list.useQuery({ includeInactive: true });
   const functionsById = useMemo(() => Object.fromEntries(allFunctions.map(f => [f.id, f])), [allFunctions]);
-  // An inactive function is offered only where the event already has it, so it can be removed.
   const functions = useMemo(
-    () => allFunctions.filter(f => f.isActive || event?.visibilities.some(v => v.functionId === f.id)),
+    () => offeredFunctions(allFunctions, event?.visibilities.map(v => v.functionId) ?? []),
     [allFunctions, event]
   );
   const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(

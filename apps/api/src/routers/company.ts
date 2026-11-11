@@ -285,6 +285,10 @@ const companyFunctionRouter = router({
     .input(z.object({ orderedIds: z.array(z.uuid()) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.$transaction(async tx => {
+        // Every row first, `ORDER BY id`: the order calendar writers lock functions in
+        // (`lockActiveFunctions`), so a reorder and a writer cannot deadlock. Raw SQL exception: a
+        // row lock inside an interactive transaction.
+        await tx.$executeRaw`SELECT 1 FROM company_functions WHERE id = ANY(${input.orderedIds}::text[]) ORDER BY id FOR NO KEY UPDATE`;
         await Promise.all(
           input.orderedIds.map((id, index) =>
             tx.companyFunction.update({ where: { id }, data: { order: index } })
@@ -305,7 +309,9 @@ const companyFunctionRouter = router({
   /**
    * Soft-deletes a company function (sets `isActive = false`).
    *
-   * Blocked if the function is visible on active (non-cancelled) calendar events.
+   * Blocked if the function is visible on active (non-cancelled) calendar events or used by a
+   * template item (#237), and BAD_REQUEST if it is already inactive, so a repeat writes no second
+   * audit row. Every calendar writer refuses an inactive function, so the check holds after commit.
    *
    * @auth company_function:delete
    * @input { id }
@@ -316,12 +322,15 @@ const companyFunctionRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.prisma.companyFunction.findUnique({
-        where: { id: input.id },
-      });
-      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
+      return ctx.prisma.$transaction(async tx => {
+        // The function row first: a calendar writer holds it `FOR SHARE` until it commits
+        // (`lockActiveFunctions`), so the counts below see its rows, or it sees this function
+        // inactive. Raw SQL exception: a row lock inside an interactive transaction.
+        const [existing] = await tx.$queryRaw<{ isActive: boolean }[]>`
+          SELECT "isActive" FROM company_functions WHERE id = ${input.id} FOR NO KEY UPDATE`;
+        if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Funzione non trovata.' });
+        if (!existing.isActive) throw new TRPCError({ code: 'BAD_REQUEST', message: 'La funzione è già disattivata.' });
 
-      const fn = await ctx.prisma.$transaction(async tx => {
         const activeMilestones = await tx.calendarEvent.count({
           where: {
             visibilities: { some: { functionId: input.id } },
@@ -331,23 +340,30 @@ const companyFunctionRouter = router({
         if (activeMilestones > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) visible to this function`,
+            message: `Impossibile disattivare: ${activeMilestones === 1 ? 'un evento attivo è visibile' : `${activeMilestones} eventi attivi sono visibili`} a questa funzione.`,
           });
         }
-        return tx.companyFunction.update({
-          where: { id: input.id },
-          data: { isActive: false },
+        const templateItems = await tx.milestoneTemplateItemVisibility.findMany({
+          where: { functionId: input.id },
+          select: { templateItem: { select: { title: true, template: { select: { name: true } } } } },
         });
+        if (templateItems.length > 0) {
+          const named = templateItems.map(({ templateItem: i }) => `«${i.template.name}» › «${i.title}»`);
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: `Impossibile disattivare: la funzione è usata dagli elementi di template ${named.join(', ')}. Toglila da quegli elementi prima.`,
+          });
+        }
+
+        const fn = await tx.companyFunction.update({ where: { id: input.id }, data: { isActive: false } });
+        await logAudit(ctx, {
+          action: 'COMPANY_FUNCTION_DEACTIVATED',
+          targetType: 'CompanyFunction',
+          targetId: fn.id,
+          result: 'SUCCESS',
+        }, { tx });
+        return fn;
       }, { timeout: 15000 });
-
-      await logAudit(ctx, {
-        action: 'COMPANY_FUNCTION_DEACTIVATED',
-        targetType: 'CompanyFunction',
-        targetId: fn.id,
-        result: 'SUCCESS',
-      });
-
-      return fn;
     }),
 
   /**

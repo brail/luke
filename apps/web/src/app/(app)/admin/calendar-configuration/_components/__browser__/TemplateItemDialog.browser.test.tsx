@@ -1,3 +1,4 @@
+import { type ComponentProps } from 'react';
 import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
@@ -10,7 +11,7 @@ import { TemplateItemDialog } from '../TemplateItemDialog';
  * alone.
  */
 
-const { DESIGN, PROTO } = vi.hoisted(() => ({ DESIGN: 'phase-design', PROTO: 'phase-proto' }));
+const { DESIGN, PROTO, updateItem } = vi.hoisted(() => ({ DESIGN: 'phase-design', PROTO: 'phase-proto', updateItem: vi.fn() }));
 
 vi.mock('../../../../../../lib/trpc', () => ({
   trpc: {
@@ -27,7 +28,7 @@ vi.mock('../../../../../../lib/trpc', () => ({
     },
     seasonCalendar: {
       createTemplateItem: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
-      updateTemplateItem: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      updateTemplateItem: { useMutation: () => ({ mutate: updateItem, isPending: false }) },
     },
     company: { profile: { get: { useQuery: () => ({ data: undefined }) } } },
   },
@@ -91,4 +92,30 @@ test('leaves an offset applied from the relative calculator', async () => {
   await choosePhase(screen, 'Prototipo');
 
   await expect.element(screen.getByLabelText('Offset giorni *')).toHaveValue(30);
+});
+
+// An item kept from before #237 may name an inactive function, which the API refuses to save: the
+// dialog shows it by name, marked, so it can be removed. Other inactive functions are not offered.
+test('offers an inactive function only where the item has it, so it can be removed (#237)', async () => {
+  const item = {
+    id: 'item-1', title: 'Sketch', phaseId: null, calendarDaysRelevance: null, offsetDays: 0, durationDays: 1,
+    allDay: true, publishExternally: true, description: null, visibilities: [{ templateItemId: 'item-1', functionId: 'fn-sales' }],
+  } as unknown as ComponentProps<typeof TemplateItemDialog>['item']; // only the fields the dialog reads
+  const functions = [
+    { id: 'fn-product', name: 'Prodotto', isActive: true },
+    { id: 'fn-sales', name: 'Sales', isActive: false },
+    { id: 'fn-retired', name: 'Retail', isActive: false },
+  ];
+  const screen = await render(
+    <TemplateItemDialog open onClose={() => undefined} onSaved={() => undefined} templateId="t1" item={item} availableFunctions={functions} />
+  );
+
+  await expect.element(screen.getByText('Sales (inattiva)')).toBeVisible();
+  await expect.element(screen.getByText('Retail', { exact: false })).not.toBeInTheDocument();
+
+  await screen.getByRole('checkbox', { name: 'Sales (inattiva)' }).click();
+  await screen.getByRole('checkbox', { name: 'Prodotto' }).click();
+  await screen.getByRole('button', { name: 'Salva' }).click();
+
+  expect(updateItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'item-1', visibilityFunctionIds: ['fn-product'] }));
 });

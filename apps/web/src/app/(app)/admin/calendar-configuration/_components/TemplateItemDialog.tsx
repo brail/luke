@@ -28,9 +28,11 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { functionLabel, offeredFunctions } from '../../../../../lib/companyFunction';
 import { suggestedTemplateOffset } from '../../../../../lib/templateOffset';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { cn } from '../../../../../lib/utils';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
@@ -47,7 +49,7 @@ interface Props {
   onSaved: () => void;
   templateId: string;
   item?: TemplateItem | null;
-  availableFunctions: { id: string; name: string }[];
+  availableFunctions: { id: string; name: string; isActive: boolean }[];
   siblingItems?: SiblingItem[];
 }
 
@@ -71,11 +73,13 @@ interface FormValues {
  *
  * @param templateId - Parent template ID (used only in create mode).
  * @param item - Existing item to edit; omit for create mode.
- * @param availableFunctions - Company functions available as visibility targets.
+ * @param availableFunctions - Every company function, inactive ones included: an inactive one is
+ *   offered only where the item already has it, so it can be removed (the API refuses saving it, #237).
  * @param siblingItems - Other items in the same template, used by the offset calculator.
  */
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
+  const offered = offeredFunctions(availableFunctions, item?.visibilities?.map(v => v.functionId) ?? []);
   const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormValues>();
 
   const [relItemId, setRelItemId] = useState('');
@@ -269,7 +273,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               rules={{ validate: v => (v?.length ?? 0) > 0 || 'Seleziona almeno una funzione' }}
               render={({ field }) => (
                 <div className="flex flex-wrap gap-3">
-                  {availableFunctions.map(fn => {
+                  {offered.map(fn => {
                     const isChecked = field.value?.includes(fn.id) ?? false;
                     return (
                       <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
@@ -283,7 +287,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                             )
                           }
                         />
-                        <span className="text-sm">{fn.name}</span>
+                        <span className={cn('text-sm', !fn.isActive && 'text-muted-foreground')}>{functionLabel(fn)}</span>
                       </label>
                     );
                   })}

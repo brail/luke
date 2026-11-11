@@ -71,6 +71,54 @@ async function recordVisibilityChanges(ctx: AuditContext, tx: Prisma.Transaction
   }), { tx });
 }
 
+/**
+ * Holds the named company functions until the transaction commits and refuses, with
+ * PRECONDITION_FAILED, any that is inactive (#237): an inactive function gets no new association to
+ * an active event or to a template item. `function.delete` locks the function row before it checks
+ * for both, so either it sees this transaction's rows or this lock sees the function inactive.
+ *
+ * Call it once per transaction, with every function id the write associates: the ids are locked in
+ * one batch, `ORDER BY id`, so two writers, `function.delete` and `function.reorder` cannot deadlock.
+ * Raw SQL exception: `FOR SHARE`, a row lock the ORM cannot express, inside an interactive
+ * transaction; concurrent writers naming the same function do not wait for each other.
+ *
+ * @param carriers - For a write of many events or items: the names of those carrying each function,
+ *   so the refusal says where to fix it.
+ */
+export async function lockActiveFunctions(
+  tx: Prisma.TransactionClient,
+  functionIds: readonly string[],
+  carriers?: ReadonlyMap<string, readonly string[]>
+): Promise<void> {
+  const ids = [...new Set(functionIds)];
+  if (ids.length === 0) return;
+  const rows = await tx.$queryRaw<{ id: string; name: string; isActive: boolean }[]>(Prisma.sql`
+    SELECT id, name, "isActive" FROM company_functions WHERE id = ANY(${ids}::text[]) ORDER BY id FOR SHARE`);
+  const inactive = rows.filter(f => !f.isActive);
+  if (inactive.length === 0) return;
+  const named = inactive.map(f => {
+    const where = carriers?.get(f.id);
+    return where?.length ? `«${f.name}» (in ${[...new Set(where)].join(', ')})` : `«${f.name}»`;
+  });
+  const [noun, fix] = inactive.length === 1
+    ? ['Funzione disattivata', 'Toglila dalla visibilità o ripristinala']
+    : ['Funzioni disattivate', 'Toglile dalla visibilità o ripristinale'];
+  throw new TRPCError({ code: 'PRECONDITION_FAILED', message: `${noun}: ${named.join(', ')}. ${fix} prima di salvare.` });
+}
+
+/** Function id → names of the events or items that carry it, for `lockActiveFunctions`' refusal. */
+function carriersOf(entries: readonly { name: string; functionIds: readonly string[] }[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const { name, functionIds } of entries) {
+    for (const id of functionIds) {
+      const names = map.get(id);
+      if (names) names.push(name);
+      else map.set(id, [name]);
+    }
+  }
+  return map;
+}
+
 // ─── Calendar get/create ──────────────────────────────────────────────────────
 
 /**
@@ -577,6 +625,8 @@ export async function refuseIfHiddenFromSaver(
  * @param calendarId - The planning group's calendar id, already resolved by the caller (e.g. via
  *   `resolvePlanningGroupBrandAccess`) — a group's calendar is immutable once created, so
  *   there's no staleness risk in reusing it instead of re-fetching the group here.
+ * @throws {TRPCError} PRECONDITION_FAILED if a function is inactive (#237); `updateMilestone` refuses
+ *   only an added one.
  */
 export async function createMilestone(
   input: CalendarEventInput,
@@ -602,6 +652,7 @@ export async function createMilestone(
       },
     });
 
+    await lockActiveFunctions(tx, input.visibilityFunctionIds);
     await tx.calendarEventVisibility.createMany({
       data: input.visibilityFunctionIds.map(fId => ({
         eventId: event.id,
@@ -657,6 +708,9 @@ export async function updateMilestone(
       // After the update: every writer of an existing event's set holds its row (this update, a
       // delete), so a concurrent one reads the set this one leaves.
       const before = await tx.calendarEventVisibility.findMany({ where: { eventId }, select: { functionId: true } });
+      // Only an added function must be active: one already on the event before #237 may stay.
+      const kept = new Set(before.map(v => v.functionId));
+      await lockActiveFunctions(tx, input.visibilityFunctionIds.filter(id => !kept.has(id)));
       await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
       await tx.calendarEventVisibility.createMany({
         data: input.visibilityFunctionIds.map(fId => ({
@@ -762,6 +816,8 @@ function templateItemDates(
  * @param force - When false, throws CONFLICT if the planning group already has events.
  * @throws {TRPCError} CONFLICT if events exist and `force` is false.
  * @throws {TRPCError} NOT_FOUND if the planning group or template does not exist.
+ * @throws {TRPCError} PRECONDITION_FAILED if an item carries an inactive function, naming the items
+ *   (#237): nothing is applied, and no function is dropped (an event with none reaches the whole brand).
  * @throws {TRPCError} BAD_REQUEST without an anchor, in the request or recorded by a previous
  *   apply, or if an item's date falls out of the supported range.
  */
@@ -799,6 +855,8 @@ export async function applyTemplate(
       },
     });
     if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
+    const itemFunctions = template.items.map(item => ({ name: `«${item.title}»`, functionIds: item.visibilities.map(v => v.functionId) }));
+    await lockActiveFunctions(tx, itemFunctions.flatMap(i => i.functionIds), carriersOf(itemFunctions));
 
     const itemsWithDates = template.items.map(item => ({ item, ...templateItemDates(anchorDay, item, businessZone) }));
 
@@ -965,6 +1023,8 @@ export async function deleteTemplate(id: string, prisma: PrismaClient) {
 
 /**
  * Adds an item to a milestone template with its visibility function assignments.
+ *
+ * @throws {TRPCError} PRECONDITION_FAILED if a function is inactive (#237).
  */
 export async function createTemplateItem(
   templateId: string,
@@ -982,21 +1042,27 @@ export async function createTemplateItem(
   prisma: PrismaClient
 ) {
   const { visibilityFunctionIds, ...itemData } = data;
-  return prisma.milestoneTemplateItem.create({
-    data: {
-      templateId,
-      ...itemData,
-      visibilities: {
-        createMany: { data: visibilityFunctionIds.map(functionId => ({ functionId })) },
+  return prisma.$transaction(async tx => {
+    await lockActiveFunctions(tx, visibilityFunctionIds);
+    return tx.milestoneTemplateItem.create({
+      data: {
+        templateId,
+        ...itemData,
+        visibilities: {
+          createMany: { data: visibilityFunctionIds.map(functionId => ({ functionId })) },
+        },
       },
-    },
-    include: { visibilities: true },
+      include: { visibilities: true },
+    });
   });
 }
 
 /**
  * Partially updates a template item. When `visibilityFunctionIds` is provided,
  * existing visibility entries are replaced atomically within a transaction.
+ *
+ * @throws {TRPCError} PRECONDITION_FAILED if the item, as saved, carries an inactive function — the
+ *   one sent, or the one it already had when none is sent (#237).
  */
 export async function updateTemplateItem(
   id: string,
@@ -1015,6 +1081,13 @@ export async function updateTemplateItem(
 ) {
   const { visibilityFunctionIds, ...itemData } = data;
   return prisma.$transaction(async tx => {
+    // The item first, then its functions: a template item with an inactive function is refused on
+    // any save (#237), so a concurrent change of its set must not slip between the read and the write.
+    // Raw SQL exception: a row lock inside an interactive transaction.
+    await tx.$executeRaw`SELECT 1 FROM milestone_template_items WHERE id = ${id} FOR NO KEY UPDATE`;
+    const functionIds = visibilityFunctionIds
+      ?? (await tx.milestoneTemplateItemVisibility.findMany({ where: { templateItemId: id }, select: { functionId: true } })).map(v => v.functionId);
+    await lockActiveFunctions(tx, functionIds);
     const item = await tx.milestoneTemplateItem.update({ where: { id }, data: itemData });
     if (visibilityFunctionIds) {
       await tx.milestoneTemplateItemVisibility.deleteMany({ where: { templateItemId: id } });
@@ -1074,6 +1147,8 @@ function clonedDates(event: EventDates, name: string, days: number, businessZone
  * @throws {TRPCError} NOT_FOUND if the source calendar or any of the selected groups do not exist.
  * @throws {TRPCError} BAD_REQUEST if an all-day source is stored off UTC midnight, or a cloned event's
  *   dates are refused (`clonedDates`).
+ * @throws {TRPCError} PRECONDITION_FAILED if a source event carries an inactive function (#237):
+ *   nothing is copied, and no function is dropped.
  *   A refusal names only the events the caller can list.
  */
 export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx: BrandScopeCtx & AuditContext) {
@@ -1131,6 +1206,9 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
   const groups = sourceGroups.map(g => ({ ...g, events: g.events.map(e => ({ ...e, ...clonedDates(e, nameOf(e), dateShiftDays, businessZone) })) }));
 
   return prisma.$transaction(async tx => {
+    // Every copy is created active, a cancelled source's too.
+    const eventFunctions = sourceEvents.map(e => ({ name: nameOf(e), functionIds: e.visibilities.map(v => v.functionId) }));
+    await lockActiveFunctions(tx, eventFunctions.flatMap(e => e.functionIds), carriersOf(eventFunctions));
     const targetCalendar = await tx.seasonCalendar.upsert({
       where: { brandId_seasonId: { brandId: targetBrandId, seasonId: targetSeasonId } },
       create: { brandId: targetBrandId, seasonId: targetSeasonId },

@@ -43,7 +43,7 @@ import {
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
-import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error.js';
+import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey } from '../lib/error.js';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -96,6 +96,7 @@ import {
   cloneFromBrandSeason,
   getSyncStatus,
   hasFunctionVisibility,
+  lockActiveFunctions,
   refuseIfHiddenFromSaver,
 } from '../services/seasonCalendar.service.js';
 
@@ -646,8 +647,9 @@ export const seasonCalendarRouter = router({
   /**
    * Reverses `cancelMilestone`, restoring the event to active and read-write. Admin-only — an
    * editor who can cancel an event cannot undo that decision, mirroring the `freeze`/`unfreeze`
-   * asymmetry. Rejects if another active event has since taken the (planningGroup, phase) slot
-   * (the partial unique index would otherwise throw a raw constraint error).
+   * asymmetry. Rejects if another active event has since taken the (planningGroup, phase) slot, its
+   * check backed by the partial unique index, or with PRECONDITION_FAILED if a function the event is
+   * visible to is inactive (#237).
    *
    * @auth season_calendar:uncancel (admin wildcard only — not granted to editor/viewer)
    * @input { id }
@@ -658,36 +660,54 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const event = await resolveEventBrandAccess(ctx, input.id, { phase: { select: { label: true } } });
-      if (!event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
+      const event = await resolveEventBrandAccess(ctx, input.id);
       await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
-      if (event.phaseId) {
-        const conflicting = await ctx.prisma.calendarEvent.findFirst({
-          where: { planningGroupId: event.planningGroupId, phaseId: event.phaseId, cancelledAt: null, id: { not: event.id } },
-          select: { title: true },
+      const result = await ctx.prisma.$transaction(async tx => {
+        // The event first, then its functions (`lockActiveFunctions`), as every writer does. Raw SQL
+        // exception: a row lock inside an interactive transaction; what is checked below is re-read
+        // under it, so a concurrent cancel, uncancel or visibility change cannot slip in between.
+        await tx.$executeRaw`SELECT 1 FROM calendar_events WHERE id = ${input.id} FOR NO KEY UPDATE`;
+        const current = await tx.calendarEvent.findUnique({
+          where: { id: input.id },
+          select: { title: true, cancelledAt: true, planningGroupId: true, phaseId: true, phase: { select: { label: true } }, visibilities: { select: { functionId: true } } },
         });
-        if (conflicting) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `Impossibile ripristinare: la fase "${event.phase?.label ?? event.phaseId}" è già assegnata all'evento attivo "${conflicting.title}". Annulla o riassegna quell'evento prima di ripristinare questo.`,
+        if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+        if (!current.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
+
+        const phaseTaken = (title?: string) => new TRPCError({
+          code: 'CONFLICT',
+          message: `Impossibile ripristinare: la fase "${current.phase?.label ?? current.phaseId}" è già assegnata ${title ? `all'evento attivo "${title}"` : 'a un altro evento attivo'}. Annulla o riassegna quell'evento prima di ripristinare questo.`,
+        });
+        if (current.phaseId) {
+          const conflicting = await tx.calendarEvent.findFirst({
+            where: { planningGroupId: current.planningGroupId, phaseId: current.phaseId, cancelledAt: null, id: { not: input.id } },
+            select: { title: true },
           });
+          if (conflicting) throw phaseTaken(conflicting.title);
         }
-      }
+        // An event visible to an inactive function stays cancelled (#237).
+        await lockActiveFunctions(tx, current.visibilities.map(v => v.functionId));
 
-      const result = await ctx.prisma.calendarEvent.update({
-        where: { id: input.id },
-        data: { cancelledAt: null, cancelReason: null, cancelledByUserId: null },
-      });
+        const restored = await tx.calendarEvent.update({
+          where: { id: input.id },
+          data: { cancelledAt: null, cancelReason: null, cancelledByUserId: null },
+        }).catch((err: unknown) => {
+          // A concurrent uncancel or save took the slot after the check: the index refuses this one.
+          if (isUniqueViolation(err, 'calendar_events_group_phase_active_uq')) throw phaseTaken();
+          throw err;
+        });
+        await logAudit(ctx, { action: 'CALENDAR_EVENT_UNCANCEL', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: restored.title, calendarId: event.calendarId } }, { tx });
+        return restored;
+      }, { timeout: 15000 });
 
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_UNCANCEL', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: event.title, calendarId: event.calendarId } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on uncancel'));
       notifyCalendarChange(ctx.prisma, {
         eventId: input.id,
         actorId: ctx.session.user.id,
         titleSuffix: 'ha ripristinato un evento annullato',
-        message: `"${event.title}"`,
+        message: `"${result.title}"`,
         calendarId: event.calendarId,
         eventKey: 'CALENDAR_UNCANCEL',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on uncancel'));
