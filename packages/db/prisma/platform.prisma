@@ -174,21 +174,27 @@ model Notification {
 /// GitHub side and notify the original submitter in-app — the submitter has no GitHub account
 /// of their own to watch the issue.
 model FeedbackSubmission {
-  id           String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   /// FK to User (submitter). Cascade delete — the GitHub issue itself is unaffected.
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  issueNumber  Int
-  issueUrl     String
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueNumber         Int
+  issueUrl            String
   /// "owner/repo", copied from `integrations.github.feedbackRepo` at submission time.
-  repo         String
+  repo                String
   /// Mirrors the GitHub issue's own open/closed state.
-  status       String   @default("open")
-  /// GitHub issue `comments` count as of the last sync tick — a jump since the last check means
-  /// new activity to notify about.
-  commentCount Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status              String    @default("open")
+  /// GitHub issue `comments` count as of the last sync tick. Decides a reply only on the first
+  /// tick of a row with no `commentIdsTrackedAt`; a diagnostic afterwards.
+  commentCount        Int       @default(0)
+  /// Ids of the GitHub comments already seen (GitHub ids exceed int32). Only grows: a comment
+  /// deleted on GitHub keeps its id, so a deletion never makes another comment look new (#112).
+  seenCommentIds      BigInt[]  @default([])
+  /// Since when `seenCommentIds` is tracked: set at creation, or by the first full scan of a row
+  /// created before it existed. Null: the next tick decides by `commentCount`, then tracks ids.
+  commentIdsTrackedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([userId])
   @@index([status])

@@ -91,6 +91,8 @@ export const feedbackRouter = router({
           issueNumber: issue.number,
           issueUrl: issue.html_url,
           repo,
+          // Tracked by comment id from the start; only older rows fall back to the count once.
+          commentIdsTrackedAt: new Date(),
         },
       });
 

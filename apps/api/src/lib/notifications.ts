@@ -105,8 +105,31 @@ export async function bulkNotify(
  * @returns Whether there was anything to insert.
  */
 export async function insertNotifications(prisma: PrismaClient, rows: NotificationRow[]): Promise<boolean> {
+  if (!(await writeNotifications(prisma, rows))) return false;
+  pingRecipients(rows);
+  return true;
+}
+
+/**
+ * Pings each recipient of `rows` over SSE. A caller that wrote them in a transaction
+ * (`writeNotifications`) calls it after the commit, never before nor after a rollback.
+ */
+export function pingRecipients(rows: Pick<NotificationRow, 'userId'>[]): void {
+  for (const { userId } of rows) sseStore.pushToUser(userId, { type: 'notification', payload: {} });
+}
+
+/**
+ * Inserts `rows` in one statement through `db`, a transaction client included, without the SSE ping
+ * (`pingRecipients`). No preference check (`recipientsOf`).
+ *
+ * @returns Whether there was anything to insert.
+ */
+export async function writeNotifications(
+  db: PrismaClient | Prisma.TransactionClient,
+  rows: NotificationRow[]
+): Promise<boolean> {
   if (rows.length === 0) return false;
-  await prisma.notification.createMany({
+  await db.notification.createMany({
     data: rows.map(r => ({
       userId: r.userId,
       category: r.category,
@@ -117,7 +140,6 @@ export async function insertNotifications(prisma: PrismaClient, rows: Notificati
       data: (r.data ?? undefined) as Prisma.InputJsonValue | undefined,
     })),
   });
-  for (const { userId } of rows) sseStore.pushToUser(userId, { type: 'notification', payload: {} });
   return true;
 }
 

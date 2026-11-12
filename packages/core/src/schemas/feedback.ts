@@ -32,3 +32,9 @@ export const GitHubIssueSchema = z.object({
   comments: z.number().int().nonnegative(),
   html_url: GitHubIssueUrlSchema,
 });
+
+/**
+ * What the feedback sync reads from one page of an issue's comments. `int()` admits only safe
+ * integers, so an id converts to `BigInt` exactly.
+ */
+export const GitHubIssueCommentPageSchema = z.array(z.object({ id: z.number().int().positive() }));

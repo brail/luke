@@ -117,6 +117,8 @@ describe('feedback.submit', () => {
       repo,
       status: 'open',
       commentCount: 0,
+      seenCommentIds: [],
+      commentIdsTrackedAt: expect.any(Date),
     });
 
     const audit = await prisma.auditLog.findFirst({ where: { action: 'FEEDBACK_SUBMIT' } });
