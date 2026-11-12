@@ -70,7 +70,7 @@ async function readCommentIds(token: string, submission: FeedbackSubmission, log
 /**
  * Syncs one open submission with its GitHub issue and notifies the submitter of a reply (a comment
  * id not in `seenCommentIds`; by count on a row's first tick without `commentIdsTrackedAt`) or of
- * the close. Exported for the integration test.
+ * the close, whose notice also tells a reply seen in the same tick. Exported for the integration test.
  */
 export async function syncSubmission(
   prisma: PrismaClient,
@@ -98,25 +98,31 @@ export async function syncSubmission(
   }
   const issue = parsed.data;
 
-  // Nothing to read when the issue is closed (monitoring ends, the close is the notice), or has no
-  // comment and none was seen before.
-  const ids = issue.state === 'closed' || (issue.comments === 0 && submission.seenCommentIds.length === 0)
+  const tracked = submission.commentIdsTrackedAt !== null;
+  const closed = issue.state === 'closed';
+  // Nothing to read with no comment and none seen before, nor for a closed row not tracked yet (its
+  // count decides). The close never waits on a failed read: its notice only leaves out the reply.
+  const ids = ((issue.comments === 0 && submission.seenCommentIds.length === 0) || (closed && !tracked)
     ? []
-    : await readCommentIds(token, submission, logger);
+    : await readCommentIds(token, submission, logger)) ?? (closed ? [] : null);
   if (ids === null) return;
 
   const seen = new Set(submission.seenCommentIds);
-  const tracked = submission.commentIdsTrackedAt !== null;
   // Only grows: an id absent from this read (deleted, or shifted out between pages) stays seen.
   const seenCommentIds = [...new Set([...seen, ...ids])];
   const grew = seenCommentIds.length > seen.size;
   if (tracked && !grew && issue.state === submission.status && issue.comments === submission.commentCount) return;
 
-  const justClosed = issue.state === 'closed' && submission.status === 'open';
+  const justClosed = closed && submission.status === 'open';
   const replied = tracked ? grew : issue.comments > submission.commentCount;
   const notify = (justClosed || replied) && (await recipientsOf(prisma, [submission.userId], 'SYSTEM')).length > 0;
+  // A reply seen with the close is told in the one close notice (owner, #112).
   const { title, message, type } = justClosed
-    ? { title: 'Segnalazione chiusa', message: `La tua segnalazione #${submission.issueNumber} è stata chiusa`, type: 'feedback_closed' }
+    ? {
+        title: 'Segnalazione chiusa',
+        message: `La tua segnalazione #${submission.issueNumber} è stata chiusa${replied ? ', con una nuova risposta' : ''}`,
+        type: 'feedback_closed',
+      }
     : { title: 'Nuova risposta alla tua segnalazione', message: `C'è una nuova risposta sulla tua segnalazione #${submission.issueNumber}`, type: 'feedback_comment' };
   const notices: NotificationRow[] = notify
     ? [{ userId: submission.userId, category: 'SYSTEM', title, message, link: issue.html_url, data: { issueNumber: submission.issueNumber, type } }]
@@ -163,8 +169,8 @@ async function checkFeedback(prisma: PrismaClient, logger: Logger): Promise<void
  * Creates an in-app SYSTEM notification for the submitter when the issue gets a new comment or
  * is closed, since the submitter has no GitHub account of their own to watch it (`syncSubmission`).
  *
- * Monitoring ends when the issue is first seen closed: a reopened issue is not followed, and a reply
- * missed by the last scan before the close is not notified.
+ * Monitoring ends when the issue is first seen closed: a reopened issue is not followed. The close
+ * notice tells a reply posted since the last scan, unless the comments cannot be read then.
  */
 export function registerFeedbackSyncScheduler(
   fastify: FastifyInstance,

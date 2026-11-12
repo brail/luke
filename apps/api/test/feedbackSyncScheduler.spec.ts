@@ -339,27 +339,69 @@ describe('feedbackSyncScheduler', () => {
     expectNoNotice();
   });
 
-  it('issue just closed → closing notice; the comments are not read, so a failing read cannot hold it', async () => {
+  const CLOSED = 'La tua segnalazione #42 è stata chiusa';
+  const CLOSED_WITH_REPLY = `${CLOSED}, con una nuova risposta`;
+
+  function expectCloseMessage(prisma: ReturnType<typeof buildFakePrisma>, message: string) {
+    expectNotice(prisma, 'feedback_closed');
+    expect(writeNotifications).toHaveBeenCalledWith(prisma.tx, [expect.objectContaining({ title: 'Segnalazione chiusa', message })]);
+  }
+
+  it('issue just closed, no new comment → one plain closing notice', async () => {
     const submission = buildSubmission({ commentCount: 2, seenCommentIds: [1n, 2n] });
-    const fetchMock = mockGitHub({ state: 'closed', comments: 3 });
+    mockGitHub({ state: 'closed', comments: 2 }, onePage([1, 2]));
+    const prisma = buildFakePrisma([submission]);
+
+    await runFirstTick(prisma);
+
+    expectStored(prisma, submission, { status: 'closed', commentCount: 2, seenCommentIds: [1n, 2n] });
+    expectCloseMessage(prisma, CLOSED);
+  });
+
+  // #112, owner decision 20 a: one notice, the close, that also tells the reply.
+  it('a reply and the close in one tick, count unchanged by a deletion → one closing notice that tells the reply', async () => {
+    const submission = buildSubmission({ commentCount: 2, seenCommentIds: [1n, 2n] });
+    mockGitHub({ state: 'closed', comments: 2 }, onePage([1, 3]));
+    const prisma = buildFakePrisma([submission]);
+
+    await runFirstTick(prisma);
+
+    expectStored(prisma, submission, { status: 'closed', commentCount: 2, seenCommentIds: [1n, 2n, 3n] });
+    expectCloseMessage(prisma, CLOSED_WITH_REPLY);
+  });
+
+  it('closed but the comments cannot be read → the close is stored anyway, plain notice', async () => {
+    const submission = buildSubmission({ commentCount: 2, seenCommentIds: [1n, 2n] });
+    mockGitHub({ state: 'closed', comments: 3 }, { [COMMENTS_URL]: { status: 502 } });
+    const prisma = buildFakePrisma([submission]);
+
+    await runFirstTick(prisma);
+
+    expectStored(prisma, submission, { status: 'closed', commentCount: 3, seenCommentIds: [1n, 2n] });
+    expectCloseMessage(prisma, CLOSED);
+  });
+
+  it('a row created before id tracking, closed with the count up → the count tells the reply, comments not read', async () => {
+    const submission = buildSubmission({ commentCount: 1, commentIdsTrackedAt: null });
+    const fetchMock = mockGitHub({ state: 'closed', comments: 2 });
     const prisma = buildFakePrisma([submission]);
 
     await runFirstTick(prisma);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expectStored(prisma, submission, { status: 'closed', commentCount: 3, seenCommentIds: [1n, 2n] });
-    expectNotice(prisma, 'feedback_closed');
+    expectStored(prisma, submission, { status: 'closed', commentCount: 2, seenCommentIds: [], commentIdsTrackedAt: expect.any(Date) });
+    expectCloseMessage(prisma, CLOSED_WITH_REPLY);
   });
 
   it('closed with comments deleted → closing notice, count stored lower', async () => {
     const submission = buildSubmission({ commentCount: 3, seenCommentIds: [1n, 2n, 3n] });
-    mockGitHub({ state: 'closed', comments: 1 });
+    mockGitHub({ state: 'closed', comments: 1 }, onePage([1]));
     const prisma = buildFakePrisma([submission]);
 
     await runFirstTick(prisma);
 
     expectStored(prisma, submission, { status: 'closed', commentCount: 1, seenCommentIds: [1n, 2n, 3n] });
-    expectNotice(prisma, 'feedback_closed');
+    expectCloseMessage(prisma, CLOSED);
   });
 
   it('the row changed since the scan (stale guard) → no notice', async () => {
