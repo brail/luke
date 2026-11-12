@@ -22,6 +22,7 @@ import {
   CollectionRowQuotationUpdateSchema,
   CollectionRowSetCompletedInputSchema,
   partialWithoutDefaults,
+  type CollectionColumnKey,
 } from '@luke/core';
 import { Prisma, type PrismaClient } from '@luke/db';
 
@@ -66,6 +67,7 @@ import {
   reorderRows,
   updateLayoutSettings,
   bulkAssignRowsPlanningGroup,
+  readHiddenColumns,
 } from '../services/collectionLayout.service';
 import { createRevisionsForCompletedPhase } from '../services/collectionLayoutAutoRevision.service';
 import {
@@ -552,8 +554,9 @@ const rowsRouter = router({
 });
 
 /**
- * Resolves `pictureKey` → `pictureUrl` for each row and `logoKey` → `logoUrl` for the brand
- * in a layout response, using the active storage provider to build URLs.
+ * Shapes a layout for the client: resolves `pictureKey` → `pictureUrl` for each row and
+ * `logoKey` → `logoUrl` for the brand, using the active storage provider to build URLs, and reads
+ * `hiddenColumns` through `readHiddenColumns`.
  *
  * Row pictures serve the `card` derivative (800px, WebP) rather than the master —
  * the same `pictureUrl` field feeds both the grid thumbnail and the row drawer
@@ -566,11 +569,17 @@ const rowsRouter = router({
  * image. One batched query per bucket for the whole layout via `resolveVariantUrls`,
  * not N — and one shared URL resolver, not one per call.
  */
-async function resolveLayoutUrls<T extends {
+type LayoutResponse<T> = Omit<T, 'hiddenColumns'> & {
+  hiddenColumns: CollectionColumnKey[] | null;
+  brand: { logoUrl: string | null };
+};
+
+async function toLayoutResponse<T extends {
+  hiddenColumns: Prisma.JsonValue | null;
   brand: { logoKey: string | null; [k: string]: unknown };
   groups: Array<{ rows: Array<{ pictureKey: string | null; [k: string]: unknown }>; [k: string]: unknown }>;
   [k: string]: unknown;
-}>(layout: T, prisma: PrismaClient): Promise<T & { brand: { logoUrl: string | null } }> {
+}>(layout: T, prisma: PrismaClient): Promise<LayoutResponse<T>> {
   const resolve = await makeUrlResolver(prisma);
 
   const pictureKeys = layout.groups.flatMap(g => g.rows.map(r => r.pictureKey).filter((k): k is string => k !== null));
@@ -583,6 +592,7 @@ async function resolveLayoutUrls<T extends {
 
   return {
     ...layout,
+    hiddenColumns: readHiddenColumns(layout.hiddenColumns),
     brand: {
       ...layout.brand,
       logoUrl: layout.brand.logoKey
@@ -598,7 +608,7 @@ async function resolveLayoutUrls<T extends {
           : null,
       })),
     })),
-  } as T & { brand: { logoUrl: string | null } }; // spread of a generic T with a nested override: TS does not check the exact shape
+  } as LayoutResponse<T>; // spread of a generic T with a nested override: TS does not check the exact shape
 }
 
 /**
@@ -838,7 +848,7 @@ export const collectionLayoutRouter = router({
     .query(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
       const layout = await getLayout(input.brandId, input.seasonId, ctx.prisma);
-      return layout ? resolveLayoutUrls(layout, ctx.prisma) : null;
+      return layout ? toLayoutResponse(layout, ctx.prisma) : null;
     }),
 
   /**
@@ -862,7 +872,7 @@ export const collectionLayoutRouter = router({
       await assertBrandAccess(ctx, input.brandId);
       const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma, input.availableGenders);
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_GET_OR_CREATE', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
-      return resolveLayoutUrls(result, ctx.prisma);
+      return toLayoutResponse(result, ctx.prisma);
     }),
 
   /**
@@ -900,7 +910,7 @@ export const collectionLayoutRouter = router({
         input.rows ? { rows: input.rows } : undefined
       );
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_COPY_FROM_SEASON', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { fromBrandId: input.fromBrandId, fromSeasonId: input.fromSeasonId, toBrandId: input.toBrandId, toSeasonId: input.toSeasonId, rowCount: input.rows?.length } });
-      return resolveLayoutUrls(result, ctx.prisma);
+      return toLayoutResponse(result, ctx.prisma);
     }),
 
   /**

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { COLLECTION_GENDER, getProxyUrl } from '@luke/core';
+import { COLLECTION_GENDER, getProxyUrl, type CollectionColumnKey } from '@luke/core';
 
 import { PageHeader } from '../../../../../../components/PageHeader';
 import { Badge } from '../../../../../../components/ui/badge';
@@ -24,6 +24,9 @@ import { CollectionRowDrawer, type CollectionRow } from '../../_components/Colle
 type FullSnapshot = NonNullable<RouterOutputs['collectionLayoutRevision']['getLayoutAsOf']>;
 type PricingParameterSet = RouterOutputs['pricing']['parameterSets']['list'][number];
 
+/** A revision is read-only and shows every column. */
+const NO_HIDDEN_COLUMNS: CollectionColumnKey[] = [];
+
 // ─── Mapper ───────────────────────────────────────────────────────────────────
 
 function mapSnapshotToDisplayLayout(
@@ -33,7 +36,7 @@ function mapSnapshotToDisplayLayout(
 ) {
   return {
     id: collectionLayoutId,
-    hiddenColumns: [] as string[],
+    hiddenColumns: NO_HIDDEN_COLUMNS,
     availableGenders: [...COLLECTION_GENDER],
     brand: { id: '', name: '', code: '', logoKey: null, logoUrl: null },
     season: { id: '', name: '', code: '', year: 0 },

@@ -9,6 +9,7 @@ import {
   COLLECTION_COLUMNS_MAX_VISIBLE,
   COLLECTION_TABLE_COLUMNS,
   formatMarginPct,
+  type CollectionColumnKey,
 } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
@@ -38,12 +39,9 @@ import type { PricingParameterSet } from '../../_shared/pricingCalc';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
-function getHiddenColumns(layout: unknown): string[] {
-  const cols = (layout as Record<string, unknown>)?.['hiddenColumns'];
-  if (cols === null || cols === undefined) {
-    return [...COLLECTION_COLUMNS_DEFAULT_HIDDEN];
-  }
-  return Array.isArray(cols) ? (cols as string[]) : [];
+/** The saved hidden columns, or the defaults when none are saved (the API reads an invalid value as none). */
+function getHiddenColumns(layout: CollectionLayoutData): CollectionColumnKey[] {
+  return layout.hiddenColumns ?? [...COLLECTION_COLUMNS_DEFAULT_HIDDEN];
 }
 
 type CollectionGroupData = CollectionLayoutData['groups'][number];
@@ -60,7 +58,7 @@ interface CollectionLayoutTableProps {
   onDeleteRow: (rowId: string, lineName: string) => void;
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
-  onUpdateSettings: (settings: { hiddenColumns?: string[] | null }) => void;
+  onUpdateSettings: (settings: { hiddenColumns?: CollectionColumnKey[] | null }) => void;
   isDeletingRow?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
@@ -145,7 +143,6 @@ export function CollectionLayoutTable({
   // In fullscreen all columns are visible; normal mode respects saved preferences
   const effectiveHiddenColumns = isFullscreen ? [] : hiddenColumns;
 
-  const maxVisible = isFullscreen ? Infinity : COLLECTION_COLUMNS_MAX_VISIBLE;
   const hasActiveSearch = search !== '';
 
   const totalRows = layout.groups.reduce((sum, g) => sum + g.rows.length, 0);
@@ -166,8 +163,8 @@ export function CollectionLayoutTable({
     ? layout.groups.reduce((sum, g) => sum + (g.skuBudget ?? 0), 0)
     : null;
 
-  const toggleColumn = (key: string, checked: boolean) => {
-    if (checked && visibleCount >= maxVisible) return;
+  const toggleColumn = (key: CollectionColumnKey, checked: boolean) => {
+    if (checked && visibleCount >= COLLECTION_COLUMNS_MAX_VISIBLE) return;
     const next = checked
       ? hiddenColumns.filter(c => c !== key)
       : [...hiddenColumns, key];

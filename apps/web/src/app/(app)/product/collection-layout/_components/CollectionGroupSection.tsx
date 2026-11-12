@@ -19,6 +19,7 @@ import {
   COLLECTION_STATUS,
   COLLECTION_STRATEGY,
   formatMarginPct,
+  type CollectionColumnKey,
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -353,7 +354,7 @@ function skuRatioVariant(actual: number, budget: number | null | undefined) {
 interface CollectionGroupSectionProps {
   group: CollectionGroupData;
   canUpdate: boolean;
-  hiddenColumns: string[];
+  hiddenColumns: CollectionColumnKey[];
   parameterSets: PricingParameterSet[];
   searchQuery?: string;
   onAddRow: (groupId: string) => void;
@@ -584,7 +585,7 @@ export function CollectionGroupSection({
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
   const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
 
-  const show = (key: string) => !hiddenColumns.includes(key);
+  const show = (key: CollectionColumnKey) => !hiddenColumns.includes(key);
 
   const sortProps = { sortCol, sortDir, onSort: handleSort };
   const filterProps = { onFilter: handleFilter };

@@ -8,8 +8,11 @@ model CollectionLayout {
   seasonId         String
   /// Total SKU budget for the entire layout.
   skuBudget        Int?
-  /// JSON array of hidden column keys. Null means all columns visible.
-  hiddenColumns    Json? // String[] — hidden columns, null = all visible
+  /// JSON array of hidden toggleable column keys (`COLLECTION_TABLE_COLUMNS`). Null means the defaults
+  /// (`COLLECTION_COLUMNS_DEFAULT_HIDDEN`). Read it through `readHiddenColumns` (apps/api): a value saved
+  /// before a column was removed may still hold that column's key. Adding a column needs a migration
+  /// that hides it in the saved lists, or those at the visible maximum read as the defaults.
+  hiddenColumns    Json?
   /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
   availableGenders String[]                   @default(["MAN", "WOMAN"])
   /// The brand this layout belongs to.

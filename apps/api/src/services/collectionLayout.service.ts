@@ -9,8 +9,11 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 
 import {
+  CollectionColumnKeySchema,
   CollectionLayoutSettingsSchema,
+  type CollectionColumnKey,
   type CollectionGender,
+  type CollectionLayoutSettings,
   type CollectionGroupInput,
   type CollectionLayoutRowInput,
 } from '@luke/core';
@@ -175,6 +178,22 @@ export async function getOrCreateLayout(
   }) as Promise<CollectionLayoutWithRelations>;
 }
 
+/**
+ * A stored `hiddenColumns` as the settings schema allows it, keeping what it can: keys of columns
+ * that no longer exist and repeats are dropped, so removing a column needs no data migration. Reads
+ * as `null` (the defaults) when what is left still breaks the schema (more columns visible than the
+ * maximum), and for anything but an array (SQL NULL, JSON null).
+ *
+ * Adding a column is not covered: a saved list at the maximum would then leave one column too many
+ * visible and read as the defaults. A new column ships with a migration that adds its key to the
+ * saved lists (hidden), or with that reset accepted.
+ */
+export function readHiddenColumns(stored: Prisma.JsonValue | null): CollectionColumnKey[] | null {
+  if (!Array.isArray(stored)) return null;
+  const known = stored.filter((key): key is CollectionColumnKey => CollectionColumnKeySchema.safeParse(key).success);
+  return CollectionLayoutSettingsSchema.shape.hiddenColumns.safeParse([...new Set(known)]).data ?? null;
+}
+
 type RowCopySelection = { id: string; copyQuotations: boolean };
 
 /** How long a copy may take before it is abandoned: the bulk inserts of 1000 rows × 2 quotations take well under it. */
@@ -239,7 +258,9 @@ async function copyTarget(
   tx: Prisma.TransactionClient,
   brandId: string,
   seasonId: string,
-  settings: Pick<Prisma.CollectionLayoutUncheckedCreateInput, 'availableGenders' | 'hiddenColumns'>,
+  settings: Pick<Prisma.CollectionLayoutUncheckedCreateInput, 'availableGenders'> & {
+    hiddenColumns: CollectionColumnKey[] | typeof Prisma.DbNull;
+  },
   userId: string
 ): Promise<{ id: string }> {
   const [existing] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
@@ -346,14 +367,14 @@ export async function copyFromSeason(
     .map(g => ({ id: randomUUID(), name: g.name, order: g.order, rows: g.rows }))
     .filter(g => g.rows.length > 0);
   const rows = groups.flatMap(g => g.rows.map(row => ({ id: randomUUID(), groupId: g.id, source: row })));
-  const hiddenColumns = CollectionLayoutSettingsSchema.shape.hiddenColumns.safeParse(source.hiddenColumns).data;
+  const hiddenColumns = readHiddenColumns(source.hiddenColumns);
 
   let layoutId: string;
   try {
     layoutId = await prisma.$transaction(async tx => {
       const layout = await copyTarget(tx, toBrandId, toSeasonId, {
         availableGenders: source.availableGenders,
-        hiddenColumns: hiddenColumns ?? Prisma.JsonNull,
+        hiddenColumns: hiddenColumns ?? Prisma.DbNull,
       }, userId);
 
       const planningGroups = await tx.planningGroup.findMany({
@@ -886,7 +907,7 @@ export async function duplicateRow(
  */
 export async function updateLayoutSettings(
   collectionLayoutId: string,
-  input: { skuBudget?: number | null; hiddenColumns?: string[] | null; availableGenders?: CollectionGender[] },
+  input: CollectionLayoutSettings,
   prisma: PrismaClient
 ): Promise<CollectionLayout> {
   const layout = await prisma.collectionLayout.findUnique({
@@ -905,8 +926,9 @@ export async function updateLayoutSettings(
     data: {
       ...('skuBudget' in input && { skuBudget: input.skuBudget }),
       ...('hiddenColumns' in input && {
-        // Json? column: Prisma requires an explicit Prisma.JsonNull, not a direct `null`
-        hiddenColumns: input.hiddenColumns === null ? Prisma.JsonNull : input.hiddenColumns,
+        // Json? column: Prisma requires an explicit null kind. Defaults are written as SQL NULL;
+        // readHiddenColumns also reads the JSON null that earlier code wrote
+        hiddenColumns: input.hiddenColumns === null ? Prisma.DbNull : input.hiddenColumns,
       }),
       ...(input.availableGenders && { availableGenders: input.availableGenders }),
     },

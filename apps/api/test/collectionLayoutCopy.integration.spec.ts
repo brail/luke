@@ -9,8 +9,8 @@ import { randomUUID } from 'crypto';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { COLLECTION_STATUS } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
+import { COLLECTION_COLUMNS_DEFAULT_HIDDEN, COLLECTION_STATUS } from '@luke/core';
+import { Prisma, type PrismaClient } from '@luke/db';
 
 import { getOrCreateCalendar, resolveDefaultPlanningGroupId } from '../src/services/seasonCalendar.service';
 
@@ -133,12 +133,15 @@ describe('collectionLayout.copyFromSeason — row selection', () => {
   });
 });
 
+/** A saved list (the defaults: the maximum visible), so the copy is seen to carry it. */
+const SOURCE_HIDDEN = [...COLLECTION_COLUMNS_DEFAULT_HIDDEN];
+
 describe('collectionLayout.copyFromSeason — into the target season', () => {
   /** A brand with a source season, its calendar and a planning group; each test copies into a fresh target season. */
   async function fixture() {
     const calendar = await createCalendarFixture(prisma, { prefix: 'CR' });
     const layout = await prisma.collectionLayout.create({
-      data: { brandId: calendar.brandId, seasonId: calendar.seasonId, skuBudget: 40, hiddenColumns: ['notes'] },
+      data: { brandId: calendar.brandId, seasonId: calendar.seasonId, skuBudget: 40, hiddenColumns: SOURCE_HIDDEN },
     });
     const group = await prisma.collectionGroup.create({ data: { collectionLayoutId: layout.id, name: 'Borse', skuBudget: 12 } });
     return { ...calendar, layoutId: layout.id, groupId: group.id };
@@ -240,9 +243,20 @@ describe('collectionLayout.copyFromSeason — into the target season', () => {
 
     const copy = await copyAll(source, await newSeason());
 
-    expect(copy).toMatchObject({ skuBudget: null, hiddenColumns: ['notes'] });
+    expect(copy).toMatchObject({ skuBudget: null, hiddenColumns: SOURCE_HIDDEN });
     expect(copy.groups).toEqual([expect.objectContaining({ name: 'Borse', skuBudget: null })]);
     expect(copy.groups[0].rows[0]).toMatchObject({ completedAt: null, lastRevisedAt: null, phaseId: null, pictureKey: null });
+  });
+
+  it('copies hidden columns the settings schema refuses as the defaults (#118)', async () => {
+    const source = await fixture();
+    await prisma.collectionLayout.update({ where: { id: source.layoutId }, data: { hiddenColumns: ['notes'] } });
+    await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
+
+    const copy = await copyAll(source, await newSeason());
+
+    expect(copy.hiddenColumns).toBeNull();
+    expect(await prisma.collectionLayout.count({ where: { id: copy.id, hiddenColumns: { equals: Prisma.DbNull } } })).toBe(1);
   });
 
   it('fills an existing empty layout, taking the source settings', async () => {
@@ -255,7 +269,7 @@ describe('collectionLayout.copyFromSeason — into the target season', () => {
 
     const copy = await copyAll(source, target);
 
-    expect(copy).toMatchObject({ id: existing.id, hiddenColumns: ['notes'], availableGenders: ['MAN', 'WOMAN'], skuBudget: 7 });
+    expect(copy).toMatchObject({ id: existing.id, hiddenColumns: SOURCE_HIDDEN, availableGenders: ['MAN', 'WOMAN'], skuBudget: 7 });
     expect(copy.groups[0].rows.map(r => r.line)).toEqual(['Tote']);
   });
 

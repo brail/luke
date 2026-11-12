@@ -23,6 +23,8 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'styleStatus',       label: 'Style Status' },
   { key: 'pricePositioning',  label: 'Posizionamento' },
 ] as const;
+export type CollectionColumnKey = (typeof COLLECTION_TABLE_COLUMNS)[number]['key'];
+export const CollectionColumnKeySchema = z.enum(COLLECTION_TABLE_COLUMNS.map(c => c.key));
 
 /** Maximum number of toggleable columns that can be visible simultaneously. */
 export const COLLECTION_COLUMNS_MAX_VISIBLE = 7;
@@ -35,7 +37,7 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'styleStatus',
   'margin',
   'pricePositioning',
-] as const;
+] as const satisfies readonly CollectionColumnKey[];
 
 /** Allowed gender values for collection rows. Used in collection layout forms and filtering. */
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
@@ -89,13 +91,23 @@ export type CollectionGroupInput = z.infer<typeof CollectionGroupInputSchema>;
 /** Layout-level settings persisted alongside the collection layout (column visibility, SKU budget, available genders). */
 export const CollectionLayoutSettingsSchema = z.object({
   skuBudget: z.number().int().min(0).optional().nullable(),
-  hiddenColumns: z.array(z.string()).optional().nullable(),
+  // null = no saved preference: COLLECTION_COLUMNS_DEFAULT_HIDDEN applies.
+  hiddenColumns: z
+    .array(CollectionColumnKeySchema)
+    .refine(keys => new Set(keys).size === keys.length, 'Colonna ripetuta')
+    .refine(
+      keys => COLLECTION_TABLE_COLUMNS.length - keys.length <= COLLECTION_COLUMNS_MAX_VISIBLE,
+      `Al massimo ${COLLECTION_COLUMNS_MAX_VISIBLE} colonne visibili`
+    )
+    .optional()
+    .nullable(),
   availableGenders: z
     .array(z.enum(COLLECTION_GENDER))
     .min(1)
     .refine(genders => new Set(genders).size === genders.length, 'Gender ripetuto')
     .optional(),
 });
+export type CollectionLayoutSettings = z.infer<typeof CollectionLayoutSettingsSchema>;
 
 /**
  * Input schema for a single collection layout row.
