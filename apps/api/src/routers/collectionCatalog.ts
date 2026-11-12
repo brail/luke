@@ -1,8 +1,7 @@
 /**
  * tRPC router for Collection Catalog Items
- * Manages the configurable options for Collection Layout fields:
- * strategy, lineStatus, styleStatus, revisionType, pricePositioning
- * (the production phase is managed by the separate Phase catalog, see routers/phase.ts)
+ * Manages the configurable options for Collection Layout fields, one list per
+ * `COLLECTION_CATALOG_TYPES` entry (the production phase is managed by the separate Phase catalog, see routers/phase.ts)
  */
 
 import { TRPCError } from '@trpc/server';
@@ -27,7 +26,7 @@ export const collectionCatalogRouter = router({
    * Lists active collection catalog items for a given type, used to populate frontend selects.
    *
    * @auth {collection_layout:read}
-   * @input {{ type: CatalogTypeSchema }} — catalog type (strategy, lineStatus, styleStatus, progress).
+   * @input {{ type: CatalogTypeSchema }} — catalog type, one of `COLLECTION_CATALOG_TYPES`.
    * @output {CollectionCatalogItem[]} — active items sorted by order.
    */
   list: protectedProcedure
@@ -110,7 +109,8 @@ export const collectionCatalogRouter = router({
    * Updates mutable fields of a collection catalog item (label, order, code, iso9001Categories, etc.).
    *
    * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
-   * @input {{ id: string, data: Partial<CollectionCatalogItemInputSchema without type> }}
+   * @input {{ id: string, data: Partial<CollectionCatalogItemInputSchema without type and value> }} — `value` is
+   *   the immutable key rows store: changing it would detach every row that holds it.
    * @output {CollectionCatalogItem} — the updated item.
    */
   update: protectedProcedure
@@ -119,7 +119,7 @@ export const collectionCatalogRouter = router({
     .input(
       z.object({
         id: z.uuid(),
-        data: partialWithoutDefaults(CollectionCatalogItemInputSchema.omit({ type: true })),
+        data: partialWithoutDefaults(CollectionCatalogItemInputSchema.omit({ type: true, value: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {

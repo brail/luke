@@ -38,9 +38,10 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
-import { trpc } from '../../../../../lib/trpc';
+import { type CatalogOption, withHeldOption } from '../../../../../lib/catalogOptions';
 import { cn } from '../../../../../lib/utils';
 import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
+import { useCatalogOptions } from '../_hooks/useCatalogOptions';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
@@ -149,9 +150,10 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
 
 interface CatalogSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
-  name: 'status' | 'styleStatus' | 'strategy' | 'pricePositioning';
+  name: 'status' | 'styleStatus' | 'strategy' | 'pricePositioning' | 'productCategory';
   label: string;
-  options: { value: string; label: string }[];
+  /** The active items; `undefined` while they load. */
+  options: CatalogOption[] | undefined;
   canUpdate: boolean;
   /** When false the field is required (no empty sentinel). Defaults to nullable. */
   nullable?: boolean;
@@ -160,7 +162,8 @@ interface CatalogSelectFieldProps {
 /**
  * FormField wrapper for a collection-catalog Select. Nullable fields use the `_none`
  * sentinel (Radix Select can't represent an empty value) mapped to/from `null`;
- * required fields (`nullable={false}`) bind the value directly.
+ * required fields (`nullable={false}`) bind the value directly. `options` are the active items;
+ * `withHeldOption` adds a deactivated item the row still holds.
  */
 function CatalogSelectField({ control, name, label, options, canUpdate, nullable = true }: CatalogSelectFieldProps) {
   return (
@@ -181,7 +184,7 @@ function CatalogSelectField({ control, name, label, options, canUpdate, nullable
             </FormControl>
             <SelectContent>
               {nullable && <SelectItem value="_none">—</SelectItem>}
-              {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              {withHeldOption(options, field.value).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <FormMessage />
@@ -212,22 +215,11 @@ export function IdentificationSection({
   availableGenders,
   groups,
 }: IdentificationSectionProps) {
-  const { data: strategyOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'strategy' },
-    { staleTime: 5 * 60 * 1000 }
-  );
-  const { data: lineStatusOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'lineStatus' },
-    { staleTime: 5 * 60 * 1000 }
-  );
-  const { data: styleStatusOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'styleStatus' },
-    { staleTime: 5 * 60 * 1000 }
-  );
-  const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'pricePositioning' },
-    { staleTime: 5 * 60 * 1000 }
-  );
+  const strategyOptions = useCatalogOptions('strategy');
+  const lineStatusOptions = useCatalogOptions('lineStatus');
+  const styleStatusOptions = useCatalogOptions('styleStatus');
+  const pricePositioningOptions = useCatalogOptions('pricePositioning');
+  const productCategoryOptions = useCatalogOptions('productCategory');
 
   return (
     <div className="space-y-4">
@@ -267,18 +259,13 @@ export function IdentificationSection({
           )}
         />
 
-        <FormField
+        <CatalogSelectField
           control={control}
           name="productCategory"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Categoria *</FormLabel>
-              <FormControl>
-                <Input placeholder="es. RUNNING" {...field} disabled={!canUpdate} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Categoria *"
+          options={productCategoryOptions}
+          canUpdate={canUpdate}
+          nullable={false}
         />
       </div>
 

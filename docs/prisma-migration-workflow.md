@@ -75,7 +75,8 @@ migration with SQL added by hand:
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
   so a replay on an older backup does not depend on later code, and state in its header whether
   it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
-  which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171), which is.
+  which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171) and
+  `20261112220000_collection_catalog_product_category` (#126), which are.
   Ordinary backfills stay `db:*` scripts in `@luke/api`.
 - **A data step appended to a generated migration**, when the stored data must follow a column
   change — `20261024170000_phase_description_duration_colour` gives every phase the badge colour it

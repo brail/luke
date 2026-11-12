@@ -63,6 +63,7 @@ export const COLLECTION_CATALOG_TYPES = [
   'styleStatus',
   'revisionType',
   'pricePositioning',
+  'productCategory',
 ] as const;
 export type CollectionCatalogType = (typeof COLLECTION_CATALOG_TYPES)[number];
 

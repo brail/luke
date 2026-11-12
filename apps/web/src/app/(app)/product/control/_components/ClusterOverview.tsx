@@ -67,7 +67,6 @@ interface Page {
 }
 
 interface CategoryChart {
-  key: string;
   name: string;
   clusters: MoqCluster[];
 }
@@ -94,13 +93,12 @@ export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
     const rMax = Math.min(R_MAX, column / 2, step / 2);
     const page: Page = { strategy, positioning, column, step, radius: v => Math.max(R_MIN, rMax * Math.sqrt(v / max)) };
     const sections = ordered(clusters.map(c => c.gender), COLLECTION_GENDER).map(gender => {
-      // Ignoring case, as the clusters themselves are grouped.
+      // By the category's catalog value, as the clusters themselves are grouped.
       const charts = new Map<string, CategoryChart>();
       for (const c of clusters.filter(cl => cl.gender === gender)) {
-        const key = c.category.toLowerCase();
-        const chart = charts.get(key) ?? { key, name: c.category, clusters: [] };
+        const chart = charts.get(c.category) ?? { name: c.category, clusters: [] };
         chart.clusters.push(c);
-        charts.set(key, chart);
+        charts.set(c.category, chart);
       }
       return {
         gender,
@@ -135,7 +133,7 @@ export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
           {/* 230px: the prototype's smallest chart column; auto-fill has no Tailwind scale value. */}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-x-3 gap-y-1">
             {section.charts.map(chart => (
-              <figure key={chart.key} className="min-w-0">
+              <figure key={chart.name} className="min-w-0">
                 <CategoryChartSvg title={`${section.label} · ${chart.name}`} clusters={chart.clusters} page={view.page} />
                 <figcaption className="mb-2.5 text-center text-sm font-semibold break-words">{chart.name}</figcaption>
               </figure>

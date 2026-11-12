@@ -1,7 +1,7 @@
 /**
  * Contract of the cluster MOQ coverage (#125): B is summed row by row, 0.70 is the first value that
- * is not below the threshold, incomplete rows change no cluster, and category is grouped ignoring
- * case and surrounding spaces.
+ * is not below the threshold, incomplete rows change no cluster, and category is grouped by its
+ * catalog value.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -53,13 +53,13 @@ describe('buildMoqClusters', () => {
     }
   });
 
-  it('groups category ignoring case and surrounding spaces, keeping the first spelling', () => {
+  it('groups by the stored category, a catalog value (#126): two values are two categories', () => {
     const clusters = buildMoqClusters([
-      row({ productCategory: ' Sneaker ' }),
-      row({ productCategory: 'sneaker' }),
-      row({ productCategory: 'Boot' }),
+      row({ productCategory: 'SNEAKER' }),
+      row({ productCategory: 'SNEAKER' }),
+      row({ productCategory: 'Sneaker' }),
     ]);
-    expect(clusters.map(c => [c.category, c.sku])).toEqual([['Boot', 1], ['Sneaker', 2]]);
+    expect(new Map(clusters.map(c => [c.category, c.sku]))).toEqual(new Map([['SNEAKER', 2], ['Sneaker', 1]]));
   });
 
   it('sorts by ratio ascending, clusters without a ratio last', () => {

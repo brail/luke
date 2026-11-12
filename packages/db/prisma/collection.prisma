@@ -194,11 +194,11 @@ model CollectionRowPhaseHistory {
   @@map("collection_row_phase_history")
 }
 
-/// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, revisionType, pricePositioning.
+/// Configurable catalog items for collection layout dropdowns. Types: `COLLECTION_CATALOG_TYPES`.
 model CollectionCatalogItem {
   id                String   @id @default(uuid())
-  /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning".
-  type              String // "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning"
+  /// Discriminator: one of `COLLECTION_CATALOG_TYPES` (`@luke/core`).
+  type              String
   /// Immutable machine key (e.g. "CORE", "NEW"). Used as stored value in row fields.
   value             String
   /// Human-readable display label (editable).

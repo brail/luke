@@ -51,6 +51,7 @@ const TYPE_LABELS: Record<CollectionCatalogType, string> = {
   styleStatus:      'Style Status',
   revisionType:     'Tipo revisione',
   pricePositioning: 'Posizionamento Prezzo',
+  productCategory:  'Categoria',
 };
 
 type CatalogItem = {
@@ -75,8 +76,9 @@ export default function CollectionCatalogPage() {
   const [deletingItem, setDeletingItem] = useState<CatalogItem | null>(null);
 
   const utils = trpc.useUtils();
-  const invalidate = (type: CollectionCatalogType) => {
-    void utils.collectionCatalog.listAll.invalidate({ type });
+  // Every catalog read: this page's full list, and the active items the row editor's pickers offer.
+  const invalidate = () => {
+    void utils.collectionCatalog.invalidate();
   };
 
   const { data: items = [], isLoading } = trpc.collectionCatalog.listAll.useQuery(
@@ -86,7 +88,7 @@ export default function CollectionCatalogPage() {
 
   const createMutation = trpc.collectionCatalog.create.useMutation({
     onSuccess: () => {
-      invalidate(activeTab);
+      invalidate();
       setItemDialog(null);
       toast.success('Opzione aggiunta');
     },
@@ -95,7 +97,7 @@ export default function CollectionCatalogPage() {
 
   const updateMutation = trpc.collectionCatalog.update.useMutation({
     onSuccess: () => {
-      invalidate(activeTab);
+      invalidate();
       setItemDialog(null);
       toast.success('Opzione aggiornata');
     },
@@ -104,7 +106,7 @@ export default function CollectionCatalogPage() {
 
   const removeMutation = trpc.collectionCatalog.remove.useMutation({
     onSuccess: () => {
-      invalidate(activeTab);
+      invalidate();
       setDeletingItem(null);
       toast.success('Opzione disattivata');
     },
@@ -112,7 +114,7 @@ export default function CollectionCatalogPage() {
   });
 
   const restoreMutation = trpc.collectionCatalog.restore.useMutation({
-    onSuccess: () => { invalidate(activeTab); toast.success('Opzione riattivata'); },
+    onSuccess: () => { invalidate(); toast.success('Opzione riattivata'); },
     onError: e => toast.error(getTrpcErrorMessage(e)),
   });
 

@@ -54,12 +54,11 @@ export function buildMoqClusters(rows: readonly MoqCoverageRow[]): MoqCluster[] 
 
   for (const row of rows) {
     const moq = row.vendor?.moqPerColor;
-    const { gender, pricePositioning, strategy, qtyForecast, skuForecast } = row;
+    const { gender, productCategory: category, pricePositioning, strategy, qtyForecast, skuForecast } = row;
     if (moq == null || !pricePositioning || !strategy || qtyForecast == null || skuForecast == null) continue;
 
-    const category = row.productCategory.trim();
-    // A tuple, not a joined string: category is free text and could contain any separator.
-    const key = JSON.stringify([gender, category.toLowerCase(), pricePositioning, strategy]);
+    // A tuple, not a joined string: a category could contain any separator.
+    const key = JSON.stringify([gender, category, pricePositioning, strategy]);
     let cluster = clusters.get(key);
     if (!cluster) {
       cluster = { key, gender, category, pricePositioning, strategy, rowCount: 0, sku: 0, forecastPairs: 0, minimumPairs: 0 };

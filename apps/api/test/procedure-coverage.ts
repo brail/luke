@@ -128,10 +128,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'list, listAll, create, update and remove covered by phase.integration.spec.ts (the alphabetical catalog, the catalog fields, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
     uncovered: 1,
   },
-  collectionCatalog: {
-    reason: 'the writes and listAll by their permission spec (adminConfigurationWrites); list, the read the product pages use, has no test yet',
-    uncovered: 1,
-  },
   phaseAlert: {
     reason:
       'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec, seasonPhaseOrder by its own spec (order and brand scope), criticalityForLayout by the visibility spec; the thresholds get/update pair remains uncovered',

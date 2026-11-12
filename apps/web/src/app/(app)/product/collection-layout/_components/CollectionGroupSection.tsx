@@ -16,7 +16,6 @@ import { type CSSProperties, type HTMLAttributes, type ReactNode, useCallback, u
 import type { RouterOutputs } from '@luke/api';
 import {
   COLLECTION_GENDER,
-  COLLECTION_STATUS,
   COLLECTION_STRATEGY,
   formatMarginPct,
   type CollectionColumnKey,
@@ -61,6 +60,7 @@ import {
   computeWeightedMargin,
   resolveVendorName,
 } from '../../_shared/pricingCalc';
+import { useAllCatalogOptions } from '../_hooks/useCatalogOptions';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
@@ -335,9 +335,7 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
 ];
 
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
-const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
 const [STRATEGY_CORE, STRATEGY_INNOVATION] = COLLECTION_STRATEGY;
-const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -409,6 +407,11 @@ export function CollectionGroupSection({
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
 
   const { phaseById } = usePhaseCatalog();
+  const categoryOptions = useAllCatalogOptions('productCategory');
+  const strategyOptions = useAllCatalogOptions('strategy');
+  const lineStatusOptions = useAllCatalogOptions('lineStatus');
+  const styleStatusOptions = useAllCatalogOptions('styleStatus');
+  const positioningOptions = useAllCatalogOptions('pricePositioning');
   const { rank: seasonRank, phaseOptions } = useSeasonPhaseOrder(group.collectionLayoutId);
 
   // Single batched fetch for the whole group's layout, instead of one query per row.
@@ -530,14 +533,14 @@ export function CollectionGroupSection({
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
       if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
       if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
-      if (columnFilters.productCategory && !textMatch(row.productCategory, columnFilters.productCategory)) return false;
+      if (columnFilters.productCategory && !enumMatch(row.productCategory, columnFilters.productCategory)) return false;
       if (columnFilters.designer && !textMatch(row.designer, columnFilters.designer)) return false;
       if (columnFilters.gender && !enumMatch(row.gender, columnFilters.gender)) return false;
       if (columnFilters.strategy && !enumMatch(row.strategy, columnFilters.strategy)) return false;
       if (columnFilters.status && !enumMatch(row.status, columnFilters.status)) return false;
       if (columnFilters.styleStatus && !enumMatch(row.styleStatus, columnFilters.styleStatus)) return false;
       if (columnFilters.progress && !enumMatch(row.phaseId, columnFilters.progress)) return false;
-      if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
+      if (columnFilters.pricePositioning && !enumMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast ?? 0, columnFilters.qtyForecast)) return false;
       if (columnFilters.margin) {
@@ -725,16 +728,16 @@ export function CollectionGroupSection({
                     <FilterableHeader col="supplier" label="Fornitore" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.supplier} className="w-36" />
                   )}
                   {show('productCategory') && (
-                    <FilterableHeader col="productCategory" label="Categoria" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.productCategory} />
+                    <FilterableHeader col="productCategory" label="Categoria" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.productCategory} options={categoryOptions} />
                   )}
                   {show('strategy') && (
-                    <FilterableHeader col="strategy" label="Strategy" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.strategy} options={STRATEGY_OPTIONS} allowNone />
+                    <FilterableHeader col="strategy" label="Strategy" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.strategy} options={strategyOptions} allowNone />
                   )}
                   {show('status') && (
-                    <FilterableHeader col="status" label="Status" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.status} options={STATUS_OPTIONS} />
+                    <FilterableHeader col="status" label="Status" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.status} options={lineStatusOptions} />
                   )}
                   {show('styleStatus') && (
-                    <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={STATUS_OPTIONS} allowNone />
+                    <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={styleStatusOptions} allowNone />
                   )}
                   {show('progress') && (
                     <FilterableHeader col="progress" label="Fase" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={phaseOptions} allowNone />
@@ -743,7 +746,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="designer" label="Designer" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.designer} />
                   )}
                   {show('pricePositioning') && (
-                    <FilterableHeader col="pricePositioning" label="Posizionamento" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.pricePositioning} allowNone />
+                    <FilterableHeader col="pricePositioning" label="Posizionamento" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.pricePositioning} options={positioningOptions} allowNone />
                   )}
 
                   <FilterableHeader col="skuForecast" label="SKU" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.skuForecast} className="text-right" />

@@ -61,13 +61,26 @@ describe('collectionCatalog writes', () => {
     expect(await prisma.collectionCatalogItem.findUniqueOrThrow({ where: { id: item.id } })).toEqual(item);
   });
 
-  it('let admin create and rename an item', async () => {
+  it('let admin create and rename an item, never changing its value, the key rows store', async () => {
     const catalog = (await createCallerAs('admin')).collectionCatalog;
 
     const created = await catalog.create({ type: 'strategy', value: `V${uid()}`, label: 'New' });
-    await catalog.update({ id: created.id, data: { label: 'Renamed' } });
+    // `value` is not part of the update input; this sends what an outdated or forged client could.
+    await catalog.update({ id: created.id, data: { label: 'Renamed', value: 'CHANGED' } as never });
 
-    expect((await prisma.collectionCatalogItem.findUniqueOrThrow({ where: { id: created.id } })).label).toBe('Renamed');
+    expect(await prisma.collectionCatalogItem.findUniqueOrThrow({ where: { id: created.id } }))
+      .toMatchObject({ label: 'Renamed', value: created.value });
+  });
+
+  it('manages row categories as a catalog type: a deactivated one leaves the picker, not the full list (#126)', async () => {
+    const catalog = (await createCallerAs('admin')).collectionCatalog;
+    const value = `C${uid()}`;
+
+    const created = await catalog.create({ type: 'productCategory', value, label: value });
+    await catalog.remove({ id: created.id });
+
+    expect((await catalog.list({ type: 'productCategory' })).map(i => i.value)).not.toContain(value);
+    expect((await catalog.listAll({ type: 'productCategory' })).map(i => i.value)).toContain(value);
   });
 
   // Listing inactive items too is a read: it takes `collection_layout:read` (CLAUDE.md rule 5).
