@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { Badge } from '../../../../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../../components/ui/tabs';
+import { useCatalog } from '../../../../../hooks/useCatalog';
 import { buildMoqClusters, formatMoqCoverageRatio } from '../../../../../lib/moqCoverage';
 import { cn } from '../../../../../lib/utils';
 import { useControlLayout } from '../_hooks/useControlLayout';
@@ -36,6 +37,7 @@ export function ClusterMoqCoverage() {
   const rows = useMemo(() => layout?.groups.flatMap(g => g.rows) ?? [], [layout]);
   const clusters = useMemo(() => buildMoqClusters(rows), [rows]);
   const plotted = useMemo(() => plottable(clusters), [clusters]);
+  const { label } = useCatalog();
 
   if (!enabled && !contextLoading) {
     return <EmptyContextCard message="Seleziona un brand e una stagione" />;
@@ -135,9 +137,9 @@ export function ClusterMoqCoverage() {
               {clusters.map(c => (
                 <tr key={c.key} className={cn('border-b last:border-0', c.belowMoq && 'bg-destructive/10')}>
                   <td className="px-3 py-2">{c.gender}</td>
-                  <td className="px-3 py-2 font-medium">{c.category}</td>
-                  <td className="px-3 py-2">{c.pricePositioning}</td>
-                  <td className="px-3 py-2">{c.strategy}</td>
+                  <td className="px-3 py-2 font-medium">{label('productCategory', c.category)}</td>
+                  <td className="px-3 py-2">{label('pricePositioning', c.pricePositioning)}</td>
+                  <td className="px-3 py-2">{label('strategy', c.strategy)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatInteger(c.sku)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatInteger(c.forecastPairs)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatInteger(c.minimumPairs)}</td>

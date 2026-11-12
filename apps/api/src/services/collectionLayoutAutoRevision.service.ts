@@ -36,9 +36,9 @@ import { getRankedGroup } from './phaseAlert.service.js';
 
 /**
  * Labels stamped on the revisions these triggers create. They are display text, not a contract:
- * the revision pages print `revisionTypeValue` verbatim and nothing joins them to the
- * `revisionType` catalog, so no seed row has to exist for them to work. Only the dedup key
- * `@@unique([milestoneId, revisionTypeValue])` depends on them staying stable.
+ * the revision pages and exports label `revisionTypeValue` through the `revisionType` catalog and
+ * print a value no item has as itself, so no seed row has to exist for them to work. Only the dedup
+ * key `@@unique([milestoneId, revisionTypeValue])` depends on them staying stable.
  */
 export const AUTO_REVISION_TYPE_DATE = 'MILESTONE_DATA';
 export const AUTO_REVISION_TYPE_PHASE = 'MILESTONE_FASE';

@@ -2,11 +2,12 @@
 
 import { useMemo } from 'react';
 
-import { COLLECTION_GENDER, type CollectionGender } from '@luke/core';
+import { COLLECTION_GENDER, type CollectionCatalogType, type CollectionGender } from '@luke/core';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { useCatalog } from '../../../../../hooks/useCatalog';
+import { ordered } from '../../../../../lib/catalogOptions';
 import { formatMoqCoverageRatio, type MoqCluster } from '../../../../../lib/moqCoverage';
-import { trpc } from '../../../../../lib/trpc';
 
 import { formatInteger, MOQ_STATUS_LABEL } from './ClusterMoqCharts';
 import { QueryStateMessage } from './QueryStateMessage';
@@ -30,31 +31,15 @@ const R_MIN = 3;
 const AXIS_FONT = 10.5;
 /** Rough width of one axis-label character at `AXIS_FONT`, to truncate labels to their column. */
 const CHAR_WIDTH = 6;
-const CATALOG_QUERY = { staleTime: 5 * 60 * 1000 };
 
 const truncate = (text: string, room: number) => {
   const max = Math.max(1, Math.floor(room / CHAR_WIDTH));
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 };
 
-/** The values present, in the given order first, then any other alphabetically. */
-function ordered(present: Iterable<string>, order: readonly string[]): string[] {
-  const values = new Set(present);
-  return [
-    ...order.filter(v => values.has(v)),
-    ...[...values].filter(v => !order.includes(v)).sort((a, b) => a.localeCompare(b)),
-  ];
-}
-
 interface Axis {
   values: string[];
   label: (value: string) => string;
-}
-
-/** The values present, in catalog order, labelled by the catalog: each type has its own values. */
-function axis(catalog: readonly { value: string; label: string }[] | undefined, present: string[]): Axis {
-  const labels = new Map((catalog ?? []).map(item => [item.value, item.label]));
-  return { values: ordered(present, (catalog ?? []).map(item => item.value)), label: value => labels.get(value) ?? value };
 }
 
 /** What every chart of the page shares: the axes, their spacing and the one radius scale. */
@@ -67,6 +52,8 @@ interface Page {
 }
 
 interface CategoryChart {
+  /** The category's catalog value, as the clusters are grouped. */
+  value: string;
   name: string;
   clusters: MoqCluster[];
 }
@@ -78,14 +65,16 @@ interface CategoryChart {
  * with its SKU count. One radius scale for the whole page, so clusters compare across charts.
  */
 export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
-  // `listAll`: a value retired from the catalog keeps its place and label on the axes.
-  const strategyCatalog = trpc.collectionCatalog.listAll.useQuery({ type: 'strategy' }, CATALOG_QUERY);
-  const positioningCatalog = trpc.collectionCatalog.listAll.useQuery({ type: 'pricePositioning' }, CATALOG_QUERY);
+  // Inactive items too: a value retired from the catalog keeps its place and label on the axes.
+  const { order, label, isPending, isError } = useCatalog();
 
   const view = useMemo(() => {
+    /** The values present, in catalog order, labelled by the catalog: each type has its own values. */
+    const axis = (type: CollectionCatalogType, present: string[]): Axis =>
+      ({ values: order(type, present), label: value => label(type, value) });
     // A failed catalog read leaves the axes in alphabetical order rather than hiding the chart.
-    const strategy = axis(strategyCatalog.data, clusters.map(c => c.strategy));
-    const positioning = axis(positioningCatalog.data, clusters.map(c => c.pricePositioning));
+    const strategy = axis('strategy', clusters.map(c => c.strategy));
+    const positioning = axis('pricePositioning', clusters.map(c => c.pricePositioning));
     const column = (W - PAD_L - PAD_R) / (strategy.values.length || 1);
     const step = (BASE_Y - LOWEST_LIFT - PAD_T) / (positioning.values.length - 1 || 1);
     const max = clusters.reduce((m, c) => Math.max(m, c.forecastPairs, c.minimumPairs), 0) || 1;
@@ -96,7 +85,7 @@ export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
       // By the category's catalog value, as the clusters themselves are grouped.
       const charts = new Map<string, CategoryChart>();
       for (const c of clusters.filter(cl => cl.gender === gender)) {
-        const chart = charts.get(c.category) ?? { name: c.category, clusters: [] };
+        const chart = charts.get(c.category) ?? { value: c.category, name: label('productCategory', c.category), clusters: [] };
         chart.clusters.push(c);
         charts.set(c.category, chart);
       }
@@ -107,17 +96,17 @@ export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
       };
     });
     return { page, sections };
-  }, [clusters, strategyCatalog.data, positioningCatalog.data]);
+  }, [clusters, order, label]);
 
-  if (strategyCatalog.isPending || positioningCatalog.isPending) {
+  if (isPending) {
     return <QueryStateMessage variant="loading" message="Caricamento…" />;
   }
 
   return (
     <div className="space-y-4">
-      {(strategyCatalog.isError || positioningCatalog.isError) && (
+      {isError && (
         <p className="text-xs text-destructive">
-          Catalogo di strategy e posizionamenti non disponibile: gli assi seguono l&apos;ordine alfabetico dei valori registrati.
+          Catalogo non disponibile: categorie e assi mostrano i valori registrati, in ordine alfabetico.
         </p>
       )}
       <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -133,7 +122,7 @@ export function ClusterOverview({ clusters }: { clusters: MoqCluster[] }) {
           {/* 230px: the prototype's smallest chart column; auto-fill has no Tailwind scale value. */}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-x-3 gap-y-1">
             {section.charts.map(chart => (
-              <figure key={chart.name} className="min-w-0">
+              <figure key={chart.value} className="min-w-0">
                 <CategoryChartSvg title={`${section.label} · ${chart.name}`} clusters={chart.clusters} page={view.page} />
                 <figcaption className="mb-2.5 text-center text-sm font-semibold break-words">{chart.name}</figcaption>
               </figure>

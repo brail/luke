@@ -3,11 +3,11 @@ import type { PrismaClient } from '@luke/db';
 
 import { buildCollectionLayoutPdf } from './collectionLayout.export.pdf.service';
 import { buildCollectionLayoutXlsx } from './collectionLayout.export.xlsx.service';
+import { buildCatalogLabelMap, type QuotationWithParamSet } from './collectionLayout.service';
 import { getLayoutAsOfRevision } from './collectionLayoutRevision.service';
 
 import type { CollectionLayoutForPdf } from './collectionLayout.export.pdf.service';
 import type { CollectionLayoutForExport, ExtraInfoSheet } from './collectionLayout.export.xlsx.service';
-import type { QuotationWithParamSet } from './collectionLayout.service';
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
@@ -105,14 +105,19 @@ export async function buildRevisionXlsx(
   prisma: PrismaClient,
   logger?: Logger,
 ): Promise<Buffer> {
-  const layout = await buildRevisionExportLayout(revisionId, collectionLayoutId, prisma);
+  const [layout, catalogLabel] = await Promise.all([
+    buildRevisionExportLayout(revisionId, collectionLayoutId, prisma),
+    buildCatalogLabelMap(prisma),
+  ]);
+  // Today's label for the type the revision stored (#245); an automatic type has no item and prints as itself.
+  const revisionType = catalogLabel('revisionType', revisionMeta.revisionTypeValue);
   const extraInfoSheet: ExtraInfoSheet = {
     sheetName: 'Nota revisione',
     title: 'NOTA REVISIONE',
-    subtitle: `rev${revisionMeta.revisionNumber} — ${revisionMeta.revisionTypeValue}`,
+    subtitle: `rev${revisionMeta.revisionNumber} — ${revisionType}`,
     rows: [
       ['Numero revisione', `rev${revisionMeta.revisionNumber}`],
-      ['Tipo revisione', revisionMeta.revisionTypeValue],
+      ['Tipo revisione', revisionType],
       ['Nota', revisionMeta.notes ?? ''],
     ],
   };

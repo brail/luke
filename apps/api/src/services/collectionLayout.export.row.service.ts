@@ -27,7 +27,7 @@ import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInst
 import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 
 import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
-import { buildProgressLabelMap } from './collectionLayout.service';
+import { buildCatalogLabelMap, buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
@@ -129,7 +129,7 @@ export async function buildCollectionRowPdf(
 ): Promise<Buffer> {
   const { brand, season, row } = ctx;
 
-  const [brandLogoDataUri, rowImageDataUri, company, progressLabelMap] = await Promise.all([
+  const [brandLogoDataUri, rowImageDataUri, company, progressLabelMap, catalogLabel] = await Promise.all([
     resolveLogoDataUri(prisma, brand.logoKey, logger),
     row.pictureKey
       ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger).then(async result => {
@@ -140,6 +140,7 @@ export async function buildCollectionRowPdf(
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     buildProgressLabelMap(prisma),
+    buildCatalogLabelMap(prisma),
   ]);
 
   const vendorLabel = row.vendor?.nickname ?? row.vendor?.name ?? '—';
@@ -159,10 +160,10 @@ export async function buildCollectionRowPdf(
     ['Linea',       row.line],
     ['Articolo',    row.article ?? '—'],
     ['Fornitore',   vendorLabel],
-    ['Categoria',   row.productCategory],
-    ['Strategy',    row.strategy ?? '—'],
-    ['Status',      row.status],
-    ['Style Status',row.styleStatus ?? '—'],
+    ['Categoria',   catalogLabel('productCategory', row.productCategory)],
+    ['Strategy',    catalogLabel('strategy', row.strategy) ?? '—'],
+    ['Status',      catalogLabel('lineStatus', row.status)],
+    ['Style Status',catalogLabel('styleStatus', row.styleStatus) ?? '—'],
     ['Progress',    row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '—') : '—'],
     ['Designer',    row.designer ?? '—'],
     ['SKU Forecast', row.skuForecast != null ? String(row.skuForecast) : '—'],
@@ -284,9 +285,10 @@ export async function buildCollectionRowXlsx(
   wb.creator = 'Luke';
   wb.created = new Date();
 
-  const [rowImageResult, progressLabelMap] = await Promise.all([
+  const [rowImageResult, progressLabelMap, catalogLabel] = await Promise.all([
     row.pictureKey ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger) : null,
     buildProgressLabelMap(prisma),
+    buildCatalogLabelMap(prisma),
   ]);
   // Width is capped generously (not tied to the embed box) since only height is
   // visually constrained here — see the proportional scale-by-height below.
@@ -311,10 +313,10 @@ export async function buildCollectionRowXlsx(
     ['Articolo', row.article ?? null],
     ['Gender', row.gender],
     ['Fornitore', vendorLabel],
-    ['Categoria', row.productCategory],
-    ['Strategy', row.strategy ?? null],
-    ['Status', row.status],
-    ['Style Status', row.styleStatus ?? null],
+    ['Categoria', catalogLabel('productCategory', row.productCategory)],
+    ['Strategy', catalogLabel('strategy', row.strategy ?? null)],
+    ['Status', catalogLabel('lineStatus', row.status)],
+    ['Style Status', catalogLabel('styleStatus', row.styleStatus ?? null)],
     ['Progress', row.phaseId ? (progressLabelMap.get(row.phaseId) ?? null) : null],
     ['Designer', row.designer ?? null],
     ['SKU Forecast', row.skuForecast],

@@ -17,7 +17,7 @@ import { EMBED_OVERSAMPLE_FACTOR, extensionForExcelJs, resizeForEmbed } from '..
 import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 
 import { readAssetBuffer } from './asset.service';
-import { buildProgressLabelMap } from './collectionLayout.service';
+import { buildCatalogLabelMap, buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
@@ -158,7 +158,7 @@ export async function buildCollectionLayoutXlsx(
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
 
-  const progressLabelMap = await buildProgressLabelMap(prisma);
+  const [progressLabelMap, catalogLabel] = await Promise.all([buildProgressLabelMap(prisma), buildCatalogLabelMap(prisma)]);
 
   // Determine max quotations across all rows for dynamic columns
   const maxQ = allRows.reduce((m, r) => Math.max(m, r.quotations?.length ?? 0), 0);
@@ -220,10 +220,10 @@ export async function buildCollectionLayoutXlsx(
         row.line,
         row.gender,
         vendorLabel,
-        row.productCategory,
-        row.strategy,
-        row.status,
-        row.styleStatus,
+        catalogLabel('productCategory', row.productCategory),
+        catalogLabel('strategy', row.strategy),
+        catalogLabel('lineStatus', row.status),
+        catalogLabel('styleStatus', row.styleStatus),
         row.phaseId ? (progressLabelMap.get(row.phaseId) ?? null) : null,
         row.skuForecast,
         row.qtyForecast,

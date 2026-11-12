@@ -16,7 +16,6 @@ import { type CSSProperties, type HTMLAttributes, type ReactNode, useCallback, u
 import type { RouterOutputs } from '@luke/api';
 import {
   COLLECTION_GENDER,
-  COLLECTION_STRATEGY,
   formatMarginPct,
   type CollectionColumnKey,
 } from '@luke/core';
@@ -52,6 +51,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
+import { useCatalog } from '../../../../../hooks/useCatalog';
+import { isRowCatalogField, ROW_CATALOG_TYPE } from '../../../../../lib/catalogOptions';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 import {
@@ -60,7 +61,6 @@ import {
   computeWeightedMargin,
   resolveVendorName,
 } from '../../_shared/pricingCalc';
-import { useAllCatalogOptions } from '../_hooks/useCatalogOptions';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
@@ -325,8 +325,6 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
-
 const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
   { key: 'styleNotes',    label: 'Stile' },
   { key: 'materialNotes', label: 'Materiale' },
@@ -335,7 +333,6 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
 ];
 
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
-const [STRATEGY_CORE, STRATEGY_INNOVATION] = COLLECTION_STRATEGY;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -407,11 +404,7 @@ export function CollectionGroupSection({
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
 
   const { phaseById } = usePhaseCatalog();
-  const categoryOptions = useAllCatalogOptions('productCategory');
-  const strategyOptions = useAllCatalogOptions('strategy');
-  const lineStatusOptions = useAllCatalogOptions('lineStatus');
-  const styleStatusOptions = useAllCatalogOptions('styleStatus');
-  const positioningOptions = useAllCatalogOptions('pricePositioning');
+  const { all: catalogItems, label: catalogLabel } = useCatalog();
   const { rank: seasonRank, phaseOptions } = useSeasonPhaseOrder(group.collectionLayoutId);
 
   // Single batched fetch for the whole group's layout, instead of one query per row.
@@ -565,6 +558,11 @@ export function CollectionGroupSection({
           // In season order (#159); a row with no phase first, as before.
           va = a.phaseId ? seasonRank(a.phaseId) : -1;
           vb = b.phaseId ? seasonRank(b.phaseId) : -1;
+        } else if (isRowCatalogField(sortCol)) {
+          // By the label shown, not the stored value (#245).
+          const type = ROW_CATALOG_TYPE[sortCol];
+          va = a[sortCol] ? catalogLabel(type, a[sortCol]) : '';
+          vb = b[sortCol] ? catalogLabel(type, b[sortCol]) : '';
         } else {
           va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
           vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
@@ -577,7 +575,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, seasonRank, isDndMode]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, seasonRank, isDndMode, catalogLabel]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
@@ -728,16 +726,16 @@ export function CollectionGroupSection({
                     <FilterableHeader col="supplier" label="Fornitore" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.supplier} className="w-36" />
                   )}
                   {show('productCategory') && (
-                    <FilterableHeader col="productCategory" label="Categoria" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.productCategory} options={categoryOptions} />
+                    <FilterableHeader col="productCategory" label="Categoria" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.productCategory} options={catalogItems('productCategory')} />
                   )}
                   {show('strategy') && (
-                    <FilterableHeader col="strategy" label="Strategy" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.strategy} options={strategyOptions} allowNone />
+                    <FilterableHeader col="strategy" label="Strategy" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.strategy} options={catalogItems('strategy')} allowNone />
                   )}
                   {show('status') && (
-                    <FilterableHeader col="status" label="Status" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.status} options={lineStatusOptions} />
+                    <FilterableHeader col="status" label="Status" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.status} options={catalogItems('lineStatus')} />
                   )}
                   {show('styleStatus') && (
-                    <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={styleStatusOptions} allowNone />
+                    <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={catalogItems('styleStatus')} allowNone />
                   )}
                   {show('progress') && (
                     <FilterableHeader col="progress" label="Fase" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={phaseOptions} allowNone />
@@ -746,7 +744,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="designer" label="Designer" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.designer} />
                   )}
                   {show('pricePositioning') && (
-                    <FilterableHeader col="pricePositioning" label="Posizionamento" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.pricePositioning} options={positioningOptions} allowNone />
+                    <FilterableHeader col="pricePositioning" label="Posizionamento" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.pricePositioning} options={catalogItems('pricePositioning')} allowNone />
                   )}
 
                   <FilterableHeader col="skuForecast" label="SKU" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.skuForecast} className="text-right" />
@@ -832,16 +830,13 @@ export function CollectionGroupSection({
                         </TableCell>
                       )}
                       {show('productCategory') && (
-                        <TableCell className="text-sm text-muted-foreground">{row.productCategory}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{catalogLabel('productCategory', row.productCategory)}</TableCell>
                       )}
                       {show('strategy') && (
                         <TableCell>
                           {row.strategy && (
-                            <Badge
-                              variant={row.strategy === STRATEGY_INNOVATION ? 'default' : 'secondary'}
-                              className="text-xs"
-                            >
-                              {row.strategy === STRATEGY_INNOVATION ? 'INNOV.' : STRATEGY_CORE}
+                            <Badge variant="outline" className="text-xs">
+                              {catalogLabel('strategy', row.strategy)}
                             </Badge>
                           )}
                         </TableCell>
@@ -849,7 +844,7 @@ export function CollectionGroupSection({
                       {show('status') && (
                         <TableCell>
                           <Badge variant="outline" className="text-xs">
-                            {STATUS_LABELS[row.status] ?? row.status}
+                            {catalogLabel('lineStatus', row.status)}
                           </Badge>
                         </TableCell>
                       )}
@@ -857,7 +852,7 @@ export function CollectionGroupSection({
                         <TableCell>
                           {row.styleStatus && (
                             <Badge variant="outline" className="text-xs">
-                              {STATUS_LABELS[row.styleStatus] ?? row.styleStatus}
+                              {catalogLabel('styleStatus', row.styleStatus)}
                             </Badge>
                           )}
                         </TableCell>
@@ -888,7 +883,7 @@ export function CollectionGroupSection({
                       {show('pricePositioning') && (
                         <TableCell>
                           {row.pricePositioning && (
-                            <Badge variant="outline" className="text-xs">{row.pricePositioning}</Badge>
+                            <Badge variant="outline" className="text-xs">{catalogLabel('pricePositioning', row.pricePositioning)}</Badge>
                           )}
                         </TableCell>
                       )}

@@ -5,6 +5,7 @@
  * - large source photos are downscaled before being embedded
  * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid XLSX buffer
+ * - catalog-backed cells print the item's label (#245)
  */
 
 import { randomBytes } from 'node:crypto';
@@ -25,7 +26,16 @@ vi.mock('../asset.service', () => ({
   readAssetBuffer: vi.fn(),
 }));
 
+// Catalog labels (#245): a category and a line status renamed; the strategy `CORE` has no item.
+const CATALOG = [
+  { type: 'productCategory', value: 'BOOT', label: 'Stivale' },
+  { type: 'lineStatus', value: 'NEW', label: 'Nuovo' },
+];
+
 const mockPrisma = {
+  collectionCatalogItem: {
+    findMany: vi.fn().mockResolvedValue(CATALOG),
+  },
   phase: {
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -138,6 +148,19 @@ describe('buildCollectionLayoutXlsx', () => {
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.length).toBeLessThan(undecodable.length);
+  });
+
+  it("prints a catalog value as its item's label, and a value no item has as itself", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const row = { ...makeRow('row-1', null), productCategory: 'BOOT', status: 'NEW', strategy: 'CORE' };
+
+    const buffer = await buildCollectionLayoutXlsx(makeLayout([row]), mockPrisma);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer); // exceljs types `load` with ArrayBuffer; it reads a Buffer
+    const values = workbook.worksheets[0].getSheetValues().flat();
+    expect(values).toEqual(expect.arrayContaining(['Stivale', 'Nuovo', 'CORE']));
+    expect(values).not.toContain('BOOT');
   });
 
   it('produces a valid non-empty XLSX buffer (smoke test)', async () => {

@@ -5,6 +5,7 @@
  * - large source photos are downscaled before being embedded
  * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid PDF buffer
+ * - catalog-backed cells print the item's label (#245)
  */
 
 import { randomBytes } from 'node:crypto';
@@ -29,7 +30,16 @@ vi.mock('../asset.service', () => ({
   resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
+// Catalog labels (#245): a category and a line status renamed; the strategy `CORE` has no item.
+const CATALOG = [
+  { type: 'productCategory', value: 'BOOT', label: 'Stivale' },
+  { type: 'lineStatus', value: 'NEW', label: 'Nuovo' },
+];
+
 const mockPrisma = {
+  collectionCatalogItem: {
+    findMany: vi.fn().mockResolvedValue(CATALOG),
+  },
   phase: {
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -157,6 +167,19 @@ describe('buildCollectionLayoutPdf', () => {
 
     expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 30/06/2026, 16:30 (America/Los_Angeles)');
     header.mockRestore();
+  });
+
+  it("prints a catalog value as its item's label, and a value no item has as itself", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const create = vi.spyOn(pdf, 'createPdfBuffer');
+    const row = { ...makeRow('row-1', null), productCategory: 'BOOT', status: 'NEW', strategy: 'CORE' };
+
+    await buildCollectionLayoutPdf(makeLayout([row]), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
+
+    const doc = JSON.stringify(create.mock.calls[0][0]);
+    for (const text of ['Stivale', 'Nuovo', 'CORE']) expect(doc).toContain(`"text":"${text}"`);
+    expect(doc).not.toContain('"BOOT"');
+    create.mockRestore();
   });
 
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {

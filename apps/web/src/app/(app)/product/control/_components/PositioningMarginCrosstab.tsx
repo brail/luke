@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../../../components/ui/card';
-import { trpc } from '../../../../../lib/trpc';
+import { useCatalog } from '../../../../../hooks/useCatalog';
 import {
   MARGIN_STATUS_TEXT_CLASS,
   UNASSIGNED_POSITIONING_KEY,
@@ -26,10 +26,7 @@ import type { CollectionStatsCardProps, CollectionStatsRow } from './CollectionS
  * mismatches (e.g. "LUXURY" rows with a margin below target, coloured red).
  */
 export function PositioningMarginCrosstab({ rows, parameterSets }: CollectionStatsCardProps) {
-  const { data: positioningCatalog = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'pricePositioning' },
-    { staleTime: 5 * 60 * 1000 }
-  );
+  const { order, label } = useCatalog();
   const referenceOptimalMargin = getReferenceOptimalMargin(parameterSets);
 
   const data = useMemo(() => {
@@ -41,26 +38,24 @@ export function PositioningMarginCrosstab({ rows, parameterSets }: CollectionSta
       groups.set(key, arr);
     }
 
+    // Every positioning a row holds, inactive or with no item at all, so no row is dropped (#245).
     const orderedKeys = [
-      ...positioningCatalog.map(o => o.value).filter(v => groups.has(v)),
+      ...order('pricePositioning', [...groups.keys()].filter(k => k !== UNASSIGNED_POSITIONING_KEY)),
       ...(groups.has(UNASSIGNED_POSITIONING_KEY) ? [UNASSIGNED_POSITIONING_KEY] : []),
     ];
 
     return orderedKeys.map(key => {
       const groupRows = groups.get(key)!;
       const margin = computeWeightedMargin(groupRows, parameterSets);
-      const label = key === UNASSIGNED_POSITIONING_KEY
-        ? 'Non assegnato'
-        : (positioningCatalog.find(o => o.value === key)?.label ?? key);
       return {
         key,
-        label,
+        label: key === UNASSIGNED_POSITIONING_KEY ? 'Non assegnato' : label('pricePositioning', key),
         count: groupRows.length,
         margin,
         marginStatus: margin !== null ? classifyMargin(margin * 100, referenceOptimalMargin) : null,
       };
     });
-  }, [rows, parameterSets, positioningCatalog, referenceOptimalMargin]);
+  }, [rows, parameterSets, order, label, referenceOptimalMargin]);
 
   return (
     <Card>

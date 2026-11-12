@@ -29,16 +29,22 @@ vi.mock('../../_hooks/useControlLayout', () => ({
 }));
 
 vi.mock('../../../../../../lib/trpc', () => {
-  const catalogs: Record<string, { value: string; label: string }[]> = {
-    strategy: [{ value: 'CORE', label: 'Core' }, { value: 'INNOVATION', label: 'Innovation' }],
-    pricePositioning: [{ value: 'ENTRY', label: 'Entry' }, { value: 'MID', label: 'Mid' }, { value: 'PREMIUM', label: 'Premium' }],
-  };
+  // The whole catalog in one read, inactive items included (#245): a retired strategy keeps its label.
+  const item = (type: string, value: string, label: string, isActive = true) => ({ type, value, label, isActive });
+  const catalog = [
+    item('productCategory', 'RUN', 'Running'),
+    item('strategy', 'CORE', 'Core'),
+    item('strategy', 'INNOVATION', 'Innovation', false),
+    item('pricePositioning', 'ENTRY', 'Entry'),
+    item('pricePositioning', 'MID', 'Mid'),
+    item('pricePositioning', 'PREMIUM', 'Premium'),
+  ];
   return {
     trpc: {
       collectionCatalog: {
         listAll: {
-          useQuery: ({ type }: { type: string }) =>
-            (h.catalogPending ? { data: undefined, isPending: true } : { data: catalogs[type], isPending: false }),
+          useQuery: () =>
+            (h.catalogPending ? { data: undefined, isPending: true, isError: false } : { data: catalog, isPending: false, isError: false }),
         },
       },
     },
@@ -50,7 +56,8 @@ h.rows = [
   row('WOMAN', 'Cupsole', 'CORE', 'ENTRY', 1900, 10, 170),
   row('WOMAN', 'Cupsole', 'CORE', 'MID', 2100, 10, 230),
   row('WOMAN', 'Cupsole', 'CORE', 'PREMIUM', 700, 7, 200),
-  row('MAN', 'Running', 'CORE', 'MID', 12000, 15, 200),
+  // A category under its catalog label.
+  row('MAN', 'RUN', 'CORE', 'MID', 12000, 15, 200),
   row('MAN', 'Ciabatta', 'CORE', 'ENTRY', 700, 5, 200),
   row('MAN', 'Ciabatta', 'INNOVATION', 'ENTRY', 690, 5, 200),
   row('MAN', 'Mocassino', 'CORE', 'PREMIUM', 800, 6, 0),

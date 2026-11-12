@@ -16,9 +16,11 @@ import {
 } from 'recharts';
 
 import { ChartContainer, ChartTooltip, type ChartConfig } from '../../../../../components/ui/chart';
+import { useCatalog } from '../../../../../hooks/useCatalog';
 import { formatMoqCoverageRatio, MOQ_COVERAGE_THRESHOLD, type MoqCluster } from '../../../../../lib/moqCoverage';
 import { cn } from '../../../../../lib/utils';
 
+import type { Catalog } from '../../../../../lib/catalogOptions';
 import type { TooltipProps } from 'recharts';
 
 export const MOQ_STATUS_LABEL = { below: 'Critico', covered: 'Non critico' } as const;
@@ -37,7 +39,8 @@ const RATIO_TICKS = [0.1, 0.25, 0.5, 0.7, 1, 1.5, 2, 3, 5, 10, 20];
 const formatRatio = (ratio: number) => ratio.toLocaleString('it-IT', { maximumFractionDigits: 2 });
 export const formatInteger = (value: number) => value.toLocaleString('it-IT');
 
-const clusterLabel = (c: MoqCluster) => [c.gender, c.category, c.pricePositioning, c.strategy].join(' · ');
+const clusterLabel = (c: MoqCluster, label: Catalog['label']) =>
+  [c.gender, label('productCategory', c.category), label('pricePositioning', c.pricePositioning), label('strategy', c.strategy)].join(' · ');
 
 export type PlottedCluster = MoqCluster & { ratio: number };
 
@@ -47,13 +50,15 @@ export const plottable = (clusters: MoqCluster[]) => clusters.filter((c): c is P
 /** Signed distance from the threshold on a log scale, negative below it. */
 const thresholdOffset = (c: PlottedCluster) => Math.log(c.ratio / MOQ_COVERAGE_THRESHOLD);
 
+// Passed as an element, not a function, so recharts renders it as a component and the hook is legal.
 function ClusterTooltip({ active, payload }: TooltipProps<number, string>) {
+  const { label } = useCatalog();
   // recharts types the hovered datum as `any`; every series in this file plots MoqCluster objects.
   const cluster = payload?.[0]?.payload as MoqCluster | undefined;
   if (!active || !cluster) return null;
   return (
     <div className="space-y-0.5 rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <p className="font-medium">{clusterLabel(cluster)}</p>
+      <p className="font-medium">{clusterLabel(cluster, label)}</p>
       <p className="text-muted-foreground">
         SKU {formatInteger(cluster.sku)} · A {formatInteger(cluster.forecastPairs)} paia · B{' '}
         {formatInteger(cluster.minimumPairs)} paia
@@ -114,7 +119,7 @@ export function ClusterBubbleChart({ points }: { points: PlottedCluster[] }) {
         />
         <ZAxis type="number" dataKey="forecastPairs" range={[60, 900]} />
         <ReferenceLine y={MOQ_COVERAGE_THRESHOLD} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
-        <ChartTooltip cursor={false} content={ClusterTooltip} />
+        <ChartTooltip cursor={false} content={<ClusterTooltip />} />
         <Scatter data={covered} fill="var(--color-covered)" fillOpacity={0.7} stroke="hsl(var(--background))" strokeWidth={2} />
         <Scatter data={below} fill="var(--color-below)" fillOpacity={0.85} stroke="hsl(var(--background))" strokeWidth={2} />
       </ScatterChart>
@@ -124,6 +129,7 @@ export function ClusterBubbleChart({ points }: { points: PlottedCluster[] }) {
 
 /** One bar per cluster in table order, diverging from the threshold on a log scale. */
 export function ClusterDivergingBars({ points }: { points: PlottedCluster[] }) {
+  const { label } = useCatalog();
   const { extent, ticks } = useMemo(() => {
     // Symmetric around the threshold, at least ×2 either way so clusters close to it still read.
     const max = Math.max(Math.log(2), ...points.map(c => Math.abs(thresholdOffset(c)))) * 1.1;
@@ -149,13 +155,13 @@ export function ClusterDivergingBars({ points }: { points: PlottedCluster[] }) {
         />
         <YAxis
           type="category"
-          dataKey={clusterLabel}
+          dataKey={(c: MoqCluster) => clusterLabel(c, label)}
           width={200}
           {...AXIS_STYLE}
           tickFormatter={(value: string) => (value.length > 32 ? `${value.slice(0, 31)}…` : value)}
         />
         <ReferenceLine x={0} stroke="hsl(var(--muted-foreground))" />
-        <ChartTooltip cursor={false} content={ClusterTooltip} />
+        <ChartTooltip cursor={false} content={<ClusterTooltip />} />
         <Bar dataKey={thresholdOffset}>
           {points.map(c => (
             <Cell key={c.key} fill={c.belowMoq ? 'var(--color-below)' : 'var(--color-covered)'} />
@@ -169,6 +175,7 @@ export function ClusterDivergingBars({ points }: { points: PlottedCluster[] }) {
 
 /** Rows = category, columns = gender · positioning · strategy combinations present. */
 export function ClusterHeatmap({ clusters }: { clusters: MoqCluster[] }) {
+  const { label } = useCatalog();
   const { columns, rows, cells } = useMemo(() => {
     const columnsByKey = new Map<string, MoqCluster>();
     const rowsByKey = new Map<string, string>();
@@ -177,7 +184,7 @@ export function ClusterHeatmap({ clusters }: { clusters: MoqCluster[] }) {
       const columnKey = JSON.stringify([c.gender, c.pricePositioning, c.strategy]);
       const rowKey = c.category.toLowerCase();
       if (!columnsByKey.has(columnKey)) columnsByKey.set(columnKey, c);
-      if (!rowsByKey.has(rowKey)) rowsByKey.set(rowKey, c.category);
+      if (!rowsByKey.has(rowKey)) rowsByKey.set(rowKey, label('productCategory', c.category));
       cellsByKey.set(JSON.stringify([rowKey, columnKey]), c);
     }
     return {
@@ -185,7 +192,7 @@ export function ClusterHeatmap({ clusters }: { clusters: MoqCluster[] }) {
       rows: [...rowsByKey].sort(([, a], [, b]) => a.localeCompare(b)),
       cells: cellsByKey,
     };
-  }, [clusters]);
+  }, [clusters, label]);
 
   return (
     <div className="overflow-x-auto">
@@ -196,8 +203,8 @@ export function ClusterHeatmap({ clusters }: { clusters: MoqCluster[] }) {
             {columns.map(([key, c]) => (
               <th key={key} className="px-2 py-2 text-center text-xs font-medium">
                 <div>{c.gender}</div>
-                <div className="text-muted-foreground">{c.pricePositioning}</div>
-                <div className="text-muted-foreground">{c.strategy}</div>
+                <div className="text-muted-foreground">{label('pricePositioning', c.pricePositioning)}</div>
+                <div className="text-muted-foreground">{label('strategy', c.strategy)}</div>
               </th>
             ))}
           </tr>

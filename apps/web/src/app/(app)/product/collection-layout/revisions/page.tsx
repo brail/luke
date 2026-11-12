@@ -7,6 +7,7 @@ import { PageHeader } from '../../../../../components/PageHeader';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Card, CardContent } from '../../../../../components/ui/card';
+import { useCatalog } from '../../../../../hooks/useCatalog';
 import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
@@ -16,6 +17,7 @@ export default function CollectionLayoutRevisionsPage() {
   const router = useRouter();
   const fmt = useFormatDate();
   const { can } = usePermission();
+  const { label } = useCatalog();
   const canViewRevisions = can('collection_layout:view_revisions');
 
   const layoutId = searchParams.get('layoutId') ?? '';
@@ -67,7 +69,7 @@ export default function CollectionLayoutRevisionsPage() {
                       <span className="font-mono text-lg font-bold">rev{rev.revisionNumber}</span>
                     </div>
                     <div>
-                      <div className="font-medium">{rev.revisionTypeValue}</div>
+                      <div className="font-medium">{label('revisionType', rev.revisionTypeValue)}</div>
                       <div className="text-sm text-muted-foreground">
                         {fmt.dateTime(rev.createdAt)} · {rev.createdBy.firstName} {rev.createdBy.lastName} · {rev.rowCount} righe
                       </div>

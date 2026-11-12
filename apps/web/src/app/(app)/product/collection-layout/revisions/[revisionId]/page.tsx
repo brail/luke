@@ -12,6 +12,7 @@ import { Badge } from '../../../../../../components/ui/badge';
 import { Button } from '../../../../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../../../components/ui/card';
 import { useAppContext } from '../../../../../../contexts/AppContextProvider';
+import { useCatalog } from '../../../../../../hooks/useCatalog';
 import { useFormatDate } from '../../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../../hooks/usePermission';
 import { triggerDownload } from '../../../../../../lib/download';
@@ -92,6 +93,7 @@ export default function RevisionDetailPage() {
   const router = useRouter();
   const fmt = useFormatDate();
   const { can } = usePermission();
+  const { label } = useCatalog();
   const { brand, season } = useAppContext();
   const canViewRevisions = can('collection_layout:view_revisions');
 
@@ -141,7 +143,7 @@ export default function RevisionDetailPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title={`rev${meta.revisionNumber} — ${meta.revisionTypeValue}`}
+        title={`rev${meta.revisionNumber} — ${label('revisionType', meta.revisionTypeValue)}`}
         description="Snapshot immutabile del Collection Layout"
         actions={
           <Button variant="outline" size="sm" onClick={() => router.back()}>
@@ -163,7 +165,7 @@ export default function RevisionDetailPage() {
           <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="space-y-1">
               <dt className="text-xs text-muted-foreground flex items-center gap-1"><Tag className="h-3 w-3" /> Tipo</dt>
-              <dd className="text-sm font-medium">{meta.revisionTypeValue}</dd>
+              <dd className="text-sm font-medium">{label('revisionType', meta.revisionTypeValue)}</dd>
             </div>
             <div className="space-y-1">
               <dt className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> Data</dt>

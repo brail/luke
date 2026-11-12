@@ -38,10 +38,10 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
-import { type CatalogOption, withHeldOption } from '../../../../../lib/catalogOptions';
+import { useCatalog } from '../../../../../hooks/useCatalog';
+import { ROW_CATALOG_TYPE, type RowCatalogField, withHeldOption } from '../../../../../lib/catalogOptions';
 import { cn } from '../../../../../lib/utils';
 import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
-import { useCatalogOptions } from '../_hooks/useCatalogOptions';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
@@ -148,12 +148,12 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
 
 // ─── Field: Catalog select ────────────────────────────────────────────────────
 
+const EMPTY_CATALOG_MESSAGE = 'Nessuna voce: un amministratore le aggiunge in Configurazione Collection Layout';
+
 interface CatalogSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
-  name: 'status' | 'styleStatus' | 'strategy' | 'pricePositioning' | 'productCategory';
+  name: RowCatalogField;
   label: string;
-  /** The active items; `undefined` while they load. */
-  options: CatalogOption[] | undefined;
   canUpdate: boolean;
   /** When false the field is required (no empty sentinel). Defaults to nullable. */
   nullable?: boolean;
@@ -162,10 +162,13 @@ interface CatalogSelectFieldProps {
 /**
  * FormField wrapper for a collection-catalog Select. Nullable fields use the `_none`
  * sentinel (Radix Select can't represent an empty value) mapped to/from `null`;
- * required fields (`nullable={false}`) bind the value directly. `options` are the active items;
- * `withHeldOption` adds a deactivated item the row still holds.
+ * required fields (`nullable={false}`) bind the value directly. It offers the active items of the
+ * field's catalog type; `withHeldOption` adds a deactivated item the row still holds. A loaded type
+ * with no active item says so (#245): only an administrator can add one.
  */
-function CatalogSelectField({ control, name, label, options, canUpdate, nullable = true }: CatalogSelectFieldProps) {
+function CatalogSelectField({ control, name, label, canUpdate, nullable = true }: CatalogSelectFieldProps) {
+  const catalog = useCatalog();
+  const type = ROW_CATALOG_TYPE[name];
   return (
     <FormField
       control={control}
@@ -184,7 +187,10 @@ function CatalogSelectField({ control, name, label, options, canUpdate, nullable
             </FormControl>
             <SelectContent>
               {nullable && <SelectItem value="_none">—</SelectItem>}
-              {withHeldOption(options, field.value).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              {withHeldOption(catalog, type, field.value).map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              {catalog.options(type)?.length === 0 && (
+                <SelectItem value="_empty" disabled>{EMPTY_CATALOG_MESSAGE}</SelectItem>
+              )}
             </SelectContent>
           </Select>
           <FormMessage />
@@ -207,7 +213,7 @@ interface IdentificationSectionProps {
  * Form section for the core identity fields of a collection row:
  * group, gender, category, line, article, status, designer, strategy, and
  * price positioning. Planning group and phase live in `PlanningSection`.
- * Catalog options (strategy, lineStatus, styleStatus) are fetched from tRPC.
+ * Each catalog field reads its own catalog type through `useCatalog`.
  */
 export function IdentificationSection({
   control,
@@ -215,12 +221,6 @@ export function IdentificationSection({
   availableGenders,
   groups,
 }: IdentificationSectionProps) {
-  const strategyOptions = useCatalogOptions('strategy');
-  const lineStatusOptions = useCatalogOptions('lineStatus');
-  const styleStatusOptions = useCatalogOptions('styleStatus');
-  const pricePositioningOptions = useCatalogOptions('pricePositioning');
-  const productCategoryOptions = useCatalogOptions('productCategory');
-
   return (
     <div className="space-y-4">
       <SectionHeader title="Identificazione" />
@@ -263,7 +263,6 @@ export function IdentificationSection({
           control={control}
           name="productCategory"
           label="Categoria *"
-          options={productCategoryOptions}
           canUpdate={canUpdate}
           nullable={false}
         />
@@ -312,7 +311,6 @@ export function IdentificationSection({
           control={control}
           name="status"
           label="Line Status *"
-          options={lineStatusOptions}
           canUpdate={canUpdate}
           nullable={false}
         />
@@ -321,7 +319,6 @@ export function IdentificationSection({
           control={control}
           name="styleStatus"
           label="Style Status"
-          options={styleStatusOptions}
           canUpdate={canUpdate}
         />
       </div>
@@ -352,7 +349,6 @@ export function IdentificationSection({
           control={control}
           name="strategy"
           label="Strategy"
-          options={strategyOptions}
           canUpdate={canUpdate}
         />
       </div>
@@ -363,7 +359,6 @@ export function IdentificationSection({
           control={control}
           name="pricePositioning"
           label="Posizionamento Prezzo"
-          options={pricePositioningOptions}
           canUpdate={canUpdate}
         />
       </div>

@@ -20,7 +20,7 @@ import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
 
 import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
-import { buildProgressLabelMap } from './collectionLayout.service';
+import { buildCatalogLabelMap, buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
@@ -262,8 +262,9 @@ export async function buildCollectionLayoutPdf(
   const uniqueRowKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToDataUriMap = new Map<string, string | null>();
   const limit = imageFetchLimiter();
-  const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
+  const [progressLabelMap, catalogLabel, brandLogoDataUri, company] = await Promise.all([
     buildProgressLabelMap(prisma),
+    buildCatalogLabelMap(prisma),
     resolveLogoDataUri(prisma, layout.brand.logoKey, logger),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
@@ -334,9 +335,9 @@ export async function buildCollectionLayoutPdf(
           { text: row.line ?? '',            fontSize: 7, margin: CELL_MARGIN },
           { text: row.gender ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: vendorLabel,                fontSize: 7, margin: CELL_MARGIN },
-          { text: row.productCategory ?? '',  fontSize: 7, margin: CELL_MARGIN },
-          { text: row.strategy ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
-          { text: row.status ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
+          { text: catalogLabel('productCategory', row.productCategory) ?? '',  fontSize: 7, margin: CELL_MARGIN },
+          { text: catalogLabel('strategy', row.strategy) ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
+          { text: catalogLabel('lineStatus', row.status) ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '') : '', fontSize: 7, margin: CELL_MARGIN },
           { text: String(row.skuForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           { text: String(row.qtyForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },

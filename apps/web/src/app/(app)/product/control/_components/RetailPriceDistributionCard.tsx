@@ -18,7 +18,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '../../../../../components/ui/chart';
-import { trpc } from '../../../../../lib/trpc';
+import { useCatalog } from '../../../../../hooks/useCatalog';
 import { UNASSIGNED_POSITIONING_KEY, computeRowRetailPrice } from '../../_shared/pricingCalc';
 
 import type { CollectionStatsCardProps, CollectionStatsRow } from './CollectionStatistics';
@@ -70,10 +70,7 @@ function slugify(value: string): string {
  * to any brand/currency.
  */
 export function RetailPriceDistributionCard({ rows, parameterSets }: CollectionStatsCardProps) {
-  const { data: positioningCatalog = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'pricePositioning' },
-    { staleTime: 5 * 60 * 1000 }
-  );
+  const { all, order, label } = useCatalog();
 
   const { chartData, chartConfig, missingCount, mixedCurrencyCount, currency } = useMemo(() => {
     const computed = rows.map(row => ({ row, retail: computeRowRetailPrice(row, parameterSets) }));
@@ -94,8 +91,12 @@ export function RetailPriceDistributionCard({ rows, parameterSets }: CollectionS
     const config: ChartConfig = {
       [UNASSIGNED_POSITIONING_KEY]: { label: 'Non assegnato', color: 'hsl(var(--muted-foreground))' },
     };
-    positioningCatalog.forEach((opt, i) => {
-      config[slugify(opt.value)] = { label: opt.label, color: CHART_SLOT_COLORS[i % CHART_SLOT_COLORS.length] };
+    // Every positioning a row holds, inactive or with no item at all, so no row is dropped (#245). The
+    // colour follows the catalog position, so a positioning keeps it across layouts; values no item has follow.
+    const catalogValues = all('pricePositioning').map(i => i.value);
+    order('pricePositioning', rows.flatMap(r => (r.pricePositioning ? [r.pricePositioning] : []))).forEach((value, i) => {
+      const slot = catalogValues.includes(value) ? catalogValues.indexOf(value) : catalogValues.length + i;
+      config[slugify(value)] = { label: label('pricePositioning', value), color: CHART_SLOT_COLORS[slot % CHART_SLOT_COLORS.length] };
     });
 
     if (inCurrency.length === 0) {
@@ -122,7 +123,7 @@ export function RetailPriceDistributionCard({ rows, parameterSets }: CollectionS
     }
 
     return { chartData: bins, chartConfig: config, missingCount: missing, mixedCurrencyCount: mixed, currency: dominant };
-  }, [rows, parameterSets, positioningCatalog]);
+  }, [rows, parameterSets, all, order, label]);
 
   const stackKeys = Object.keys(chartConfig);
 

@@ -9,6 +9,7 @@ import { Badge } from '../../../../components/ui/badge';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { useCatalog } from '../../../../hooks/useCatalog';
 import { bandBadgeStyle } from '../../../../lib/alertBandStyle';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
@@ -115,7 +116,14 @@ function SaturationTab() {
 
   const brandsById = useMemo(() => new Map(allBrands.map(b => [b.id, b])), [allBrands]);
   const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
-  const categories = useMemo(() => Array.from(new Set(cells.map(c => c.productCategory))).sort(), [cells]);
+  const { label } = useCatalog();
+  // Columns by the category's label, keyed by its value (#245).
+  const categories = useMemo(
+    () => Array.from(new Set(cells.map(c => c.productCategory)))
+      .map(value => ({ value, label: label('productCategory', value) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [cells, label],
+  );
   const brandRows = useMemo(() => Array.from(new Set(cells.map(c => c.brandId))), [cells]);
 
   const cellsByKey = useMemo(() => {
@@ -179,7 +187,7 @@ function SaturationTab() {
                 <tr className="border-b bg-muted/50">
                   <th className="px-3 py-2 text-left font-medium">Brand</th>
                   {categories.map(cat => (
-                    <th key={cat} className="px-3 py-2 text-left font-medium">{cat}</th>
+                    <th key={cat.value} className="px-3 py-2 text-left font-medium">{cat.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -188,9 +196,9 @@ function SaturationTab() {
                   <tr key={brandId} className="border-b last:border-0">
                     <td className="px-3 py-2 font-medium">{brandsById.get(brandId)?.name ?? brandId}</td>
                     {categories.map(cat => {
-                      const cellData = cellsByKey.get(`${brandId}::${cat}`) ?? [];
+                      const cellData = cellsByKey.get(`${brandId}::${cat.value}`) ?? [];
                       return (
-                        <td key={cat} className="px-3 py-2">
+                        <td key={cat.value} className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
                             {cellData.map(c => (
                               // Band color and emphasis come from AppConfig (admin-configured hex),

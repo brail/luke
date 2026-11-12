@@ -16,6 +16,7 @@ import {
   type CollectionLayoutSettings,
   type CollectionGroupInput,
   type CollectionLayoutRowInput,
+  type CollectionCatalogType,
 } from '@luke/core';
 import { Prisma } from '@luke/db';
 import type {
@@ -984,5 +985,21 @@ export async function buildProgressLabelMap(
     select: { id: true, label: true },
   });
   return new Map(items.map(p => [p.id, p.label]));
+}
+
+/**
+ * Builds the catalog label resolver the exports print through (#245): every item, inactive ones
+ * included, since a row may still hold a deactivated item. A value no item has (data written before
+ * the catalog, an automatic revision type) prints as itself; `null` stays `null`.
+ */
+export async function buildCatalogLabelMap(prisma: PrismaClient) {
+  const items = await prisma.collectionCatalogItem.findMany({
+    select: { type: true, value: true, label: true },
+  });
+  const labels = new Map<string, Map<string, string>>();
+  for (const i of items) labels.set(i.type, (labels.get(i.type) ?? new Map()).set(i.value, i.label));
+  // Generic so a non-null value types as `string`: `V | string` collapses to it.
+  return <V extends string | null>(type: CollectionCatalogType, value: V): V | string =>
+    value === null ? value : (labels.get(type)?.get(value) ?? value);
 }
 

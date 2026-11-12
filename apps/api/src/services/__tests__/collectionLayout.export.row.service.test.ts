@@ -1,10 +1,12 @@
 /**
  * Regression tests for the single-row PDF/XLSX export OOM hotfix (v2.0.0):
- * large source photos must be downscaled before being embedded.
+ * large source photos must be downscaled before being embedded. Catalog-backed fields print the
+ * item's label (#245).
  */
 
 import { randomBytes } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -24,7 +26,16 @@ vi.mock('../asset.service', () => ({
   resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
+// Catalog labels (#245): a category and a line status renamed; the strategy `CORE` has no item.
+const CATALOG = [
+  { type: 'productCategory', value: 'BOOT', label: 'Stivale' },
+  { type: 'lineStatus', value: 'NEW', label: 'Nuovo' },
+];
+
 const mockPrisma = {
+  collectionCatalogItem: {
+    findMany: vi.fn().mockResolvedValue(CATALOG),
+  },
   phase: {
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -63,13 +74,15 @@ function makeRow(pictureKey: string | null): CollectionRowForExport {
   } as unknown as CollectionRowForExport;
 }
 
-function makeCtx(pictureKey: string | null): RowExportContext {
+function makeCtx(pictureKey: string | null, row: Partial<CollectionRowForExport> = {}): RowExportContext {
   return {
     brand: { name: 'Brand', code: 'BR', logoKey: null },
     season: { name: 'Season', code: 'S1', year: 2026 },
-    row: makeRow(pictureKey),
+    row: { ...makeRow(pictureKey), ...row },
   };
 }
+
+const LABELLED = { productCategory: 'BOOT', status: 'NEW', strategy: 'CORE' };
 
 async function makeLargeJpeg(): Promise<Buffer> {
   return sharp(randomBytes(1500 * 1500 * 3), {
@@ -108,6 +121,18 @@ describe('buildCollectionRowPdf', () => {
     header.mockRestore();
   });
 
+  it("prints a catalog value as its item's label, and a value no item has as itself", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const create = vi.spyOn(pdf, 'createPdfBuffer');
+
+    await buildCollectionRowPdf(makeCtx(null, LABELLED), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
+
+    const doc = JSON.stringify(create.mock.calls[0][0]);
+    for (const text of ['Stivale', 'Nuovo', 'CORE']) expect(doc).toContain(`"${text}"`);
+    expect(doc).not.toContain('"BOOT"');
+    create.mockRestore();
+  });
+
   it('produces a valid non-empty PDF buffer when there is no photo (smoke test)', async () => {
     vi.mocked(readAssetBuffer).mockResolvedValue(null);
 
@@ -130,6 +155,18 @@ describe('buildCollectionRowXlsx', () => {
     const buffer = await buildCollectionRowXlsx(makeCtx('huge.jpg'), mockPrisma);
 
     expect(buffer.length).toBeLessThan(noise.length);
+  });
+
+  it("prints a catalog value as its item's label, and a value no item has as itself", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+
+    const buffer = await buildCollectionRowXlsx(makeCtx(null, LABELLED), mockPrisma);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer); // exceljs types `load` with ArrayBuffer; it reads a Buffer
+    const values = workbook.worksheets.flatMap(sheet => sheet.getSheetValues().flat());
+    expect(values).toEqual(expect.arrayContaining(['Stivale', 'Nuovo', 'CORE']));
+    expect(values).not.toContain('BOOT');
   });
 
   it('produces a valid non-empty XLSX buffer when there is no photo (smoke test)', async () => {
