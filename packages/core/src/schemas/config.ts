@@ -524,6 +524,39 @@ export function isUndeletableConfigKey(key: string): boolean {
 export const CONFIG_SECRET_PLACEHOLDER = '[ENCRYPTED]';
 
 /**
+ * Whether to store a value encrypted. Omitted means "keep the stored choice" (a new key is plaintext):
+ * no default here, or a write that does not mention it would decrypt a key an admin chose to encrypt.
+ * `storesEncrypted` still has the last word for secrets and plaintext-only keys.
+ */
+const ConfigEncryptSchema = z.boolean().optional();
+
+/** Input of `config.set` and `config.update`. */
+export const ConfigSetInputSchema = z.object({
+  key: z
+    .string()
+    .min(1, 'Chiave configurazione non può essere vuota')
+    .regex(CONFIG_ROUTER_KEY_REGEX, 'Formato chiave non valido'),
+  value: z.string(),
+  encrypt: ConfigEncryptSchema,
+  /** Overrides the category deduced from the key. */
+  category: z.string().optional(),
+});
+
+/**
+ * Input of `config.setMultiple`: each item is checked like a `config.set` key when it is saved. No
+ * caller needs more items than the registry declares keys.
+ */
+export const ConfigSetMultipleInputSchema = z.object({
+  configs: z.array(
+    z.object({
+      key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
+      value: z.string(),
+      encrypt: ConfigEncryptSchema,
+    })
+  ).max(Object.keys(AppConfigRegistry).length),
+});
+
+/**
  * One row of a config import: an item of `config.importJson` and a row of the file the config page
  * exports. `value: null` means "skip this key", which is how an export without values writes every row.
  */

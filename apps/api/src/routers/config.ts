@@ -8,14 +8,14 @@ import { z } from 'zod';
 
 import {
   AppConfigRegistry,
-  CONFIG_ROUTER_KEY_REGEX,
   CONFIG_ROUTER_PREFIXES,
   CONFIG_SECRET_PLACEHOLDER,
   ConfigImportItemSchema,
+  ConfigSetInputSchema,
+  ConfigSetMultipleInputSchema,
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
-  storesEncrypted,
   type AppConfigKey,
 } from '@luke/core';
 
@@ -86,19 +86,6 @@ function redact(value: string | null, max: number = 32): string | null {
   const v = String(value);
   return v.length > max ? v.slice(0, max) + '…' : v;
 }
-
-/**
- * Schema for setting a configuration
- */
-const SetConfigSchema = z.object({
-  key: z
-    .string()
-    .min(1, 'Chiave configurazione non può essere vuota')
-    .regex(CONFIG_ROUTER_KEY_REGEX, 'Formato chiave non valido'),
-  value: z.string(),
-  encrypt: z.boolean().optional().default(false),
-  category: z.string().optional(), // override categoria dedotta
-});
 
 /**
  * Schema for deleting a configuration
@@ -201,7 +188,7 @@ async function upsertConfig(
   ctx: Context,
   key: string,
   value: string,
-  encrypt: boolean,
+  encrypt: boolean | undefined,
   options: { strictUpdate?: boolean; source?: string } = {}
 ) {
   // Validates the key and narrows it to an AppConfigKey. The value is validated by `saveConfig`
@@ -217,29 +204,15 @@ async function upsertConfig(
     });
   }
 
-  // If strictUpdate=true, verifies that the configuration exists
-  if (options.strictUpdate) {
-    const existingConfig = await ctx.prisma.appConfig.findUnique({
-      where: { key },
-    });
-
-    if (!existingConfig) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Configurazione '${key}' non trovata. Usa 'set' per creare una nuova configurazione.`,
-      });
-    }
-  }
-
-  // A secret is stored encrypted, and a plaintext key in plaintext, whatever the client asked: the
-  // audit row and the response follow what is stored, so neither carries the value of a secret sent
-  // as plaintext nor claims an encryption that did not happen.
-  const encrypted = storesEncrypted(key, encrypt);
+  // The audit row and the response follow what was stored, not what the client asked: neither carries
+  // the value of a secret sent as plaintext nor claims an encryption that did not happen.
+  let encrypted: boolean;
   if (key === 'app.sections.disabled') {
     // Its audit row, with the whole list, is written in the save's own transaction.
-    await saveSectionsDisabled(ctx, value, { source: options.source });
+    encrypted = await saveSectionsDisabled(ctx, value, { source: options.source, mustExist: options.strictUpdate });
   } else {
-    await saveConfig(ctx.prisma, key, value, encrypt);
+    // `mustExist` is checked under the write lock: a concurrent delete cannot turn `update` into a create.
+    encrypted = await saveConfig(ctx.prisma, key, value, encrypt, { mustExist: options.strictUpdate });
     await logAudit(ctx, {
       action: 'CONFIG_UPSERT',
       targetType: 'Config',
@@ -363,13 +336,13 @@ export const configRouter = router({
    * Creates or updates a single AppConfig entry (upsert).
    *
    * @auth {config:update}
-   * @input {SetConfigSchema} — key (allowed prefix), value, optional encrypt flag, optional category override.
+   * @input {ConfigSetInputSchema} — key (allowed prefix), value, optional encrypt flag (omitted keeps the stored choice), optional category override.
    * @output {{ key, value (redacted if encrypted), isEncrypted, message }}
    */
   set: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .input(SetConfigSchema)
+    .input(ConfigSetInputSchema)
     .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await upsertConfig(ctx, input.key, input.value, input.encrypt);
@@ -426,13 +399,13 @@ export const configRouter = router({
    * Updates an existing AppConfig entry; fails with NOT_FOUND if the key doesn't exist.
    *
    * @auth {config:update}
-   * @input {SetConfigSchema} — key (must already exist), value, optional encrypt flag.
+   * @input {ConfigSetInputSchema} — key (must already exist), value, optional encrypt flag (omitted keeps the stored choice).
    * @output {{ key, value (redacted if encrypted), isEncrypted, message }}
    */
   update: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .input(SetConfigSchema)
+    .input(ConfigSetInputSchema)
     .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await upsertConfig(ctx, input.key, input.value, input.encrypt, {
@@ -471,40 +444,22 @@ export const configRouter = router({
   setMultiple: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .input(
-      z.object({
-        configs: z.array(
-          z.object({
-            key: z
-              .string()
-              .min(1, 'Chiave configurazione non può essere vuota'),
-            value: z.string(),
-            encrypt: z.boolean().optional().default(false),
-          })
-        ),
-      })
-    )
+    .input(ConfigSetMultipleInputSchema)
     .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
-      const results = await Promise.all(
-        input.configs.map(async config => {
-          try {
-            await upsertConfig(ctx, config.key, config.value, config.encrypt);
-
-            return {
-              key: config.key,
-              success: true,
-              message: `Configurazione '${config.key}' salvata con successo`,
-            };
-          } catch (error) {
-            return {
-              key: config.key,
-              success: false,
-              error: toErrorMessage(error),
-            };
-          }
-        })
-      );
+      // One at a time: each save takes the AppConfig write lock, so in parallel they would only hold
+      // pool connections while they queue.
+      const results: Array<
+        { key: string; success: true; message: string } | { key: string; success: false; error: string }
+      > = [];
+      for (const config of input.configs) {
+        try {
+          await upsertConfig(ctx, config.key, config.value, config.encrypt);
+          results.push({ key: config.key, success: true, message: `Configurazione '${config.key}' salvata con successo` });
+        } catch (error) {
+          results.push({ key: config.key, success: false, error: toErrorMessage(error) });
+        }
+      }
 
       return results;
     }),

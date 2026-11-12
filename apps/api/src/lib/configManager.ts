@@ -153,15 +153,20 @@ const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
 export async function saveSectionsDisabled(
   ctx: AuditContext & { prisma: PrismaClient },
   value: string,
-  options: { source?: string } = {}
-): Promise<void> {
+  options: { source?: string; mustExist?: boolean } = {}
+): Promise<boolean> {
   // A plaintext key (`PLAINTEXT_CONFIG_KEYS`): stored as it is, whatever a caller asks.
   const row = prepareConfigWrite({ key: 'app.sections.disabled', value });
   // Validated above; parsed again for the typed `Section[]`, without a cast.
   const disabled = parseConfigValue('app.sections.disabled', value);
   await ctx.prisma.$transaction(async tx => {
-    // Lock before reading, like every other writer of the last-admin invariant.
+    // Lock before reading, like every other writer of the last-admin invariant; the AppConfig write
+    // lock too, so `mustExist` still holds against a concurrent `deleteConfig` when this commits.
     await acquireLastAdminLock(tx);
+    await acquireAppConfigWriteLock(tx);
+    if (options.mustExist && !(await tx.appConfig.findUnique({ where: { key: 'app.sections.disabled' }, select: { key: true } }))) {
+      throw configNotFoundError('app.sections.disabled');
+    }
     const { sectionAccessDefaults, disabledSections: current } = await getRbacConfig(tx, {
       bypassCache: true,
     });
@@ -190,6 +195,7 @@ export async function saveSectionsDisabled(
     }, { tx });
   });
   invalidateRbacCache();
+  return row.encrypt;
 }
 
 /**
@@ -207,10 +213,13 @@ export async function saveSectionsDisabled(
  * @param prisma - Prisma client.
  * @param key - Configuration key declared in `AppConfigRegistry`.
  * @param value - Value to store, as the string form the registry schema parses.
- * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage. A key in
- *   `SECRET_CONFIG_KEYS` is encrypted, and one in `PLAINTEXT_CONFIG_KEYS` stored in plaintext,
- *   whatever this says (`storesEncrypted`).
- * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage; when
+ *   omitted, the stored choice is kept (a new key is plaintext). A key in `SECRET_CONFIG_KEYS` is
+ *   encrypted, and one in `PLAINTEXT_CONFIG_KEYS` stored in plaintext, whatever this says
+ *   (`storesEncrypted`).
+ * @param options.mustExist - Refuse with `NOT_FOUND`, under the write lock, when the key is not stored.
+ * @returns Whether the value was stored encrypted.
+ * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema; `NOT_FOUND` as above.
  *
  * @example
  * // Store plaintext value
@@ -225,9 +234,12 @@ export async function saveConfig(
   prisma: PrismaClient,
   key: BatchConfigKey,
   value: string,
-  encrypt: boolean = false
-): Promise<void> {
-  await saveConfigs(prisma, [{ key, value, encrypt }]);
+  encrypt?: boolean,
+  options: { mustExist?: boolean } = {}
+): Promise<boolean> {
+  const [isEncrypted] = await saveConfigs(prisma, [{ key, value, encrypt, mustExist: options.mustExist }]);
+  // One value write in, one decision out.
+  return isEncrypted!;
 }
 
 /**
@@ -236,64 +248,116 @@ export async function saveConfig(
  */
 export type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
 
-/** One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. */
+/**
+ * One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. An omitted
+ * `encrypt` keeps the stored choice; a key not stored yet is plaintext. `mustExist` refuses a key
+ * not stored at that point of the batch.
+ */
 export type ConfigWrite =
-  | { key: BatchConfigKey; value: string; encrypt?: boolean }
+  | { key: BatchConfigKey; value: string; encrypt?: boolean; mustExist?: boolean }
   | { key: BatchConfigKey; value: null };
 
-/** Validates a value against its registry schema, then encrypts it if `storesEncrypted`: the stored form. */
-export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
-  const validation = validateConfigValue(write.key, write.value);
+/** The refusal of an update to a key that is not stored. */
+function configNotFoundError(key: string): TRPCError {
+  return new TRPCError({
+    code: 'NOT_FOUND',
+    message: `Configurazione '${key}' non trovata. Usa 'set' per creare una nuova configurazione.`,
+  });
+}
+
+/** Throws `BAD_REQUEST` when `value` fails `key`'s registry schema. */
+function assertValidConfigValue(key: AppConfigKey, value: string): void {
+  const validation = validateConfigValue(key, value);
   if (!validation.success) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Valore non valido per '${write.key}': ${validation.message}`,
+      message: `Valore non valido per '${key}': ${validation.message}`,
     });
   }
+}
+
+/**
+ * Validates a value against its registry schema, then encrypts it if `storesEncrypted`: the stored
+ * form. `saveConfigs` passes the flag it resolved from the stored row, under its lock.
+ */
+export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
+  assertValidConfigValue(write.key, write.value);
   const encrypt = storesEncrypted(write.key, write.encrypt);
   return { key: write.key, value: encrypt ? encryptValue(write.value) : write.value, encrypt };
+}
+
+const APP_CONFIG_WRITE_LOCK_KEY = 'app-config-write';
+
+/**
+ * Keeps what a writer read from `app_configs` (the stored `encrypt` choice, whether a key exists) true
+ * until it commits. Advisory, because a row lock holds nothing for a key not stored yet; one for
+ * every key, because these writes are rare and short. Inside a `$transaction` only.
+ */
+async function acquireAppConfigWriteLock(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${APP_CONFIG_WRITE_LOCK_KEY}))`;
 }
 
 /**
  * Saves several keys as one change — a settings form, which must not be left half-written.
  *
- * Every value is validated against its registry schema, and encrypted as `storesEncrypted` decides
- * (when asked, always for `SECRET_CONFIG_KEYS`, never for `PLAINTEXT_CONFIG_KEYS`), before anything
- * is written; then all the writes run in one transaction,
- * in order: an upsert for a value, a `deleteMany` for `null` (removing an absent key is not an
- * error). Either every key changes or none does. What it guarantees is one atomic write, not a
- * consistent snapshot for a reader that issues several reads across the commit. The RBAC cache is
- * invalidated only after the commit.
+ * Every value is validated against its registry schema before anything is written; then all the
+ * writes run in one transaction, under the AppConfig write lock, in order: an upsert for a value, a
+ * `deleteMany` for `null` (removing an absent key is not an error). A value is encrypted as
+ * `storesEncrypted` decides — when asked, always for `SECRET_CONFIG_KEYS`, never for
+ * `PLAINTEXT_CONFIG_KEYS`, and, when `encrypt` is omitted, as the key is stored at that point of the
+ * batch (plaintext for a key not stored). Either every key changes or none does. What it guarantees
+ * is one atomic write, not a consistent snapshot for a reader that issues several reads across the
+ * commit. The RBAC cache is invalidated only after the commit.
  *
- * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema; nothing is written.
+ * @returns For each value write, in order, whether it was stored encrypted.
+ * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema, `NOT_FOUND` for a
+ *   `mustExist` write to a key not stored; either way nothing is written.
  */
 export async function saveConfigs(
   prisma: PrismaClient,
   writes: readonly ConfigWrite[]
-): Promise<void> {
+): Promise<boolean[]> {
   // Excluded by the key type too; refused here as well for a caller that reaches it through a cast.
   if (writes.some(write => (write.key as AppConfigKey) === 'app.sections.disabled')) {
     throw new Error('saveConfigs cannot write app.sections.disabled: use saveSectionsDisabled, which runs its guard');
   }
-  const rows = writes.map(write => (write.value === null ? write : prepareConfigWrite(write)));
+  // Every value first: a bad one opens no transaction and takes no lock.
+  for (const write of writes) {
+    if (write.value !== null) assertValidConfigValue(write.key, write.value);
+  }
 
-  await prisma.$transaction(async tx => {
-    for (const row of rows) {
-      if (row.value === null) {
-        await tx.appConfig.deleteMany({ where: { key: row.key } });
-      } else {
-        await tx.appConfig.upsert({
-          where: { key: row.key },
-          update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
-          create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
-        });
+  const results = await prisma.$transaction(async tx => {
+    await acquireAppConfigWriteLock(tx);
+    const stored = await tx.appConfig.findMany({
+      where: { key: { in: writes.map(write => write.key) } },
+      select: { key: true, isEncrypted: true },
+    });
+    // How each key is stored at this point of the batch: a key may appear more than once.
+    const storedEncrypted = new Map(stored.map(row => [row.key, row.isEncrypted]));
+    const saved: boolean[] = [];
+    for (const write of writes) {
+      if (write.value === null) {
+        await tx.appConfig.deleteMany({ where: { key: write.key } });
+        storedEncrypted.delete(write.key);
+        continue;
       }
+      if (write.mustExist && !storedEncrypted.has(write.key)) throw configNotFoundError(write.key);
+      const row = prepareConfigWrite({ ...write, encrypt: write.encrypt ?? storedEncrypted.get(write.key) });
+      await tx.appConfig.upsert({
+        where: { key: row.key },
+        update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
+        create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
+      });
+      storedEncrypted.set(row.key, row.encrypt);
+      saved.push(row.encrypt);
     }
+    return saved;
   });
 
-  if (rows.some(row => RBAC_CACHE_KEYS.test(row.key))) {
+  if (writes.some(write => RBAC_CACHE_KEYS.test(write.key))) {
     invalidateRbacCache();
   }
+  return results;
 }
 
 /**
@@ -665,6 +729,8 @@ export async function deleteConfig(
   key: string
 ): Promise<boolean> {
   const deleted = await ctx.prisma.$transaction(async tx => {
+    // A `saveConfigs` that read this row keeps its decision until it commits.
+    await acquireAppConfigWriteLock(tx);
     // `deleteMany`, not `delete`: clearing a key that is already absent is the intended outcome of
     // every caller here, and `delete` turns that into a P2025 the caller would have to swallow.
     const { count } = await tx.appConfig.deleteMany({ where: { key } });

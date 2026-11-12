@@ -307,6 +307,9 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
 - `PLAINTEXT_CONFIG_KEYS`, bound to `AppConfigKey` with its derived `PlaintextConfigKey`, defines
   keys that must remain plaintext for their non-decrypting readers; `storesEncrypted` ignores caller
   encryption flags for these keys.
+- In `saveConfig` and `saveConfigs`, omitting `encrypt` preserves the stored encryption choice; a
+  new key defaults to plaintext. Explicit flags remain subject to `SECRET_CONFIG_KEYS` and
+  `PLAINTEXT_CONFIG_KEYS`. JSON imports retain their explicit encryption semantics.
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add a key only if its absence must block boot
 
 ## Auth & Crypto — DO NOT TOUCH without an explicit request

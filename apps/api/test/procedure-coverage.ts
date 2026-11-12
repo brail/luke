@@ -70,11 +70,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'structure and teams covered on the main path, updateMemberRole by the access audit spec, function restore by the team spec (#237), function reorder by the inactive-function spec; team getById and listAllBrands remain',
     uncovered: 2,
   },
-  config: {
-    reason:
-      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; getMultiple by configGetMultiple.integration.spec.ts; setMultiple and update remain',
-    uncovered: 2,
-  },
   users: {
     reason:
       'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); forceVerifyEmail by its audit case in auditlog.integration.spec.ts; list by its search case in users.integration.spec.ts; heartbeat and the menu preferences are not',

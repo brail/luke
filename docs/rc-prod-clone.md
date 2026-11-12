@@ -120,8 +120,9 @@ history.
   credential marked, and saving a new value there repairs it; Google's refresh
   token is repaired by connecting the account again.
 - Only encrypted values are protected that way. A credential in
-  `SECRET_CONFIG_KEYS` is always stored encrypted, but the generic configuration
-  API stores any other key unencrypted unless asked, and a credential an earlier
+  `SECRET_CONFIG_KEYS` is always stored encrypted, but any other key is stored
+  unencrypted unless an admin asked for encryption (a later save that does not
+  say keeps the stored choice), and a credential an earlier
   release stored in plaintext stays so until `db:encrypt-secret-config` encrypts
   it; such a value works on RC as it does on prod. `refresh-rc-db.sh` deletes the SMTP, GitHub, S3, NAV host, LDAP
   switch and plaintext credential rows before the RC API starts; this flow
