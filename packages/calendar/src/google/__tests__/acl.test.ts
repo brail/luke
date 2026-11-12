@@ -12,6 +12,7 @@ const { acl, getWorkspaceDomain } = vi.hoisted(() => ({
     insert: vi.fn(),
     delete: vi.fn(),
     list: vi.fn(),
+    get: vi.fn(),
     update: vi.fn(),
   },
   getWorkspaceDomain: vi.fn(() => 'example.com'),
@@ -22,7 +23,7 @@ vi.mock('../client.js', () => ({
   getWorkspaceDomain,
 }));
 
-type Rule = { id: string; role: string; scope: { type: string; value?: string } };
+type Rule = { id: string; role: string; etag?: string; scope: { type: string; value?: string } };
 
 /** A user-scoped reader rule, with the id Google gives it. */
 function reader(email: string): Rule {
@@ -46,6 +47,8 @@ beforeEach(() => {
   acl.insert.mockResolvedValue({});
   acl.delete.mockResolvedValue({});
   acl.update.mockResolvedValue({});
+  // No alias: an address the ACL does not list has no rule.
+  acl.get.mockRejectedValue(googleError(404));
 });
 
 describe('syncCalendarAcl', () => {
@@ -60,6 +63,7 @@ describe('syncCalendarAcl', () => {
     expect(acl.insert).toHaveBeenCalledTimes(1);
     expect(acl.insert).toHaveBeenCalledWith({
       calendarId: 'cal-1',
+      sendNotifications: true,
       requestBody: {
         role: 'reader',
         scope: { type: 'user', value: 'entra@example.com' },
@@ -71,7 +75,7 @@ describe('syncCalendarAcl', () => {
       calendarId: 'cal-1',
       ruleId: 'user:esce@example.com',
     });
-    expect(result).toMatchObject({ added: 1, removed: 1, errors: [] });
+    expect(result).toMatchObject({ added: 1, removed: 1, inserted: ['entra@example.com'], errors: [] });
   });
 
   it('touches nothing when the state already matches', async () => {
@@ -79,6 +83,8 @@ describe('syncCalendarAcl', () => {
 
     await syncCalendarAcl('cal-1', ['a@example.com']);
 
+    // Every expected reader is listed: Google is not asked about aliases.
+    expect(acl.get).not.toHaveBeenCalled();
     expect(acl.insert).not.toHaveBeenCalled();
     expect(acl.delete).not.toHaveBeenCalled();
   });
@@ -177,6 +183,168 @@ describe('syncCalendarAcl', () => {
 
     expect(acl.insert).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({ added: 1, errors: [] });
+  });
+});
+
+/**
+ * A Google ACL that resolves aliases the way the real one was observed to (#243): a user rule is
+ * stored under the account's primary address whatever address the insert names; `get` of an alias
+ * answers 200 echoing the alias, with the role and `etag` of the account's rule, or 404 when the
+ * account has none. `etag`s are opaque and change on every write.
+ */
+function aliasingAcl(aliases: Record<string, string>, rules: Record<string, string> = {}, resolvesAliases = true) {
+  const stored = new Map(Object.entries(rules).map(([primary, role]) => [primary, { role, etag: `"seed-${primary}"` }]));
+  let version = 0;
+  const primaryOf = (address: string) => aliases[address.toLowerCase()] ?? address.toLowerCase();
+  acl.list.mockImplementation(async () =>
+    page([...stored].map(([primary, r]) => ({ id: `user:${primary}`, role: r.role, etag: r.etag, scope: { type: 'user', value: primary } })))
+  );
+  acl.get.mockImplementation(async ({ ruleId }: { ruleId: string }) => {
+    const address = ruleId.slice('user:'.length);
+    const rule = resolvesAliases || !(address in aliases) ? stored.get(primaryOf(address)) : undefined;
+    if (!rule) throw googleError(404);
+    return { data: { id: ruleId, role: rule.role, etag: rule.etag, scope: { type: 'user', value: address } } };
+  });
+  acl.insert.mockImplementation(async ({ requestBody }: { requestBody: { role: string; scope: { value: string } } }) => {
+    stored.set(primaryOf(requestBody.scope.value), { role: requestBody.role, etag: `"v${++version}"` });
+    return { data: { id: `user:${requestBody.scope.value}`, role: requestBody.role, scope: requestBody.scope } };
+  });
+  acl.delete.mockImplementation(async ({ ruleId }: { ruleId: string }) => {
+    stored.delete(ruleId.slice('user:'.length));
+  });
+  return { stored };
+}
+
+/** Runs one pass and reports what it changed. */
+async function pass(expected: string[]) {
+  vi.clearAllMocks();
+  const result = await syncCalendarAcl('cal-1', expected);
+  return { inserts: acl.insert.mock.calls.length, deletes: acl.delete.mock.calls.length, result };
+}
+
+describe('alias addresses (#243)', () => {
+  const ALIASES = { 'a1@example.com': 'box@example.com', 'a2@example.com': 'box@example.com' };
+
+  it('two aliases of an account that already reads → nothing inserted or removed, pass after pass', async () => {
+    aliasingAcl(ALIASES, { 'box@example.com': 'reader' });
+
+    for (let i = 0; i < 2; i++) {
+      expect(await pass(['a1@example.com', 'a2@example.com'])).toMatchObject({ inserts: 0, deletes: 0, result: { errors: [] } });
+    }
+  });
+
+  it('a first-time alias is inserted once, with the share email, then converges', async () => {
+    const { stored } = aliasingAcl(ALIASES);
+
+    const first = await pass(['a1@example.com']);
+    expect(first).toMatchObject({ inserts: 1, deletes: 0, result: { inserted: ['a1@example.com'] } });
+    expect(acl.insert).toHaveBeenCalledWith(expect.objectContaining({ sendNotifications: true }));
+    expect(await pass(['a1@example.com'])).toMatchObject({ inserts: 0, deletes: 0, result: { inserted: [] } });
+    expect([...stored.keys()]).toEqual(['box@example.com']);
+  });
+
+  it('two aliases of an account with no rule → one rule after the first pass, then nothing', async () => {
+    const { stored } = aliasingAcl(ALIASES);
+
+    expect(await pass(['a1@example.com', 'a2@example.com'])).toMatchObject({ inserts: 2, deletes: 0 });
+    expect([...stored.keys()]).toEqual(['box@example.com']);
+    expect(await pass(['a1@example.com', 'a2@example.com'])).toMatchObject({ inserts: 0, deletes: 0 });
+  });
+
+  it('an alias no longer expected → the account rule is removed', async () => {
+    const { stored } = aliasingAcl(ALIASES, { 'box@example.com': 'reader' });
+
+    expect(await pass([])).toMatchObject({ inserts: 0, deletes: 1 });
+    expect(stored.size).toBe(0);
+  });
+
+  it.each([
+    [['a1@example.com', 'box@example.com'], 0],
+    [['a1@example.com'], 0],
+    [['box@example.com'], 0],
+    [[], 1],
+  ])('alias and primary: expected %j → %i removed', async (expected, deletes) => {
+    aliasingAcl(ALIASES, { 'box@example.com': 'reader' });
+
+    expect(await pass(expected)).toMatchObject({ inserts: 0, deletes });
+  });
+
+  it.each(['writer', 'owner'])('an alias of an account holding %s → left as it is', async role => {
+    aliasingAcl(ALIASES, { 'box@example.com': role });
+
+    expect(await pass(['a1@example.com'])).toMatchObject({ inserts: 0, deletes: 0 });
+  });
+
+  it('an alias of an account that only sees free/busy → inserted as reader', async () => {
+    const { stored } = aliasingAcl(ALIASES, { 'box@example.com': 'freeBusyReader' });
+
+    expect(await pass(['a1@example.com'])).toMatchObject({ inserts: 1 });
+    expect(stored.get('box@example.com')?.role).toBe('reader');
+  });
+
+  // Residual (b) of the plan: the flap `reconcileGoogleReaders` warns about.
+  it('Google no longer resolving aliases → the alias is inserted and the primary removed, and reported as inserted', async () => {
+    aliasingAcl(ALIASES, { 'box@example.com': 'reader' }, false);
+
+    expect(await pass(['a1@example.com'])).toMatchObject({ inserts: 1, deletes: 1, result: { inserted: ['a1@example.com'] } });
+  });
+
+  it('an expected address listed under itself without read access → inserted, Google not asked', async () => {
+    acl.list.mockResolvedValue(page([{ id: 'user:fb@example.com', role: 'freeBusyReader', scope: { type: 'user', value: 'fb@example.com' } }]));
+
+    await syncCalendarAcl('cal-1', ['fb@example.com']);
+
+    expect(acl.get).not.toHaveBeenCalled();
+    expect(acl.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('an alias moved to another account → access moves with it', async () => {
+    const aliases: Record<string, string> = { 'al@example.com': 'old@example.com' };
+    const { stored } = aliasingAcl(aliases, { 'old@example.com': 'reader' });
+    expect(await pass(['al@example.com'])).toMatchObject({ inserts: 0, deletes: 0 });
+
+    aliases['al@example.com'] = 'new@example.com';
+    expect(await pass(['al@example.com'])).toMatchObject({ inserts: 1, deletes: 1 });
+    expect([...stored.keys()]).toEqual(['new@example.com']);
+    expect(await pass(['al@example.com'])).toMatchObject({ inserts: 0, deletes: 0 });
+  });
+});
+
+describe('alias lookup in doubt: removal goes on', () => {
+  const box = (etag: string): Rule => ({ ...reader('box@example.com'), etag });
+  const stranger: Rule = { ...reader('gone@example.com'), etag: '"f"' };
+  const aliasAnswer = (etag?: string) => ({ data: { id: 'user:a1@example.com', role: 'reader', etag, scope: { type: 'user', value: 'a1@example.com' } } });
+
+  it('two listed rules share the alias etag → both kept, another unexpected reader still removed', async () => {
+    const twin: Rule = { ...reader('twin@example.com'), etag: '"e"' };
+    acl.list.mockResolvedValue(page([box('"e"'), twin, stranger]));
+    acl.get.mockResolvedValue(aliasAnswer('"e"'));
+
+    const result = await syncCalendarAcl('cal-1', ['a1@example.com']);
+
+    expect(acl.insert).not.toHaveBeenCalled();
+    expect(acl.delete).toHaveBeenCalledTimes(1);
+    expect(acl.delete).toHaveBeenCalledWith({ calendarId: 'cal-1', ruleId: 'user:gone@example.com' });
+    expect(result.errors).toEqual([]);
+  });
+
+  it.each([
+    ['an etag no listed rule carries', () => acl.get.mockResolvedValue(aliasAnswer('"other"'))],
+    ['no etag', () => acl.get.mockResolvedValue(aliasAnswer(undefined))],
+    ['an empty etag', () => acl.get.mockResolvedValue(aliasAnswer(''))],
+    ['a failing lookup', () => acl.get.mockRejectedValue(googleError(403, 'forbidden'))],
+  ])('%s → nothing inserted, every unexpected reader removed, reported', async (_case, answer) => {
+    acl.list.mockResolvedValue(page([box('"e"'), stranger]));
+    answer();
+
+    for (let i = 0; i < 2; i++) {
+      vi.clearAllMocks();
+      const result = await syncCalendarAcl('cal-1', ['a1@example.com']);
+
+      expect(acl.insert).not.toHaveBeenCalled();
+      expect(acl.delete).toHaveBeenCalledTimes(2);
+      expect(result.errors).toHaveLength(1);
+    }
   });
 });
 

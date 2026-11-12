@@ -1,6 +1,7 @@
 import { getClient, getWorkspaceDomain } from './client.js';
-import { isGoneError, withRetry } from './retry.js';
+import { googleErrorStatus, isGoneError, withRetry } from './retry.js';
 
+import type { GoogleCalendarClient } from './client.js';
 import type { calendar_v3 } from 'googleapis';
 
 type AclRule = calendar_v3.Schema$AclRule;
@@ -15,7 +16,12 @@ export interface UnmanagedAclRule {
 export interface AclSyncResult {
   added: number;
   removed: number;
-  /** Reader changes Google refused, after retries; the other changes were still made. */
+  /** Lowercase addresses inserted as readers in this pass. */
+  inserted: string[];
+  /**
+   * Reader changes Google refused, after retries, and expected readers whose rule could not be
+   * told apart (`lookUpReader`); the other changes were still made.
+   */
   errors: unknown[];
   /** Rules Luke does not manage, left in place (see `unmanagedRules`). */
   unmanaged: UnmanagedAclRule[];
@@ -32,6 +38,45 @@ async function listAclRules(calendarId: string): Promise<AclRule[]> {
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
   return rules;
+}
+
+/** Roles that let a user read the events. */
+const READ_ROLES = new Set(['reader', 'writer', 'owner']);
+
+/**
+ * Asks Google whether an expected address the ACL does not list already reads the calendar under
+ * another address — an alias: Google stores a user rule under the account's primary address (#243).
+ *
+ * `acl.get('user:<alias>')` answers 200 for an alias of an account holding a rule, echoing the alias,
+ * and 404 for an address with none; the answer's `etag` equals that of the account's rule in
+ * `acl.list`. Both are observed, not documented, Google behaviour (Google documents `etag` as the
+ * rule's version): the `etag` is compared as an opaque string, and a missing or empty one never
+ * matches.
+ *
+ * @returns The keys of the listed user rules to keep (several only if `etag`s collide), or none when
+ *   the address has to be inserted: no rule (404), or one that cannot read (`freeBusyReader`, `none`).
+ * @throws On any other error, or when no listed rule matches: nothing is inserted nor kept for the
+ *   address, and revocation goes on — if the alias's own rule is removed, the next pass finds 404.
+ */
+async function lookUpReader(
+  client: GoogleCalendarClient,
+  calendarId: string,
+  email: string,
+  userRules: AclRule[]
+): Promise<string[]> {
+  let rule: AclRule;
+  try {
+    rule = (await withRetry(() => client.acl.get({ calendarId, ruleId: `user:${email}` }))).data;
+  } catch (err: unknown) {
+    if (googleErrorStatus(err) === 404) return [];
+    throw err;
+  }
+  if (!READ_ROLES.has(rule.role ?? '')) return [];
+  const keys = rule.etag
+    ? userRules.flatMap(r => (r.etag === rule.etag && r.scope?.value ? [r.scope.value.toLowerCase()] : []))
+    : [];
+  if (keys.length === 0) throw new Error('Google holds a rule for an expected reader that matches no listed rule');
+  return keys;
 }
 
 /**
@@ -63,7 +108,8 @@ function unmanagedRules(rules: AclRule[], domain: string): UnmanagedAclRule[] {
  *   pass could end with it removed); a rule is removed by the id Google gave it. An expected reader
  *   who already holds a user `writer` or `owner` rule reads already: nothing is inserted for them,
  *   since an insert on the same scope would replace that rule (the calendar's own owner is often
- *   an admin, hence an expected reader);
+ *   an admin, hence an expected reader). An expected address not listed at all may be an alias
+ *   (`lookUpReader`); doubt never suspends a removal. Inserts send Google's share email;
  * - the Workspace `domain:` rule is pinned to `freeBusyReader`. Google creates it on every calendar
  *   made inside a Workspace from the org's default sharing setting, which can grant edit access,
  *   and Google applies the most permissive rule matching a user, so it would override the per-user
@@ -85,22 +131,31 @@ export async function syncCalendarAcl(
   const domain = workspaceDomain.toLowerCase();
   const rules = await listAclRules(googleCalendarId);
 
-  const readers = rules.flatMap(r =>
-    r.role === 'reader' && r.scope?.type === 'user' && r.scope.value && r.id
-      ? [{ key: r.scope.value.toLowerCase(), id: r.id }]
-      : []
-  );
-  const canRead = new Set([
-    ...readers.map(r => r.key),
-    ...rules.flatMap(r =>
-      (r.role === 'writer' || r.role === 'owner') && r.scope?.type === 'user' && r.scope.value
-        ? [r.scope.value.toLowerCase()]
-        : []
-    ),
-  ]);
+  const userRules = rules.filter(r => r.scope?.type === 'user' && r.scope.value);
+  const keyOf = (r: AclRule) => r.scope?.value?.toLowerCase() ?? '';
+  const listed = new Set(userRules.map(keyOf));
+  const canRead = new Set(userRules.filter(r => READ_ROLES.has(r.role ?? '')).map(keyOf));
   const expected = new Map(expectedEmails.map(e => [e.toLowerCase(), e]));
-  const toAdd = [...expected].filter(([key]) => !canRead.has(key)).map(([, email]) => email);
-  const toRemove = readers.filter(r => !expected.has(r.key)).map(r => r.id);
+
+  // Lookups one at a time: a calendar with many new readers must not burst Google's rate limit.
+  const toAdd: string[] = [];
+  const kept = new Set(expected.keys());
+  const lookupErrors: unknown[] = [];
+  for (const [key, email] of expected) {
+    if (canRead.has(key)) continue;
+    if (listed.has(key)) {
+      toAdd.push(email);
+      continue;
+    }
+    try {
+      const keys = await lookUpReader(client, googleCalendarId, email, userRules);
+      if (keys.length === 0) toAdd.push(email);
+      keys.forEach(k => kept.add(k));
+    } catch (err: unknown) {
+      lookupErrors.push(err);
+    }
+  }
+  const toRemove = userRules.flatMap(r => (r.role === 'reader' && r.id && !kept.has(keyOf(r)) ? [r.id] : []));
   const permissiveDomainRuleId = rules.find(
     r =>
       r.scope?.type === 'domain' &&
@@ -115,6 +170,9 @@ export async function syncCalendarAcl(
         withRetry(() =>
           client.acl.insert({
             calendarId: googleCalendarId,
+            // Owner decision (#243): a managed share keeps Google's email; the reconcile converges,
+            // so it goes out only on a real grant.
+            sendNotifications: true,
             requestBody: { role: 'reader', scope: { type: 'user', value: email } },
           })
         )
@@ -150,10 +208,15 @@ export async function syncCalendarAcl(
 
   const fulfilled = (results: PromiseSettledResult<unknown>[]) =>
     results.filter(r => r.status === 'fulfilled').length;
+  const inserted = toAdd.filter((_, i) => adds[i]?.status === 'fulfilled').map(e => e.toLowerCase());
   return {
-    added: fulfilled(adds),
+    added: inserted.length,
     removed: fulfilled(removes),
-    errors: [...adds, ...removes].flatMap(r => (r.status === 'rejected' ? [r.reason] : [])),
+    inserted,
+    errors: [
+      ...lookupErrors,
+      ...[...adds, ...removes].flatMap(r => (r.status === 'rejected' ? [r.reason] : [])),
+    ],
     unmanaged: unmanagedRules(rules, domain),
   };
 }

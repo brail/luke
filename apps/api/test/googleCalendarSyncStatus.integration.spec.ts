@@ -33,7 +33,7 @@ let functionId: string;
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-const noChange: calendar.AclSyncResult = { added: 0, removed: 0, errors: [], unmanaged: [] };
+const noChange: calendar.AclSyncResult = { added: 0, removed: 0, inserted: [], errors: [], unmanaged: [] };
 
 /** Google's refusal of the token request when the impersonated identity has no delegation. */
 const refused = () => Object.assign(new Error('unauthorized_client'), { code: 401 });
@@ -214,6 +214,22 @@ describe('reader reconcile', () => {
     expect(await reconcileGoogleReaders(prisma, logger)).toMatchObject({ calendars: 2, failed: 1 });
 
     expect(await status('readers')).toMatchObject(failedWith('Google answered 500'));
+  });
+
+  // #243: an address Google does not keep a reader under is inserted again every pass (an alias it
+  // no longer resolves), with the share email each time.
+  it('an address inserted again on the next pass → warned and recorded as a failure', async () => {
+    await newBinding('gcal-1');
+    vi.spyOn(calendar, 'syncCalendarAcl').mockResolvedValue({ ...noChange, added: 1, inserted: ['a1@example.com'] });
+    const aliasWarnings = () => logger.warn.mock.calls.filter(([, msg]) => String(msg).includes('alias not resolved'));
+
+    await reconcileGoogleReaders(prisma, logger);
+    expect(await status('readers')).toMatchObject(succeeded);
+    expect(aliasWarnings()).toEqual([]);
+
+    await reconcileGoogleReaders(prisma, logger);
+    expect(await status('readers')).toMatchObject({ lastErrorAt: expect.any(Date), lastError: expect.stringContaining('previous pass') });
+    expect(aliasWarnings()).toEqual([[{ bindingId: expect.any(String), reinserted: 1 }, expect.any(String)]]);
   });
 
   it('records a pass that read an ACL as a success, and one whose calendars are all gone as nothing', async () => {

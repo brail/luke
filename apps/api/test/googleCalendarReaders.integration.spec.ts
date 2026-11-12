@@ -39,7 +39,7 @@ let bindingFB: string;
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-const noChange: calendar.AclSyncResult = { added: 0, removed: 0, errors: [], unmanaged: [] };
+const noChange: calendar.AclSyncResult = { added: 0, removed: 0, inserted: [], errors: [], unmanaged: [] };
 
 let syncReaders: MockInstance<typeof calendar.syncCalendarAcl>;
 

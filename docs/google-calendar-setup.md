@@ -120,8 +120,9 @@ event of the brand and season selected in the header.
   account, the impersonated user, or the connected OAuth account. Readers are the
   active administrators plus the active members of an active team that holds both
   the calendar's company function and its brand; users pending approval read
-  nothing. They are added as `reader`; a domain-wide rule is downgraded to
-  `freeBusyReader`.
+  nothing. They are added as `reader`, and Google emails each new reader that the
+  calendar was shared with them; a pass that changes nothing sends nothing. A domain-wide
+  rule is downgraded to `freeBusyReader`.
 - **Reader reconcile**: the API brings every provisioned calendar's readers back
   to that rule 30 seconds after it starts and then every 10 minutes, whenever
   Google credentials are configured, even with event sync turned off. A change in
@@ -130,7 +131,11 @@ event of the brand and season selected in the header.
   `db:harden-google-acl` runs one pass immediately. Luke changes only user-scoped
   `reader` rules: any other rule (a group, another domain, public access, a
   `writer`, a second owner) is left as it is and reported in the API log, for the
-  Workspace admin to review.
+  Workspace admin to review. A Luke address that is an alias of a Google account
+  already reading the calendar (Google lists the account's primary address) is
+  recognised and not added again. If the same address is added on two passes in a
+  row, Google did not keep it: the API log warns and the sync status shows a
+  `Lettori dei calendari` failure.
 - **Deleting a purged calendar** also needs only the credentials. A calendar Google
   refuses to delete is logged by id, recorded as an `Eliminazioni` failure, and
   keeps its sharing until removed by hand. A calendar or event already gone from

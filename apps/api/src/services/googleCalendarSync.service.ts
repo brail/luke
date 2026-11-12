@@ -464,6 +464,13 @@ const missingCalendarsWarned = new Set<string>();
 let lastUnmanagedReport = '';
 
 /**
+ * Addresses inserted per binding on the previous pass. One inserted again means Google did not keep
+ * the reader under it — an alias Google no longer resolves (#243): the share email and the access
+ * flap would repeat every pass. Per process: a restart needs two passes to see it again.
+ */
+const insertedLastPass = new Map<string, Set<string>>();
+
+/**
  * Brings the ACL of every provisioned Google calendar back to what Luke grants (`syncCalendarAcl`):
  * readers from `getCalendarReaderEmails`, the domain rule read-only. Revokes whoever lost access in Luke (left a team, team lost the
  * brand or was deactivated, user deactivated or pending, address changed) and adds whoever gained
@@ -514,8 +521,19 @@ export async function reconcileGoogleReaders(
       if (result.errors.length > 0) {
         failures.push(result.errors[0]);
         logger.warn(
-          { bindingId: b.id, refused: result.errors.length, err: result.errors[0] },
-          'Google refused some reader changes; retried on the next pass'
+          { bindingId: b.id, unsettled: result.errors.length, err: result.errors[0] },
+          'Some readers were refused by Google or could not be resolved; retried on the next pass'
+        );
+      }
+      const previous = insertedLastPass.get(b.id);
+      const reinserted = result.inserted.filter(address => previous?.has(address)).length;
+      if (result.inserted.length > 0) insertedLastPass.set(b.id, new Set(result.inserted));
+      else insertedLastPass.delete(b.id);
+      if (reinserted > 0) {
+        failures.push(new Error('Google did not keep readers inserted on the previous pass'));
+        logger.warn(
+          { bindingId: b.id, reinserted },
+          'Google did not keep readers under the addresses Luke inserted; alias not resolved?'
         );
       }
       for (const r of result.unmanaged) {
@@ -523,6 +541,8 @@ export async function reconcileGoogleReaders(
         unmanaged.set(key, (unmanaged.get(key) ?? 0) + 1);
       }
     } catch (err) {
+      // What this pass inserted is unknown: the next pass has nothing to compare against.
+      insertedLastPass.delete(b.id);
       if (googleErrorStatus(err) === 404) {
         if (!missingCalendarsWarned.has(b.id)) {
           missingCalendarsWarned.add(b.id);
@@ -535,6 +555,9 @@ export async function reconcileGoogleReaders(
       logger.error({ err, bindingId: b.id }, 'Google Calendar reader reconcile failed for a calendar');
     }
   }
+
+  const current = new Set(bindings.map(b => b.id));
+  for (const id of insertedLastPass.keys()) if (!current.has(id)) insertedLastPass.delete(id);
 
   const unmanagedRules = Object.fromEntries([...unmanaged].sort());
   const report = JSON.stringify(unmanagedRules);
