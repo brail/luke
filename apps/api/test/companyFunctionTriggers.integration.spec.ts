@@ -29,6 +29,9 @@ import {
   asLegacy,
   createCalendarFixture,
   createCallerWithSession,
+  createTestEvent,
+  createTestFunction,
+  createTestTemplate,
   createTestUser,
   expectedOf,
   setupTestDb,
@@ -46,26 +49,12 @@ const asAdmin = () => createCallerWithSession(adminSession);
 const START = new Date('2099-06-01T09:00:00.000Z');
 const uid = () => randomUUID().slice(0, 8);
 
-async function newFunction(isActive = true) {
-  const id = uid();
-  return prisma.companyFunction.create({ data: { slug: `trig_${id}`, name: `Fn ${id}`, order: 90, isActive } });
-}
-
-async function newEvent(functionIds: string[], cancelled = false, db: Prisma.TransactionClient = prisma) {
-  return db.calendarEvent.create({
-    data: {
-      calendarId: source.calendarId, planningGroupId: source.planningGroupId, title: `Ev ${uid()}`, startAt: START,
-      cancelledAt: cancelled ? new Date() : null, cancelReason: cancelled ? 'test' : null,
-      visibilities: { create: functionIds.map(functionId => ({ functionId })) },
-    },
-  });
-}
+const newFunction = (isActive = true) => createTestFunction(prisma, isActive, 'trig');
+const newEvent = (functionIds: string[], cancelled = false, db: Prisma.TransactionClient = prisma) =>
+  createTestEvent(db, source, functionIds, { startAt: START, cancelled });
 
 async function newItem(functionIds: string[], db: Prisma.TransactionClient = prisma) {
-  const template = await db.milestoneTemplate.create({
-    data: { name: `Tpl ${uid()}`, items: { create: [{ title: 'Item', offsetDays: 0, visibilities: { create: functionIds.map(functionId => ({ functionId })) } }] } },
-    include: { items: true },
-  });
+  const template = await createTestTemplate(db, [{ title: 'Item', functionIds }]);
   return { template, item: template.items[0]! };
 }
 

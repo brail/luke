@@ -355,6 +355,9 @@ export async function buildTestServer() {
 export {
   asLegacy,
   createCalendarFixture,
+  createTestEvent,
+  createTestFunction,
+  createTestTemplate,
   expectedOf,
   grantBrandAccess,
   type CalendarFixture,

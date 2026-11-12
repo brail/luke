@@ -10,6 +10,9 @@
  * *how many* (two brands, five planning groups, events with or without a phase) and what extra rows
  * hang off them; a fixture that tried to express all of it would take more arguments than the rows
  * it creates. A spec needing two calendars calls `createCalendarFixture` twice.
+ *
+ * Below them, single-row factories for company functions, events and templates with function
+ * visibilities, shared by the inactive-function specs (#237, #242).
  */
 
 import { randomUUID } from 'crypto';
@@ -190,5 +193,47 @@ export function asLegacy<T>(prisma: PrismaClient, write: (tx: Prisma.Transaction
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
     return write(tx);
+  });
+}
+
+const shortId = () => randomUUID().slice(0, 8);
+
+/** An active (or, when asked, inactive) company function; `prefix` tags its slug with the spec. */
+export function createTestFunction(db: Prisma.TransactionClient, isActive = true, prefix = 'fn') {
+  const id = shortId();
+  return db.companyFunction.create({ data: { slug: `${prefix}_${id}`, name: `Fn ${id}`, order: 90, isActive } });
+}
+
+/**
+ * An event in `place`'s planning group, visible to `functionIds`, cancelled when asked. `db` may be a
+ * transaction, so `asLegacy` can write one the triggers would refuse.
+ */
+export function createTestEvent(
+  db: Prisma.TransactionClient,
+  place: Pick<CalendarFixture, 'calendarId' | 'planningGroupId'>,
+  functionIds: string[],
+  { startAt, cancelled = false }: { startAt: Date; cancelled?: boolean }
+) {
+  return db.calendarEvent.create({
+    data: {
+      calendarId: place.calendarId, planningGroupId: place.planningGroupId, title: `Ev ${shortId()}`, startAt,
+      cancelledAt: cancelled ? new Date() : null, cancelReason: cancelled ? 'test' : null,
+      visibilities: { create: functionIds.map(functionId => ({ functionId })) },
+    },
+  });
+}
+
+/** A milestone template whose items are each visible to their `functionIds`; returned with its items. */
+export function createTestTemplate(db: Prisma.TransactionClient, items: { title: string; functionIds: string[] }[]) {
+  return db.milestoneTemplate.create({
+    data: {
+      name: `Tpl ${shortId()}`,
+      items: {
+        create: items.map(({ title, functionIds }) => ({
+          title, offsetDays: 0, visibilities: { create: functionIds.map(functionId => ({ functionId })) },
+        })),
+      },
+    },
+    include: { items: true },
   });
 }

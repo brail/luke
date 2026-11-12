@@ -26,6 +26,9 @@ import {
   asLegacy,
   createCalendarFixture,
   createCallerWithSession,
+  createTestEvent,
+  createTestFunction,
+  createTestTemplate,
   createTestUser,
   expectedOf,
   setupTestDb,
@@ -46,35 +49,9 @@ const asAdmin = () => createCallerWithSession(adminSession);
 const START = new Date('2099-06-01T09:00:00.000Z');
 const uid = () => randomUUID().slice(0, 8);
 
-async function newFunction(isActive = true) {
-  const id = uid();
-  return prisma.companyFunction.create({ data: { slug: `inact_${id}`, name: `Fn ${id}`, order: 90, isActive } });
-}
-
-/** An event in the source calendar's group, visible to `functionIds`; cancelled when asked. */
-async function newEvent(functionIds: string[], cancelled = false, groupId = source.planningGroupId, db: Prisma.TransactionClient = prisma) {
-  return db.calendarEvent.create({
-    data: {
-      calendarId: source.calendarId, planningGroupId: groupId, title: `Ev ${uid()}`, startAt: START,
-      cancelledAt: cancelled ? new Date() : null, cancelReason: cancelled ? 'test' : null,
-      visibilities: { create: functionIds.map(functionId => ({ functionId })) },
-    },
-  });
-}
-
-async function newTemplate(items: { title: string; functionIds: string[] }[], db: Prisma.TransactionClient = prisma) {
-  return db.milestoneTemplate.create({
-    data: {
-      name: `Tpl ${uid()}`,
-      items: {
-        create: items.map(({ title, functionIds }) => ({
-          title, offsetDays: 0, visibilities: { create: functionIds.map(functionId => ({ functionId })) },
-        })),
-      },
-    },
-    include: { items: true },
-  });
-}
+const newFunction = (isActive = true) => createTestFunction(prisma, isActive, 'inact');
+const newEvent = (functionIds: string[], cancelled = false, groupId = source.planningGroupId, db: Prisma.TransactionClient = prisma) =>
+  createTestEvent(db, { calendarId: source.calendarId, planningGroupId: groupId }, functionIds, { startAt: START, cancelled });
 
 async function newGroup() {
   return (await prisma.planningGroup.create({ data: { calendarId: source.calendarId, name: `G ${uid()}` } })).id;
@@ -123,7 +100,7 @@ describe('writers refuse an inactive function, naming it', () => {
   it('applyTemplate, naming the items, and applies nothing', async () => {
     const [on, off] = await Promise.all([newFunction(), newFunction(false)]);
     const template = await asLegacy(prisma, tx =>
-      newTemplate([{ title: 'Fine', functionIds: [on.id] }, { title: 'Stale', functionIds: [off.id] }], tx));
+      createTestTemplate(tx, [{ title: 'Fine', functionIds: [on.id] }, { title: 'Stale', functionIds: [off.id] }]));
     const groupId = await newGroup();
 
     await expect(asAdmin().seasonCalendar.applyTemplate({ planningGroupId: groupId, templateId: template.id, anchorDate: '2099-03-01' }))
@@ -158,7 +135,7 @@ describe('writers refuse an inactive function, naming it', () => {
 
   it('createTemplateItem', async () => {
     const off = await newFunction(false);
-    const template = await newTemplate([]);
+    const template = await createTestTemplate(prisma, []);
 
     await expect(asAdmin().seasonCalendar.createTemplateItem({ templateId: template.id, title: 'New', offsetDays: 0, visibilityFunctionIds: [off.id] }))
       .rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: expect.stringContaining(`«${off.name}»`) });
@@ -167,7 +144,7 @@ describe('writers refuse an inactive function, naming it', () => {
 
   it('updateTemplateItem refuses any save of an item carrying one, and saves once it is removed', async () => {
     const [on, off] = await Promise.all([newFunction(), newFunction(false)]);
-    const [item] = (await asLegacy(prisma, tx => newTemplate([{ title: 'Legacy', functionIds: [off.id] }], tx))).items;
+    const [item] = (await asLegacy(prisma, tx => createTestTemplate(tx, [{ title: 'Legacy', functionIds: [off.id] }]))).items;
 
     await expect(asAdmin().seasonCalendar.updateTemplateItem({ id: item!.id, title: 'Only the title' }))
       .rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: expect.stringContaining(`«${off.name}»`) });
@@ -189,7 +166,7 @@ describe('a function that does not exist', () => {
 describe('function.delete', () => {
   it('is refused while a template item uses the function', async () => {
     const fn = await newFunction();
-    const template = await newTemplate([{ title: 'Uses it', functionIds: [fn.id] }]);
+    const template = await createTestTemplate(prisma, [{ title: 'Uses it', functionIds: [fn.id] }]);
 
     await expect(asAdmin().company.function.delete({ id: fn.id }))
       .rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: expect.stringContaining(`«${template.name}» › «Uses it»`) });
@@ -228,7 +205,7 @@ describe('function.delete', () => {
       await holder.query('INSERT INTO calendar_event_visibilities ("eventId", "functionId") VALUES ($1, $2)', [eventId, fnId]);
     }],
     ['a template item using it', async (fnId: string, holder: Client) => {
-      const template = await newTemplate([]);
+      const template = await createTestTemplate(prisma, []);
       const itemId = randomUUID();
       await holder.query(
         `INSERT INTO milestone_template_items (id, "templateId", title, "offsetDays", "updatedAt") VALUES ($1, $2, 'Held', 0, now())`,
@@ -261,7 +238,7 @@ describe('a writer racing a delete waits for it, then refuses', () => {
       return () => asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { visibilityFunctionIds: [fnId] }, expected });
     }],
     ['applyTemplate', async fnId => {
-      const template = await newTemplate([{ title: 'Race', functionIds: [fnId] }]);
+      const template = await createTestTemplate(prisma, [{ title: 'Race', functionIds: [fnId] }]);
       const groupId = await newGroup();
       return () => asAdmin().seasonCalendar.applyTemplate({ planningGroupId: groupId, templateId: template.id, anchorDate: '2099-03-01' });
     }],
@@ -278,11 +255,11 @@ describe('a writer racing a delete waits for it, then refuses', () => {
       return () => asAdmin().seasonCalendar.uncancelMilestone({ id: event.id });
     }],
     ['createTemplateItem', async fnId => {
-      const template = await newTemplate([]);
+      const template = await createTestTemplate(prisma, []);
       return () => asAdmin().seasonCalendar.createTemplateItem({ templateId: template.id, title: 'Race', offsetDays: 0, visibilityFunctionIds: [fnId] });
     }],
     ['updateTemplateItem, title only', async fnId => {
-      const [item] = (await newTemplate([{ title: 'Race', functionIds: [fnId] }])).items;
+      const [item] = (await createTestTemplate(prisma, [{ title: 'Race', functionIds: [fnId] }])).items;
       return () => asAdmin().seasonCalendar.updateTemplateItem({ id: item!.id, title: 'Renamed' });
     }],
   ];
