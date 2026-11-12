@@ -17,6 +17,8 @@ import {
   createCalendarFixture,
   createCallerWithSession,
   createSilentLogger,
+  createTestEvent,
+  createTestFunction,
   createTestUser,
   grantBrandAccess,
   setupTestDb,
@@ -36,21 +38,18 @@ let sharedId: string;
 let openId: string;
 let hiddenId: string;
 
+const DAY = new Date('2099-10-16T00:00:00.000Z');
+
 beforeAll(async () => {
   prisma = await setupTestDb();
   [mine, other] = await Promise.all([createCalendarFixture(prisma, { prefix: 'LKM' }), createCalendarFixture(prisma, { prefix: 'LKO' })]);
   const [e, v, a] = await Promise.all([createTestUser('editor'), createTestUser('viewer'), createTestUser('admin')]);
   [editor, viewer, admin] = [e.session, v.session, a.session];
   const { functionId } = await grantBrandAccess(prisma, { brandIds: [mine.brandId], userIds: [e.user.id, v.user.id], label: 'Links' });
-  const elsewhere = await prisma.companyFunction.create({ data: { slug: `links_other_${mine.uid.toLowerCase()}`, name: `Links other ${mine.uid}`, order: 91, isActive: true } });
+  const elsewhere = await createTestFunction(prisma, true, 'links_other');
 
-  const event = (title: string, functionIds: string[], calendar = mine) => prisma.calendarEvent.create({
-    data: {
-      calendarId: calendar.calendarId, planningGroupId: calendar.planningGroupId, title, allDay: true,
-      startAt: new Date('2099-10-16T00:00:00.000Z'),
-      visibilities: { create: functionIds.map(id => ({ functionId: id })) },
-    },
-  });
+  const event = (title: string, functionIds: string[], calendar = mine) =>
+    createTestEvent(prisma, calendar, functionIds, { title, allDay: true, startAt: DAY });
   [sharedId, openId, hiddenId] = (await Promise.all([event('Condiviso', [functionId]), event('Aperto', []), event('Nascosto', [elsewhere.id])])).map(x => x.id);
 });
 
@@ -67,9 +66,7 @@ describe('seasonCalendar.locate', () => {
   });
 
   it('answers NOT_FOUND alike for a missing event, one of another brand and one hidden from the caller', async () => {
-    const outside = await prisma.calendarEvent.create({
-      data: { calendarId: other.calendarId, planningGroupId: other.planningGroupId, title: 'Altrove', allDay: true, startAt: new Date('2099-10-16T00:00:00.000Z') },
-    });
+    const outside = await createTestEvent(prisma, other, [], { title: 'Altrove', allDay: true, startAt: DAY });
     const caller = createCallerWithSession(editor);
     for (const eventId of [randomUUID(), outside.id, hiddenId]) {
       await expect(caller.seasonCalendar.locate({ eventId })).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -81,9 +78,7 @@ describe('seasonCalendar.locate', () => {
   it('answers NOT_FOUND for a retired season, which the context cannot be switched to', async () => {
     const retired = await createCalendarFixture(prisma, { prefix: 'LKR' });
     await prisma.season.update({ where: { id: retired.seasonId }, data: { isActive: false } });
-    const past = await prisma.calendarEvent.create({
-      data: { calendarId: retired.calendarId, planningGroupId: retired.planningGroupId, title: 'Passato', allDay: true, startAt: new Date('2099-10-16T00:00:00.000Z') },
-    });
+    const past = await createTestEvent(prisma, retired, [], { title: 'Passato', allDay: true, startAt: DAY });
     await expect(createCallerWithSession(admin).seasonCalendar.locate({ eventId: past.id })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(createCallerWithSession(admin).seasonCalendar.locate({ calendarId: retired.calendarId })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });

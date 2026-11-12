@@ -205,20 +205,29 @@ export function createTestFunction(db: Prisma.TransactionClient, isActive = true
 }
 
 /**
- * An event in `place`'s planning group, visible to `functionIds`, cancelled when asked. `db` may be a
- * transaction, so `asLegacy` can write one the triggers would refuse.
+ * An event in `place`'s planning group, visible to `functionIds` and shared personally with
+ * `sharedWith`, cancelled when asked; a random `Ev <id>` title unless given, `allDay` as the schema
+ * defaults it unless given. `db` may be a transaction, so `asLegacy` can write one the triggers
+ * would refuse.
  */
 export function createTestEvent(
   db: Prisma.TransactionClient,
   place: Pick<CalendarFixture, 'calendarId' | 'planningGroupId'>,
   functionIds: string[],
-  { startAt, cancelled = false }: { startAt: Date; cancelled?: boolean }
+  {
+    startAt,
+    cancelled = false,
+    title = `Ev ${shortId()}`,
+    allDay,
+    sharedWith = [],
+  }: { startAt: Date; cancelled?: boolean; title?: string; allDay?: boolean; sharedWith?: string[] }
 ) {
   return db.calendarEvent.create({
     data: {
-      calendarId: place.calendarId, planningGroupId: place.planningGroupId, title: `Ev ${shortId()}`, startAt,
+      calendarId: place.calendarId, planningGroupId: place.planningGroupId, title, startAt, allDay,
       cancelledAt: cancelled ? new Date() : null, cancelReason: cancelled ? 'test' : null,
       visibilities: { create: functionIds.map(functionId => ({ functionId })) },
+      userVisibilities: { create: sharedWith.map(userId => ({ userId })) },
     },
   });
 }

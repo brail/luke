@@ -18,6 +18,7 @@ import { sseStore } from '../src/lib/sseStore';
 import {
   createCalendarFixture,
   createCallerWithSession,
+  createTestEvent,
   createTestUser,
   expectedOf,
   grantBrandAccess,
@@ -57,17 +58,8 @@ function createInput(title: string, functionIds: string[], confirmHidesFromCalle
 }
 
 /** An event visible to `functionIds`, shared personally with `sharedWith`. */
-async function createEvent(functionIds: string[], sharedWith: string[] = []) {
-  return prisma.calendarEvent.create({
-    data: {
-      calendarId,
-      planningGroupId,
-      title: newTitle(),
-      startAt: START,
-      visibilities: { create: functionIds.map(functionId => ({ functionId })) },
-      userVisibilities: { create: sharedWith.map(userId => ({ userId })) },
-    },
-  });
+function createEvent(functionIds: string[], sharedWith: string[] = []) {
+  return createTestEvent(prisma, { calendarId, planningGroupId }, functionIds, { startAt: START, title: newTitle(), sharedWith });
 }
 
 async function visibleFunctionIds(eventId: string): Promise<string[]> {

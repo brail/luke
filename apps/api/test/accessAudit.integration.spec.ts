@@ -19,7 +19,7 @@ import { CRITICAL_AUDIT_ACTIONS } from '../src/lib/auditLog';
 import { deleteConfig } from '../src/lib/configManager';
 
 import { createCallerWithSession, createTestUser, expectedOf, expectToThrow, setupTestDb } from './helpers';
-import { createCalendarFixture, grantBrandAccess } from './helpers/calendarFixture';
+import { createCalendarFixture, createTestEvent, createTestTemplate, grantBrandAccess } from './helpers/calendarFixture';
 import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
@@ -276,11 +276,8 @@ describe('a per-person share of a calendar event', () => {
   beforeAll(async () => {
     const calendar = await createCalendarFixture(prisma, { prefix: 'ACS' });
     brandId = calendar.brandId;
-    eventId = (await prisma.calendarEvent.create({
-      data: { calendarId: calendar.calendarId, planningGroupId: calendar.planningGroupId, title: 'Shared', startAt: new Date('2096-03-02') },
-    })).id;
     // A function audience, so that neither a grant nor a revoke runs into the person-only guards.
-    await prisma.calendarEventVisibility.create({ data: { eventId, functionId } });
+    eventId = (await createTestEvent(prisma, calendar, [functionId], { title: 'Shared', startAt: new Date('2096-03-02') })).id;
   });
 
   const notified = (userId: string, title: string) => prisma.notification.count({ where: { userId, title } });
@@ -351,12 +348,8 @@ describe("the functions a calendar event is visible to", () => {
 
   /** An event in `groupId` visible to `functionIds`. */
   async function eventFor(functionIds: string[], groupId = calendar.planningGroupId) {
-    return (await prisma.calendarEvent.create({
-      data: {
-        calendarId: calendar.calendarId, planningGroupId: groupId, title: `Event ${randomUUID().slice(0, 8)}`,
-        startAt: new Date('2096-03-02T00:00:00.000Z'), allDay: true,
-        visibilities: { create: functionIds.map(id => ({ functionId: id })) },
-      },
+    return (await createTestEvent(prisma, { calendarId: calendar.calendarId, planningGroupId: groupId }, functionIds, {
+      startAt: new Date('2096-03-02T00:00:00.000Z'), allDay: true,
     })).id;
   }
 
@@ -368,12 +361,7 @@ describe("the functions a calendar event is visible to", () => {
   async function template(items: { title: string; functionIds: string[] }[]) {
     const [group, tpl] = await Promise.all([
       prisma.planningGroup.create({ data: { calendarId: calendar.calendarId, name: `Template ${randomUUID().slice(0, 8)}` } }),
-      prisma.milestoneTemplate.create({
-        data: {
-          name: `Template ${randomUUID().slice(0, 8)}`,
-          items: { create: items.map(i => ({ title: i.title, offsetDays: 0, durationDays: 1, allDay: true, visibilities: { create: i.functionIds.map(id => ({ functionId: id })) } })) },
-        },
-      }),
+      createTestTemplate(prisma, items),
     ]);
     return { groupId: group.id, apply: () => asAdmin().seasonCalendar.applyTemplate({ planningGroupId: group.id, templateId: tpl.id, anchorDate: '2096-03-02', force: false }) };
   }

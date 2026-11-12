@@ -14,6 +14,7 @@ import type { PrismaClient } from '@luke/db';
 import {
   createCalendarFixture,
   createCallerWithSession,
+  createTestEvent,
   createTestUser,
   expectedOf,
   grantBrandAccess,
@@ -39,16 +40,8 @@ function newTitle(): string {
 }
 
 /** An event visible to `functionIds`. */
-async function createEvent(functionIds: string[]) {
-  return prisma.calendarEvent.create({
-    data: {
-      calendarId,
-      planningGroupId,
-      title: newTitle(),
-      startAt: new Date('2099-06-01T09:00:00.000Z'),
-      visibilities: { create: functionIds.map(functionId => ({ functionId })) },
-    },
-  });
+function createEvent(functionIds: string[]) {
+  return createTestEvent(prisma, { calendarId, planningGroupId }, functionIds, { startAt: new Date('2099-06-01T09:00:00.000Z'), title: newTitle() });
 }
 
 async function auditRow(action: string, targetId: string) {
