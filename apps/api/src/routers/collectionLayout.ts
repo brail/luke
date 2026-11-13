@@ -15,6 +15,7 @@ import { z } from 'zod';
 
 import {
   CollectionGroupInputSchema,
+  CollectionLayoutRowDuplicateInputSchema,
   CollectionLayoutRowInputSchema,
   CollectionLayoutBulkAssignPlanningGroupInputSchema,
   CollectionLayoutSettingsSchema,
@@ -487,20 +488,20 @@ const rowsRouter = router({
     }),
 
   /**
-   * Duplicates a row within its group.
+   * Duplicates a row within its group, with its quotations unless `includeQuotations` is false.
    *
    * @auth collection_layout:update
-   * @input { rowId: string }
+   * @input { rowId: uuid, includeQuotations?: boolean — default true }
    * @output The newly created duplicate CollectionLayoutRow record.
    */
   duplicate: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ rowId: z.string() }))
+    .input(CollectionLayoutRowDuplicateInputSchema)
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
-      const result = await duplicateRow(input.rowId, ctx.prisma, ctx.session!.user.id);
-      await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId } });
+      const result = await duplicateRow(input.rowId, ctx.prisma, ctx.session!.user.id, input.includeQuotations);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId, includeQuotations: input.includeQuotations } });
       return result;
     }),
 

@@ -154,6 +154,15 @@ export type CollectionLayoutRowInput = z.infer<
   typeof CollectionLayoutRowInputSchema
 >;
 
+/**
+ * Input schema for duplicating a collection row. `includeQuotations` defaults to copying the row's
+ * quotations, as duplication always did; the layout asks only when the row has some (#56).
+ */
+export const CollectionLayoutRowDuplicateInputSchema = z.object({
+  rowId: z.uuid(),
+  includeQuotations: z.boolean().default(true),
+});
+
 /** Input schema for bulk-assigning a set of collection layout rows to a planning group. */
 export const CollectionLayoutBulkAssignPlanningGroupInputSchema = z.object({
   rowIds: z.array(z.uuid()).min(1).max(100),

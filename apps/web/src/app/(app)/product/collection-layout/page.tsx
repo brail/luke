@@ -432,7 +432,7 @@ export default function CollectionLayoutPage() {
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={openEditRow}
-                onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+                onDuplicateRow={(rowId, includeQuotations) => duplicateRowMutation.mutate({ rowId, includeQuotations })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
                 onDeleteGroup={groupId =>
@@ -493,7 +493,7 @@ export default function CollectionLayoutPage() {
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={openEditRow}
-                onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+                onDuplicateRow={(rowId, includeQuotations) => duplicateRowMutation.mutate({ rowId, includeQuotations })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
                 onDeleteGroup={groupId =>

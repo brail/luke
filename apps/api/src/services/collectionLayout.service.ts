@@ -830,7 +830,8 @@ export async function deleteRow(
 
 /**
  * Duplicates a row, inserting the copy immediately after the source row and shifting
- * subsequent rows down by 1. Quotations are copied; picture key is not (shared references avoided).
+ * subsequent rows down by 1. Quotations are copied unless `includeQuotations` is false; the picture
+ * key never is (shared references avoided).
  *
  * @throws {TRPCError} NOT_FOUND if the source row does not exist.
  * @throws {TRPCError} CONFLICT if a copied quotation's parameter set was deleted meanwhile; the
@@ -839,15 +840,13 @@ export async function deleteRow(
 export async function duplicateRow(
   rowId: string,
   prisma: PrismaClient,
-  userId: string
+  userId: string,
+  includeQuotations = true
 ): Promise<RowWithVendor> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
     include: {
-      quotations: {
-        orderBy: { order: 'asc' as const },
-        include: { pricingParameterSet: true },
-      },
+      quotations: includeQuotations ? { orderBy: { order: 'asc' as const } } : false,
     },
   });
 
@@ -886,13 +885,13 @@ export async function duplicateRow(
       },
     });
 
-    // Duplicate quotations
-    for (const q of quotations) {
-      const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
-      await tx.collectionRowQuotation.create({
-        data: { ...qData, rowId: newRow.id },
-      });
-    }
+    // Duplicate quotations (none were read when they are not wanted)
+    if (quotations?.length) await tx.collectionRowQuotation.createMany({
+      data: quotations.map(({ id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, ...qData }) => ({
+        ...qData,
+        rowId: newRow.id,
+      })),
+    });
 
     return tx.collectionLayoutRow.findUniqueOrThrow({
       where: { id: newRow.id },

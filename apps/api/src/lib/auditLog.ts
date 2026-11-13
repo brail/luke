@@ -241,6 +241,8 @@ const SAFE_KEY_LIST = [
   'specsheetId',
   'functionId',
   'sourceRowId',
+  // `collectionLayout.rows.duplicate`: whether the caller asked for the source row's quotations.
+  'includeQuotations',
   'sourceBrandId',
   'sourceSeasonId',
   'sourcePlanningGroupIds',

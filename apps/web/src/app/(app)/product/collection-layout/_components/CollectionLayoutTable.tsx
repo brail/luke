@@ -12,6 +12,15 @@ import {
   type CollectionColumnKey,
 } from '@luke/core';
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../../../../components/ui/alert-dialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -58,7 +67,8 @@ interface CollectionLayoutTableProps {
   onAddRow: (groupId: string) => void;
   /** Opens a row, with the ids of the rows shown, in board order: the editor's previous/next. */
   onEditRow: (row: CollectionRowData, rowIds: string[]) => void;
-  onDuplicateRow: (rowId: string) => void;
+  /** Duplicates a row; `includeQuotations` is asked only when the row has quotations (#56). */
+  onDuplicateRow: (rowId: string, includeQuotations: boolean) => void;
   onDeleteRow: (rowId: string, lineName: string) => void;
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
@@ -135,6 +145,20 @@ export function CollectionLayoutTable({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
+  // A row with quotations asks whether its copy takes them (#56); one without duplicates at once.
+  // The row outlives the question, so the closing dialog keeps its text.
+  const [duplicateAsk, setDuplicateAsk] = useState<CollectionRowData | null>(null);
+  const [isDuplicateAskOpen, setIsDuplicateAskOpen] = useState(false);
+  const withQuotationsRef = useRef<HTMLButtonElement>(null);
+  const duplicateRow = (row: CollectionRowData) => {
+    if (row.quotations.length === 0) return onDuplicateRow(row.id, true);
+    setDuplicateAsk(row);
+    setIsDuplicateAskOpen(true);
+  };
+  const answerDuplicate = (includeQuotations: boolean) => {
+    if (duplicateAsk) onDuplicateRow(duplicateAsk.id, includeQuotations);
+    setIsDuplicateAskOpen(false);
+  };
 
   const toggleRowSelection = useCallback((rowId: string) => {
     setSelectedRowIds(prev => {
@@ -393,7 +417,7 @@ export function CollectionLayoutTable({
             criticalityFilter={activeCriticalityFilter}
             onAddRow={onAddRow}
             onEditRow={row => onEditRow(row, getAllFilteredRowIds())}
-            onDuplicateRow={onDuplicateRow}
+            onDuplicateRow={duplicateRow}
             onDeleteRow={onDeleteRow}
             onRenameGroup={onRenameGroup}
             onDeleteGroup={onDeleteGroup}
@@ -422,6 +446,31 @@ export function CollectionLayoutTable({
         collectionLayoutId={layout.id}
         rowIds={[...selectedRowIds]}
       />
+
+      <AlertDialog open={isDuplicateAskOpen} onOpenChange={setIsDuplicateAskOpen}>
+        <AlertDialogContent
+          // The default answer is the copy with its quotations: Enter takes it.
+          onOpenAutoFocus={e => { e.preventDefault(); withQuotationsRef.current?.focus(); }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Duplica riga</AlertDialogTitle>
+            <AlertDialogDescription>
+              {duplicateAsk?.quotations.length === 1
+                ? 'La riga ha 1 quotazione. Duplicarla insieme alla riga?'
+                : `La riga ha ${duplicateAsk?.quotations.length ?? 0} quotazioni. Duplicarle insieme alla riga?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <Button type="button" variant="outline" onClick={() => answerDuplicate(false)}>
+              Senza quotazioni
+            </Button>
+            <Button type="button" ref={withQuotationsRef} onClick={() => answerDuplicate(true)}>
+              Con le quotazioni
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

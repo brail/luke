@@ -357,7 +357,7 @@ interface CollectionGroupSectionProps {
   criticalityFilter: readonly string[];
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
-  onDuplicateRow: (rowId: string) => void;
+  onDuplicateRow: (row: CollectionRowData) => void;
   onDeleteRow: (rowId: string, lineName: string) => void;
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
@@ -951,7 +951,7 @@ export function CollectionGroupSection({
                             infoTooltip="Duplica"
                             variant="ghost"
                             size="sm"
-                            onClick={() => onDuplicateRow(row.id)}
+                            onClick={() => onDuplicateRow(row)}
                           >
                             <Copy className="h-3.5 w-3.5" />
                           </PermissionButton>
