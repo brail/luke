@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 
 import { cn } from '../../lib/utils';
 
+import { Button } from './button';
+
 interface FileDropZoneProps {
   onFile: (file: File) => void;
   accept?: string[];
@@ -22,6 +24,9 @@ export function FileDropZone({
   className,
   children,
 }: FileDropZoneProps) {
+  // An image upload takes a paste: a click selects the area, and the picker opens from `Sfoglia…`
+  // or with Enter (#54). Any other file, as an import dialog takes, opens the picker on a click.
+  const openOnClick = !accept?.length || !accept.every(type => type.startsWith('image/'));
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // counter tracks nested drag targets — prevents flicker when cursor moves over children
@@ -98,6 +103,7 @@ export function FileDropZone({
     <div
       className={cn(
         'transition-[box-shadow,background-color]',
+        !openOnClick && !disabled && 'outline-none focus-within:ring-2 focus-within:ring-ring',
         isDragOver && 'ring-2 ring-primary ring-offset-1 bg-primary/5',
         className
       )}
@@ -106,11 +112,14 @@ export function FileDropZone({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onPaste={handlePaste}
-      onClick={openPicker}
-      role="button"
+      onClick={openOnClick ? openPicker : undefined}
+      role={openOnClick ? 'button' : 'group'}
+      aria-label={openOnClick ? undefined : "Carica un'immagine: trascina, incolla o sfoglia"}
       tabIndex={disabled ? -1 : 0}
       onKeyDown={(e: KeyboardEvent) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // A key on a control inside the area is that control's own.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || (openOnClick && e.key === ' ')) {
           e.preventDefault();
           openPicker();
         }
@@ -128,6 +137,15 @@ export function FileDropZone({
         tabIndex={-1}
       />
       {children}
+      {/* A disabled area (read-only, or busy uploading) offers no way to upload. */}
+      {!openOnClick && !disabled && (
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <Button type="button" variant="outline" size="sm" onClick={openPicker}>
+            Sfoglia…
+          </Button>
+          <span>o incolla un&apos;immagine (Ctrl/⌘+V)</span>
+        </div>
+      )}
     </div>
   );
 }

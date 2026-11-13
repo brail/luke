@@ -237,7 +237,7 @@ export function ProfileTab() {
                   accept={['image/png', 'image/jpeg', 'image/webp']}
                   maxSizeMB={2}
                   disabled={isUploading}
-                  className="cursor-pointer rounded-md border border-dashed p-2 text-center hover:bg-muted/40"
+                  className="rounded-md border border-dashed p-2 text-center hover:bg-muted/40"
                 >
                   <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
                     <UploadCloud size={16} />

@@ -631,7 +631,7 @@ export function PictureSidePanel({
         accept={['image/png', 'image/jpeg', 'image/webp']}
         maxSizeMB={5}
         disabled={!canUpdate}
-        className={cn('rounded-md', canUpdate && 'cursor-pointer')}
+        className="rounded-md"
       >
         <div className="flex flex-col items-center gap-3 py-2">
           {pictureUrl && !imgFailed ? (
@@ -645,7 +645,7 @@ export function PictureSidePanel({
               {canUpdate && (
                 <button
                   type="button"
-                  onClick={e => { e.stopPropagation(); onRemovePicture(); }}
+                  onClick={onRemovePicture}
                   className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
                 >
                   <X className="h-3 w-3" />
@@ -662,7 +662,7 @@ export function PictureSidePanel({
           )}
           {canUpdate && (
             <p className="text-xs text-muted-foreground text-center">
-              {pictureUrl ? 'Trascina per sostituire o clicca' : 'Trascina qui o clicca per caricare'}
+              {pictureUrl ? 'Trascina qui per sostituire' : 'Trascina qui la foto'}
               <span className="block mt-0.5">PNG, JPEG, WebP · Max 5MB</span>
             </p>
           )}

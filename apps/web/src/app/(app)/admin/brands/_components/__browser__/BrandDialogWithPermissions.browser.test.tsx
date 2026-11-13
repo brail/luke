@@ -71,7 +71,7 @@ async function expectDialog(
   expect(screen.getByText('Hai accesso sola lettura', { exact: false }).elements()).toHaveLength(want.banner ? 1 : 0);
   const name = screen.getByPlaceholder('es. Nike, Adidas');
   await (want.editable ? expect.element(name).toBeEnabled() : expect.element(name).toBeDisabled());
-  expect(screen.getByText('Trascina qui o clicca per caricare').elements()).toHaveLength(want.logo ? 1 : 0);
+  expect(screen.getByText('Trascina qui il logo').elements()).toHaveLength(want.logo ? 1 : 0);
   expect(screen.getByText('Sola lettura', { exact: true }).elements()).toHaveLength(want.logo ? 0 : 1);
 }
 

@@ -342,7 +342,7 @@ export function BrandDialogWithPermissions({
                   className={cn(
                     'rounded-lg border-2 border-dashed p-4',
                     canUpdate && !isUploading
-                      ? 'cursor-pointer border-muted hover:border-primary/40 hover:bg-muted/30'
+                      ? 'border-muted hover:border-primary/40 hover:bg-muted/30'
                       : 'border-muted opacity-50 cursor-not-allowed'
                   )}
                 >
@@ -360,7 +360,7 @@ export function BrandDialogWithPermissions({
                             variant="destructive"
                             size="sm"
                             className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                            onClick={e => { e.stopPropagation(); handleLogoRemove(); }}
+                            onClick={handleLogoRemove}
                           >
                             ×
                           </Button>
@@ -382,7 +382,7 @@ export function BrandDialogWithPermissions({
                       ) : (
                         <p className="text-sm text-muted-foreground">
                           {canUpdate
-                            ? 'Trascina qui o clicca per caricare'
+                            ? 'Trascina qui il logo'
                             : 'Sola lettura'}
                         </p>
                       )}

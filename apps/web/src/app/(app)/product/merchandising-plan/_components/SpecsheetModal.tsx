@@ -401,11 +401,9 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                   accept={['image/png', 'image/jpeg', 'image/webp']}
                   maxSizeMB={10}
                   disabled={uploadingImage}
-                  className="w-full"
+                  className="w-full rounded-md border border-dashed py-2 text-center text-sm text-muted-foreground hover:border-primary/50 hover:bg-muted/30"
                 >
-                  <div className="flex items-center justify-center rounded-md border border-dashed py-2 text-sm text-muted-foreground hover:border-primary/50 hover:bg-muted/30 transition-colors">
-                    {uploadingImage ? 'Caricamento…' : '+ Aggiungi immagine'}
-                  </div>
+                  {uploadingImage ? 'Caricamento…' : "Trascina qui un'immagine"}
                 </FileDropZone>
               )}
 
