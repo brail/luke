@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, Download, FileSpreadsheet, FileText, Layers, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
-import { type ReactNode, useCallback, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
@@ -30,6 +30,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../../../../components/ui/popover';
+import { bandBadgeStyle } from '../../../../../lib/alertBandStyle';
+import { criticalityBandOptions, NO_CRITICALITY } from '../../../../../lib/criticalityBands';
+import { trpc } from '../../../../../lib/trpc';
 import { computeWeightedMargin } from '../../_shared/pricingCalc';
 
 import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
@@ -106,6 +109,26 @@ export function CollectionLayoutTable({
   emptyAction,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
+  const [criticalityFilter, setCriticalityFilter] = useState<string[]>([]);
+  // Same staleness as the rows' bands (`criticalityForLayout`), so a renamed band reaches both together.
+  const { data: thresholds } = trpc.phaseAlert.thresholds.useQuery(undefined, { staleTime: 60 * 1000 });
+  const criticalityOptions = useMemo(() => (thresholds ? criticalityBandOptions(thresholds) : []), [thresholds]);
+  // A chosen band renamed or removed since would hide every row with no box left to untick: it drops out.
+  const activeCriticalityFilter = useMemo(
+    () => criticalityFilter.filter(label => label === NO_CRITICALITY || criticalityOptions.some(o => o.label === label)),
+    [criticalityFilter, criticalityOptions],
+  );
+  const criticalityItem = (label: string, content: ReactNode) => (
+    <DropdownMenuCheckboxItem
+      key={label}
+      checked={activeCriticalityFilter.includes(label)}
+      onCheckedChange={checked => setCriticalityFilter(prev => (checked ? [...prev, label] : prev.filter(l => l !== label)))}
+      // Keep the menu open: several bands are chosen in a row.
+      onSelect={e => e.preventDefault()}
+    >
+      {content}
+    </DropdownMenuCheckboxItem>
+  );
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
   const [exportFilteredOnly, setExportFilteredOnly] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
@@ -143,7 +166,7 @@ export function CollectionLayoutTable({
   // In fullscreen all columns are visible; normal mode respects saved preferences
   const effectiveHiddenColumns = isFullscreen ? [] : hiddenColumns;
 
-  const hasActiveSearch = search !== '';
+  const hasActiveToolbarFilters = search !== '' || activeCriticalityFilter.length > 0;
 
   const totalRows = layout.groups.reduce((sum, g) => sum + g.rows.length, 0);
   const totalSku = layout.groups.reduce(
@@ -205,10 +228,10 @@ export function CollectionLayoutTable({
           </>
         )}
 
-        {hasActiveSearch && (
+        {hasActiveToolbarFilters && (
           <div className="ml-auto flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">Ricerca attiva</Badge>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setSearch('')}>
+            <Badge variant="secondary" className="text-xs">Filtri attivi</Badge>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setSearch(''); setCriticalityFilter([]); }}>
               <RotateCcw className="h-3 w-3 mr-1" />
               Reset
             </Button>
@@ -227,6 +250,24 @@ export function CollectionLayoutTable({
             className="pl-9"
           />
         </div>
+
+        {/* Criticality filter (#53): the configured bands by name, plus rows with no band; OR within, AND with the rest. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm">
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              Criticità{activeCriticalityFilter.length > 0 && ` (${activeCriticalityFilter.length})`}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {criticalityOptions.map(band => criticalityItem(
+              band.label,
+              // Band color and emphasis come from AppConfig (admin-configured hex), not from design tokens.
+              <Badge variant="outline" style={bandBadgeStyle(band)}>{band.label}</Badge>,
+            ))}
+            {criticalityItem(NO_CRITICALITY, 'Senza criticità')}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Column visibility popover — hidden in fullscreen (all columns already visible) */}
         {!isFullscreen && (
@@ -347,6 +388,7 @@ export function CollectionLayoutTable({
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}
+            criticalityFilter={activeCriticalityFilter}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
             onDuplicateRow={onDuplicateRow}

@@ -53,6 +53,7 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { useCatalog } from '../../../../../hooks/useCatalog';
 import { isRowCatalogField, ROW_CATALOG_TYPE } from '../../../../../lib/catalogOptions';
+import { matchesCriticality } from '../../../../../lib/criticalityBands';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 import {
@@ -352,6 +353,8 @@ interface CollectionGroupSectionProps {
   hiddenColumns: CollectionColumnKey[];
   parameterSets: PricingParameterSet[];
   searchQuery?: string;
+  /** Band names the page's criticality filter keeps (#53), `NO_CRITICALITY` for rows with no band; empty keeps every row. */
+  criticalityFilter: readonly string[];
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
   onDuplicateRow: (rowId: string) => void;
@@ -387,6 +390,7 @@ export function CollectionGroupSection({
   hiddenColumns,
   parameterSets,
   searchQuery = '',
+  criticalityFilter,
   onAddRow,
   onEditRow,
   onDuplicateRow,
@@ -498,7 +502,8 @@ export function CollectionGroupSection({
     });
   };
 
-  const isDndMode = !hasActiveFilters && !searchQuery;
+  const hasCriticalityFilter = criticalityFilter.length > 0;
+  const isDndMode = !hasActiveFilters && !searchQuery && !hasCriticalityFilter;
 
   const filteredRows = useMemo(() => {
     const textMatch = (v: string | null | undefined, f: string) => {
@@ -523,6 +528,8 @@ export function CollectionGroupSection({
     let rows = baseRows.filter(row => {
       const vendorName = resolveVendorName(row.vendor, null);
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
+      // Until the bands load (or if they fail) nothing is known to be in or out: the filter waits.
+      if (criticalityList && !matchesCriticality(criticalityFilter, criticalityByRowId.get(row.id)?.band.label)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
       if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
       if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
@@ -575,7 +582,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, seasonRank, isDndMode, catalogLabel]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, seasonRank, isDndMode, catalogLabel, criticalityFilter, criticalityList, criticalityByRowId]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
@@ -767,7 +774,7 @@ export function CollectionGroupSection({
                     {filteredRows.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={20} className="py-8 text-center text-sm text-muted-foreground">
-                          {hasActiveFilters
+                          {hasActiveFilters || hasCriticalityFilter
                             ? 'Nessuna riga corrisponde ai filtri applicati.'
                             : 'Nessuna riga corrisponde alla ricerca.'}
                         </TableCell>

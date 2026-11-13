@@ -56,7 +56,7 @@ const noop = () => {};
 const renderTable = () => render(
   <TooltipProvider>
     <CollectionGroupSection
-      group={group} canUpdate hiddenColumns={[]} parameterSets={[]} selectedRowIds={new Set()}
+      group={group} canUpdate hiddenColumns={[]} parameterSets={[]} criticalityFilter={[]} selectedRowIds={new Set()}
       onAddRow={noop} onEditRow={noop} onDuplicateRow={noop} onDeleteRow={noop} onRenameGroup={noop}
       onDeleteGroup={noop} onToggleRowSelection={noop} onSelectAllRows={noop}
     />
