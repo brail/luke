@@ -445,6 +445,7 @@ export default function CollectionLayoutPage() {
                   })
                 }
                 isDeletingRow={deleteRowMutation.isPending}
+                isDuplicatingRow={duplicateRowMutation.isPending}
                 onToggleFullscreen={() => setIsFullscreen(true)}
                 onExportXlsx={rowIds =>
                   exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
@@ -506,6 +507,7 @@ export default function CollectionLayoutPage() {
                   })
                 }
                 isDeletingRow={deleteRowMutation.isPending}
+                isDuplicatingRow={duplicateRowMutation.isPending}
                 isFullscreen
                 onToggleFullscreen={() => setIsFullscreen(false)}
                 onExportXlsx={rowIds =>

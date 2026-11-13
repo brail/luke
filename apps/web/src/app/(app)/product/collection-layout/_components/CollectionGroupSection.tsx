@@ -362,6 +362,8 @@ interface CollectionGroupSectionProps {
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
   isDeletingRow?: boolean;
+  /** A duplicate is being saved: Duplica waits, or a quick second click would make a second copy. */
+  isDuplicatingRow?: boolean;
   onFilteredRowIdsChange?: (ids: string[]) => void;
   /** Row ids selected for bulk actions (e.g. "assign to planning group"), lifted to the parent page. */
   selectedRowIds: Set<string>;
@@ -398,6 +400,7 @@ export function CollectionGroupSection({
   onRenameGroup,
   onDeleteGroup,
   isDeletingRow = false,
+  isDuplicatingRow = false,
   onFilteredRowIdsChange,
   selectedRowIds,
   onToggleRowSelection,
@@ -951,6 +954,7 @@ export function CollectionGroupSection({
                             infoTooltip="Duplica"
                             variant="ghost"
                             size="sm"
+                            disabled={isDuplicatingRow}
                             onClick={() => onDuplicateRow(row)}
                           >
                             <Copy className="h-3.5 w-3.5" />

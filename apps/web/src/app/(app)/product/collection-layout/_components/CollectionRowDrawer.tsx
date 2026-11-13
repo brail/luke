@@ -15,17 +15,9 @@ import {
   buildTempCollectionRowPictureUploadUrl,
 } from '@luke/core';
 
+import { ChoiceDialog } from '../../../../../components/ChoiceDialog';
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../../../../../components/ui/alert-dialog';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -524,27 +516,19 @@ export function CollectionRowDrawer({
       isLoading={isLoading}
     />
 
-    <AlertDialog open={leaving != null} onOpenChange={next => { if (!next) setLeaving(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Modifiche non salvate</AlertDialogTitle>
-          <AlertDialogDescription>
-            {leaving?.to
-              ? "La riga ha modifiche non salvate. Vuoi salvarle prima di passare a un'altra riga?"
-              : 'La riga ha modifiche non salvate. Vuoi salvarle prima di chiudere?'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Resta</AlertDialogCancel>
-          <Button type="button" variant="outline" onClick={() => { setLeaving(null); goTo(leaving?.to ?? null); }}>
-            Scarta
-          </Button>
-          <Button type="button" onClick={() => { setLeaving(null); void saveRow(leaving?.to ?? undefined)(); }}>
-            Salva
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ChoiceDialog
+      open={leaving != null}
+      onOpenChange={next => { if (!next) setLeaving(null); }}
+      title="Modifiche non salvate"
+      description={leaving?.to
+        ? "La riga ha modifiche non salvate. Vuoi salvarle prima di passare a un'altra riga?"
+        : 'La riga ha modifiche non salvate. Vuoi salvarle prima di chiudere?'}
+      cancelText="Resta"
+      secondaryText="Scarta"
+      onSecondary={() => goTo(leaving?.to ?? null)}
+      primaryText="Salva"
+      onPrimary={() => void saveRow(leaving?.to ?? undefined)()}
+    />
 
     {mode === 'edit' && row && (
       <ChangePlanningGroupDialog

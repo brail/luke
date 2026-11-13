@@ -12,15 +12,7 @@ import {
   type CollectionColumnKey,
 } from '@luke/core';
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../../../../../components/ui/alert-dialog';
+import { ChoiceDialog } from '../../../../../components/ChoiceDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -74,6 +66,7 @@ interface CollectionLayoutTableProps {
   onDeleteGroup: (groupId: string, groupName: string) => void;
   onUpdateSettings: (settings: { hiddenColumns?: CollectionColumnKey[] | null }) => void;
   isDeletingRow?: boolean;
+  isDuplicatingRow?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   onExportXlsx?: (filteredRowIds?: string[]) => void;
@@ -110,6 +103,7 @@ export function CollectionLayoutTable({
   onDeleteGroup,
   onUpdateSettings,
   isDeletingRow = false,
+  isDuplicatingRow = false,
   isFullscreen = false,
   onToggleFullscreen,
   onExportXlsx,
@@ -146,18 +140,13 @@ export function CollectionLayoutTable({
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
   // A row with quotations asks whether its copy takes them (#56); one without duplicates at once.
-  // The row outlives the question, so the closing dialog keeps its text.
   const [duplicateAsk, setDuplicateAsk] = useState<CollectionRowData | null>(null);
-  const [isDuplicateAskOpen, setIsDuplicateAskOpen] = useState(false);
-  const withQuotationsRef = useRef<HTMLButtonElement>(null);
   const duplicateRow = (row: CollectionRowData) => {
-    if (row.quotations.length === 0) return onDuplicateRow(row.id, true);
-    setDuplicateAsk(row);
-    setIsDuplicateAskOpen(true);
+    if (row.quotations.length === 0) onDuplicateRow(row.id, true);
+    else setDuplicateAsk(row);
   };
   const answerDuplicate = (includeQuotations: boolean) => {
     if (duplicateAsk) onDuplicateRow(duplicateAsk.id, includeQuotations);
-    setIsDuplicateAskOpen(false);
   };
 
   const toggleRowSelection = useCallback((rowId: string) => {
@@ -422,6 +411,7 @@ export function CollectionLayoutTable({
             onRenameGroup={onRenameGroup}
             onDeleteGroup={onDeleteGroup}
             isDeletingRow={isDeletingRow}
+            isDuplicatingRow={isDuplicatingRow}
             onFilteredRowIdsChange={ids => handleFilteredRowIdsChange(group.id, ids)}
             selectedRowIds={selectedRowIds}
             onToggleRowSelection={toggleRowSelection}
@@ -447,30 +437,21 @@ export function CollectionLayoutTable({
         rowIds={[...selectedRowIds]}
       />
 
-      <AlertDialog open={isDuplicateAskOpen} onOpenChange={setIsDuplicateAskOpen}>
-        <AlertDialogContent
-          // The default answer is the copy with its quotations: Enter takes it.
-          onOpenAutoFocus={e => { e.preventDefault(); withQuotationsRef.current?.focus(); }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Duplica riga</AlertDialogTitle>
-            <AlertDialogDescription>
-              {duplicateAsk?.quotations.length === 1
-                ? 'La riga ha 1 quotazione. Duplicarla insieme alla riga?'
-                : `La riga ha ${duplicateAsk?.quotations.length ?? 0} quotazioni. Duplicarle insieme alla riga?`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <Button type="button" variant="outline" onClick={() => answerDuplicate(false)}>
-              Senza quotazioni
-            </Button>
-            <Button type="button" ref={withQuotationsRef} onClick={() => answerDuplicate(true)}>
-              Con le quotazioni
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ChoiceDialog
+        open={duplicateAsk != null}
+        onOpenChange={open => { if (!open) setDuplicateAsk(null); }}
+        title="Duplica riga"
+        description={duplicateAsk?.quotations.length === 1
+          ? 'La riga ha 1 quotazione. Duplicarla insieme alla riga?'
+          : `La riga ha ${duplicateAsk?.quotations.length ?? 0} quotazioni. Duplicarle insieme alla riga?`}
+        cancelText="Annulla"
+        secondaryText="Senza quotazioni"
+        onSecondary={() => answerDuplicate(false)}
+        primaryText="Con le quotazioni"
+        onPrimary={() => answerDuplicate(true)}
+        // The default answer is the copy with its quotations: Enter takes it.
+        focusPrimary
+      />
     </div>
   );
 }

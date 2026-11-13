@@ -50,13 +50,13 @@ const layout = {
 
 const noop = () => {};
 
-async function renderTable() {
+async function renderTable(props: Partial<Props> = {}) {
   const onDuplicateRow = vi.fn();
   const screen = await render(
     <TooltipProvider>
       <CollectionLayoutTable
         layout={layout} canUpdate parameterSets={[]} onAddGroup={noop} onAddRow={noop} onEditRow={noop}
-        onDuplicateRow={onDuplicateRow} onDeleteRow={noop} onRenameGroup={noop} onDeleteGroup={noop} onUpdateSettings={noop}
+        onDuplicateRow={onDuplicateRow} onDeleteRow={noop} onRenameGroup={noop} onDeleteGroup={noop} onUpdateSettings={noop} {...props}
       />
     </TooltipProvider>
   );
@@ -104,4 +104,10 @@ test('"Senza quotazioni" duplicates the row without them, "Annulla" does nothing
   await userEvent.click(duplicateButton(screen, 'Beta'));
   await screen.getByRole('button', { name: 'Senza quotazioni' }).click();
   expect(onDuplicateRow).toHaveBeenCalledWith('b', false);
+});
+
+test('while a duplicate is saved, Duplica waits', async () => {
+  const { screen } = await renderTable({ isDuplicatingRow: true });
+
+  expect(duplicateButton(screen, 'Alpha').disabled).toBe(true);
 });
