@@ -56,7 +56,8 @@ interface CollectionLayoutTableProps {
   parameterSets: PricingParameterSet[];
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
-  onEditRow: (row: CollectionRowData) => void;
+  /** Opens a row, with the ids of the rows shown, in board order: the editor's previous/next. */
+  onEditRow: (row: CollectionRowData, rowIds: string[]) => void;
   onDuplicateRow: (rowId: string) => void;
   onDeleteRow: (rowId: string, lineName: string) => void;
   onRenameGroup: (group: CollectionGroupData) => void;
@@ -159,7 +160,8 @@ export function CollectionLayoutTable({
     filteredRowIdsByGroup.current.set(groupId, ids);
   }, []);
 
-  const getAllFilteredRowIds = () => [...filteredRowIdsByGroup.current.values()].flat();
+  // In board order: the groups' order, then each group's filter and sort.
+  const getAllFilteredRowIds = () => layout.groups.flatMap(g => filteredRowIdsByGroup.current.get(g.id) ?? []);
 
   // Columns saved in DB — used for the popover and normal mode rendering
   const hiddenColumns = getHiddenColumns(layout);
@@ -390,7 +392,7 @@ export function CollectionLayoutTable({
             searchQuery={search}
             criticalityFilter={activeCriticalityFilter}
             onAddRow={onAddRow}
-            onEditRow={onEditRow}
+            onEditRow={row => onEditRow(row, getAllFilteredRowIds())}
             onDuplicateRow={onDuplicateRow}
             onDeleteRow={onDeleteRow}
             onRenameGroup={onRenameGroup}

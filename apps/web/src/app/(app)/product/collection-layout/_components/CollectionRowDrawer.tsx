@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Download, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileText } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import React, { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -17,6 +17,15 @@ import {
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../../../../components/ui/alert-dialog';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -70,13 +79,26 @@ interface CollectionRowDrawerProps {
   availableGenders: CollectionGender[];
   brandId: string;
   seasonId: string;
-  onSubmit: (data: CollectionLayoutRowInput) => void;
+  /** Saves the row, then opens `nextRowId` when given, or closes the drawer. */
+  onSubmit: (data: CollectionLayoutRowInput, nextRowId?: string) => void;
+  /** Where the row stands in the board's filtered, sorted rows (#55); absent for a new row. */
+  navigation?: RowNavigation;
+  /** Opens another row of the board in the drawer. */
+  onNavigate?: (rowId: string) => void;
   onPictureUploaded?: () => void;
   /** Called after the row is concluded or reopened — that write lands immediately, outside the
    * drawer's buffered save, so the layout and alert queries need refetching right away. */
   onCompletionChanged: () => void;
   isLoading?: boolean;
   canUpdate?: boolean;
+}
+
+export interface RowNavigation {
+  /** 1-based. */
+  position: number;
+  total: number;
+  previousRowId: string | null;
+  nextRowId: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,6 +127,8 @@ function missingForecastLabels(data: CollectionLayoutRowInput): string[] {
  * @param availableGenders - Genders enabled for this layout (e.g. ['MAN','WOMAN']).
  * @param onPictureUploaded - Called after a picture is confirmed server-side.
  * @param onCompletionChanged - Called after the row is concluded or reopened.
+ * @param navigation - Previous/next rows, reachable by buttons and `Alt+↑`/`Alt+↓`; leaving a row
+ *   with unsaved changes — by navigating or by closing — asks to save, discard or stay.
  */
 export function CollectionRowDrawer({
   open,
@@ -118,13 +142,20 @@ export function CollectionRowDrawer({
   brandId,
   seasonId,
   onSubmit,
+  navigation,
+  onNavigate,
   onPictureUploaded,
   onCompletionChanged,
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
-  const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
+  // A save that waits for the missing-forecast confirmation, with the row to open after it.
+  const [pendingData, setPendingData] = useState<{ payload: CollectionLayoutRowInput; nextRowId?: string } | null>(null);
+  // Quotations live outside the form, so its dirty state does not see them.
+  const [quotationsEdited, setQuotationsEdited] = useState(false);
+  // Leaving the row with unsaved changes: the row to open, or `null` to close the drawer.
+  const [leaving, setLeaving] = useState<{ to: string | null } | null>(null);
   const [changeGroupOpen, setChangeGroupOpen] = useState(false);
   const [changePhaseOpen, setChangePhaseOpen] = useState(false);
   const { data: session } = useSession();
@@ -231,11 +262,16 @@ export function CollectionRowDrawer({
   });
 
   // ─── Quotation handlers — all local, no network mutation: they buffer into `quotations`,
-  // the real commit happens on Save (submitRow → onSubmit → collectionLayout.rows.update/create,
+  // the real commit happens on Save (saveRow → onSubmit → collectionLayout.rows.update/create,
   // which syncs the quotations in the same transaction as the row) ─────────────────
+  const editQuotations: typeof setQuotations = update => {
+    setQuotations(update);
+    setQuotationsEdited(true);
+  };
+
   const handleAddQuotation = () => {
     if (!row?.id) return;
-    setQuotations(prev => [...prev, {
+    editQuotations(prev => [...prev, {
       // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
       // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
       id: crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36),
@@ -255,14 +291,14 @@ export function CollectionRowDrawer({
     field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>,
     value: string | number | null
   ) => {
-    setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
+    editQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
   };
 
   const handleDeleteQuotation = (id: string) => {
-    setQuotations(prev => prev.filter(q => q.id !== id));
+    editQuotations(prev => prev.filter(q => q.id !== id));
   };
 
-  const submitRow = form.handleSubmit(data => {
+  const saveRow = (nextRowId?: string) => form.handleSubmit(data => {
     const payload: CollectionLayoutRowInput = {
       ...data,
       quotations: quotations.map(q => ({
@@ -275,29 +311,74 @@ export function CollectionRowDrawer({
       })),
       phaseChangeNote: phaseChangeNote || undefined,
     };
-    if (missingForecastLabels(payload).length > 0) { setPendingData(payload); return; }
-    onSubmit(payload);
+    if (missingForecastLabels(payload).length > 0) { setPendingData({ payload, nextRowId }); return; }
+    onSubmit(payload, nextRowId);
   });
 
-  const missingLabels = pendingData ? missingForecastLabels(pendingData) : [];
+  const missingLabels = pendingData ? missingForecastLabels(pendingData.payload) : [];
+
+  // ─── Leaving the row: navigation and close ────────────────────────
+  const isDirty = canUpdate && (form.formState.isDirty || quotationsEdited);
+  const isBusy = isLoading || isUploadingPicture;
+  const goTo = (to: string | null) => (to ? onNavigate?.(to) : onOpenChange(false));
+  // Not while a save or a picture upload runs: its outcome belongs to this row.
+  const leave = (to: string | null) => {
+    if (isBusy) return;
+    if (isDirty) setLeaving({ to });
+    else goTo(to);
+  };
+  const navigateTo = (to: string | null) => { if (to) leave(to); };
+  const handleNavigationKey = (e: React.KeyboardEvent) => {
+    if (!navigation || !e.altKey || e.shiftKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    // A multi-line text moves its caret on ⌥↑/↓ (macOS), a combobox opens its list on Alt+↓.
+    if (e.target instanceof Element && e.target.closest('textarea, [role="combobox"], [role="listbox"]')) return;
+    e.preventDefault();
+    navigateTo(e.key === 'ArrowUp' ? navigation.previousRowId : navigation.nextRowId);
+  };
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={next => (next ? onOpenChange(true) : leave(null))}>
       <DialogContent
+        onKeyDown={handleNavigationKey}
         // vh: no Tailwind scale equivalent for viewport-relative height
         className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]"
       >
         {/* Fixed header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
-          <DialogTitle className="text-lg">{title}</DialogTitle>
+          <div className="flex items-center justify-between gap-4 pr-8">
+            <DialogTitle className="text-lg">{title}</DialogTitle>
+            {navigation && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Button
+                  type="button" variant="outline" size="sm" aria-keyshortcuts="Alt+ArrowUp"
+                  onClick={() => navigateTo(navigation.previousRowId)}
+                  disabled={!navigation.previousRowId || isBusy}
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Precedente
+                </Button>
+                <span className="tabular-nums">{navigation.position} di {navigation.total}</span>
+                <span className="text-xs">Alt+↑/↓</span>
+                <Button
+                  type="button" variant="outline" size="sm" aria-keyshortcuts="Alt+ArrowDown"
+                  onClick={() => navigateTo(navigation.nextRowId)}
+                  disabled={!navigation.nextRowId || isBusy}
+                >
+                  Successiva
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
           {mode === 'edit' && row?.id && (
             <LastModifiedBy targetType="CollectionLayoutRow" targetId={row.id} />
           )}
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={submitRow} className="flex flex-col flex-1 min-h-0">
+          <form onSubmit={saveRow()} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {/* Planning band — full width above the identity grid */}
@@ -369,7 +450,7 @@ export function CollectionRowDrawer({
                   enabledParameterSetIds={enabledParameterSetIds}
                   onAddQuotation={handleAddQuotation}
                   onUpdateField={handleUpdateQuotationField}
-                  onEnterQuotation={submitRow}
+                  onEnterQuotation={saveRow()}
                   onDeleteQuotation={handleDeleteQuotation}
                 />
               </div>
@@ -406,7 +487,7 @@ export function CollectionRowDrawer({
               </div>
               {/* Actions — right */}
               <div className="flex items-center gap-3">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                <Button type="button" variant="outline" onClick={() => leave(null)}>
                   Annulla
                 </Button>
                 {canUpdate && (
@@ -439,9 +520,31 @@ export function CollectionRowDrawer({
       confirmText="Salva comunque"
       cancelText="Annulla"
       actionType="warning"
-      onConfirm={() => { if (pendingData) { onSubmit(pendingData); setPendingData(null); } }}
+      onConfirm={() => { if (pendingData) { onSubmit(pendingData.payload, pendingData.nextRowId); setPendingData(null); } }}
       isLoading={isLoading}
     />
+
+    <AlertDialog open={leaving != null} onOpenChange={next => { if (!next) setLeaving(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Modifiche non salvate</AlertDialogTitle>
+          <AlertDialogDescription>
+            {leaving?.to
+              ? "La riga ha modifiche non salvate. Vuoi salvarle prima di passare a un'altra riga?"
+              : 'La riga ha modifiche non salvate. Vuoi salvarle prima di chiudere?'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Resta</AlertDialogCancel>
+          <Button type="button" variant="outline" onClick={() => { setLeaving(null); goTo(leaving?.to ?? null); }}>
+            Scarta
+          </Button>
+          <Button type="button" onClick={() => { setLeaving(null); void saveRow(leaving?.to ?? undefined)(); }}>
+            Salva
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     {mode === 'edit' && row && (
       <ChangePlanningGroupDialog

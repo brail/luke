@@ -23,7 +23,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
-import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CollectionRowDrawer, type RowNavigation } from './_components/CollectionRowDrawer';
 import { CopyFromSeasonButton, type RowCopySelection } from './_components/CopyFromSeasonButton';
 import { CreateRevisionDialog } from './_components/CreateRevisionDialog';
 import { CriticalityLayoutBanner } from './_components/CriticalityLayoutBanner';
@@ -34,6 +34,26 @@ type CollectionLayoutData = NonNullable<
 >;
 type CollectionGroupData = CollectionLayoutData['groups'][number];
 type CollectionRowData = CollectionGroupData['rows'][number];
+
+interface RowDrawerState {
+  mode: 'create' | 'edit';
+  rowId?: string;
+  defaultGroupId?: string;
+  /** The rows the board showed when the row was opened, in board order: the drawer's previous/next
+   * (#55). Fixed for the session, so a saved row that leaves the filter or moves in the sort keeps
+   * its place. */
+  rowIds?: string[];
+}
+
+/** The open row's place among the rows it was opened from, skipping rows deleted since. */
+function navigationFor(drawer: RowDrawerState | null, liveRows: readonly { id: string }[]): RowNavigation | undefined {
+  if (drawer?.mode !== 'edit' || !drawer.rowId || !drawer.rowIds) return undefined;
+  const live = new Set(liveRows.map(r => r.id));
+  const ids = drawer.rowIds.filter(id => live.has(id));
+  const index = ids.indexOf(drawer.rowId);
+  if (index < 0) return undefined;
+  return { position: index + 1, total: ids.length, previousRowId: ids[index - 1] ?? null, nextRowId: ids[index + 1] ?? null };
+}
 
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -62,12 +82,13 @@ export default function CollectionLayoutPage() {
 
   const utils = trpc.useUtils();
 
+  /** Resolves once the layout is refetched. */
   const invalidateLayout = () => {
-    utils.collectionLayout.get.invalidate({
+    utils.phaseAlert.invalidate();
+    return utils.collectionLayout.get.invalidate({
       brandId: brand?.id,
       seasonId: season?.id,
     });
-    utils.phaseAlert.invalidate();
   };
 
   // ─── UI state ───────────────────────────────────────────────────
@@ -92,11 +113,7 @@ export default function CollectionLayoutPage() {
   // Holds the id, not the row: the state snapshot would lag behind the live query
   // (row completion writes and invalidates while drawer is open), and the row
   // re-resolves anyway every render — see `editingRow`.
-  const [rowDrawer, setRowDrawer] = useState<{
-    mode: 'create' | 'edit';
-    rowId?: string;
-    defaultGroupId?: string;
-  } | null>(null);
+  const [rowDrawer, setRowDrawer] = useState<RowDrawerState | null>(null);
   // Bumped by `openRowDrawer` (never during render — see its own comment) exactly when a new
   // editing session starts, so `key={rowDrawerKey}` below forces `CollectionRowDrawer` to remount
   // instead of reusing its previous session's `useForm()`/local state. Left untouched by closing:
@@ -177,9 +194,10 @@ export default function CollectionLayoutPage() {
   const updateRowMutation = trpc.collectionLayout.rows.update.useMutation({
     onSuccess: result => {
       toast.success('Riga aggiornata');
-      setRowDrawer(null);
-      invalidateLayout();
       utils.auditLog.getLastChange.invalidate({ targetType: 'CollectionLayoutRow', targetId: result.id });
+      // Returned, so the save stays pending until the layout is fresh: the row opened next — or
+      // this one, reopened — never loads from the stale cache (#55).
+      return invalidateLayout();
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
@@ -255,29 +273,35 @@ export default function CollectionLayoutPage() {
     }
   };
 
-  const handleRowSubmit = (data: CollectionLayoutRowInput) => {
-    if (rowDrawer?.mode === 'create') {
-      createRowMutation.mutate(data);
-    } else if (rowDrawer?.mode === 'edit' && rowDrawer.rowId) {
-      updateRowMutation.mutate({ rowId: rowDrawer.rowId, data });
-    }
-  };
-
   // The only way `rowDrawer` is ever set to a non-null value — bumping `rowDrawerSessionSeq`
   // alongside it here (an event-handler, not render) is what makes `rowDrawerKey` change on every
   // genuinely new session, including switching rows while already open and reopening after close.
   // `useCallback` with an empty dep array (both setters are stable, nothing else is captured)
   // keeps this referentially stable, so the deep-link effect below can depend on `openEditRow`
   // directly instead of needing to suppress the lint warning for omitting it.
-  const openRowDrawer = useCallback((next: { mode: 'create' | 'edit'; rowId?: string; defaultGroupId?: string }) => {
+  const openRowDrawer = useCallback((next: RowDrawerState) => {
     setRowDrawer(next);
     setRowDrawerSessionSeq(seq => seq + 1);
   }, []);
 
   const openEditRow = useCallback(
-    (row: CollectionRowData) => openRowDrawer({ mode: 'edit', rowId: row.id }),
+    (row: CollectionRowData, rowIds?: string[]) => openRowDrawer({ mode: 'edit', rowId: row.id, rowIds }),
     [openRowDrawer]
   );
+
+  /** Another row of the board, keeping the rows the drawer was opened with (#55). */
+  const openSiblingRow = (rowId: string) => openRowDrawer({ mode: 'edit', rowId, rowIds: rowDrawer?.rowIds });
+
+  const handleRowSubmit = (data: CollectionLayoutRowInput, nextRowId?: string) => {
+    if (rowDrawer?.mode === 'create') {
+      createRowMutation.mutate(data);
+    } else if (rowDrawer?.mode === 'edit' && rowDrawer.rowId) {
+      updateRowMutation.mutate({ rowId: rowDrawer.rowId, data }, {
+        // Saved on the way to another row (#55): open it instead of closing the drawer.
+        onSuccess: () => (nextRowId ? openSiblingRow(nextRowId) : setRowDrawer(null)),
+      });
+    }
+  };
 
   /** Row being edited, resolved on every render from the live query instead of a snapshot in state:
    * completing the row writes immediately and invalidates the layout while the drawer is open.
@@ -285,11 +309,13 @@ export default function CollectionLayoutPage() {
    * (too deep for TS, see TS2589 in the deep link below), and a narrower key such as
    * `layout.updatedAt` would not change when a row is edited, returning stale data.
    * The scan is linear over a few hundred rows, on a page that renders as many. */
+  const liveRows = rowDrawer?.rowId
+    ? ((layout?.groups as { rows: CollectionRowData[] }[] | undefined)?.flatMap(g => g.rows) ?? [])
+    : [];
   const editingRow: CollectionRowData | undefined = rowDrawer?.rowId
-    ? (layout?.groups as { rows: CollectionRowData[] }[] | undefined)
-        ?.flatMap(g => g.rows)
-        .find(r => r.id === rowDrawer.rowId)
+    ? liveRows.find(r => r.id === rowDrawer.rowId)
     : undefined;
+  const rowNavigation = navigationFor(rowDrawer, liveRows);
 
   const rowDrawerKey = String(rowDrawerSessionSeq);
 
@@ -405,7 +431,7 @@ export default function CollectionLayoutPage() {
                 onAddRow={groupId =>
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
-                onEditRow={row => openEditRow(row)}
+                onEditRow={openEditRow}
                 onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
@@ -466,7 +492,7 @@ export default function CollectionLayoutPage() {
                 onAddRow={groupId =>
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
-                onEditRow={row => openEditRow(row)}
+                onEditRow={openEditRow}
                 onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
@@ -531,6 +557,8 @@ export default function CollectionLayoutPage() {
           brandId={brand?.id ?? ''}
           seasonId={season?.id ?? ''}
           onSubmit={handleRowSubmit}
+          navigation={rowNavigation}
+          onNavigate={openSiblingRow}
           onPictureUploaded={() => invalidateLayout()}
           onCompletionChanged={() => invalidateLayout()}
           isLoading={isMutating}
