@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:integration": "sh ../../scripts/stay-awake.sh vitest run --config vitest.integration.config.mts",
     "test:watch": "vitest",
     "db:seed": "tsx prisma/seed.ts",
     "db:bootstrap": "tsx --env-file=.env scripts/dev-bootstrap.ts",

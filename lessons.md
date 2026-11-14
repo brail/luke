@@ -1171,13 +1171,18 @@ test that mounts a library no earlier browser test mounted lists it in `optimize
 the push, and the suite runs once with `apps/web/node_modules/.vite` moved aside, which is what CI
 sees.
 
-### A long local suite runs under `caffeinate -i` (2026-10-04)
+### A long local suite runs under `caffeinate -i` — enforced by `scripts/stay-awake.sh` (2026-10-04, 2026-11-14)
 
 **What happened.** During block D an integration run froze from 18:45 to 18:49:
 the Mac went into idle sleep (`pmset -g log` shows it), Node stopped mid-suite,
 and the hooks reported timeouts that read like failing tests.
 
-**Rule.** Wrap every long local suite — integration, browser, a push whose
-pre-push hook runs the tests — in `caffeinate -i` (`caffeinate -i pnpm
-test:integration:local`, `caffeinate -i git push`). A burst of timeouts after a
-pause is a sleep until `pmset -g log` says otherwise.
+**Rule.** A long local suite runs with idle sleep held off. A burst of timeouts
+after a pause is a sleep until `pmset -g log` says otherwise.
+
+**Enforced (2026-11-14).** The rule was forgotten during S0p2 and three
+integration runs failed at random. `apps/api` `test:integration`, `apps/web`
+`test:browser` and `.husky/pre-push` now run through `scripts/stay-awake.sh`,
+which uses `caffeinate -i` on a Mac outside CI, and so does `test:e2e`. A suite
+started another way — a bare `vitest run`, a single long spec — goes through
+`sh scripts/stay-awake.sh <command>` by hand.

@@ -1,3 +1,10 @@
+# On a Mac outside CI, hold idle sleep off until this hook exits (`caffeinate -w`
+# watches its pid): the checks below take minutes, and a sleep would stall them
+# into false timeouts (lessons.md, scripts/stay-awake.sh).
+if [ -z "${CI:-}" ] && command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -i -w $$ &
+fi
+
 # Early feedback on a release tag: does the tree being pushed claim the version
 # the tag names — and, for a graduation, is it its last candidate unchanged?
 # Same checker `.github/workflows/release.yml` runs after the push, on the same

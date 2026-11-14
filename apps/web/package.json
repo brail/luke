@@ -8,9 +8,9 @@
     "lint": "eslint . --max-warnings 30",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:browser": "vitest run --config vitest.browser.config.mts && vitest run --config vitest.browser.timezone.config.mts",
+    "test:browser": "sh ../../scripts/stay-awake.sh vitest run --config vitest.browser.config.mts && sh ../../scripts/stay-awake.sh vitest run --config vitest.browser.timezone.config.mts",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "test:e2e": "playwright test --project=smoke",
+    "test:e2e": "sh ../../scripts/stay-awake.sh playwright test --project=smoke",
     "test:e2e:ui": "playwright test --project=smoke --ui",
     "test:e2e:debug": "playwright test --project=smoke --debug",
     "test:e2e:headed": "playwright test --project=smoke --headed"
