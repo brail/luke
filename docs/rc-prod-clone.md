@@ -80,6 +80,9 @@ boundary, and both are discarded at the end of the run.
 - An admin account on **RC** with `maintenance:read` and
   `maintenance:backup_restore`.
 - `@luke/api` and `@trpc/client` installed at the root (`pnpm install`).
+- The RC API cut off from outside systems (`LUKE_RC_EGRESS_OFF=true`, checked as
+  `OPERATIONS.md`, "Restore drill on the RC", describes): the restore brings back
+  production's configuration and neutralizes none of it yet.
 
 ## Usage
 
@@ -127,7 +130,10 @@ history.
   it; such a value works on RC as it does on prod. `refresh-rc-db.sh` deletes the SMTP, GitHub, S3, NAV host, LDAP
   switch and plaintext credential rows before the RC API starts; this flow
   restores into a running RC API and neutralizes nothing, so its schedulers
-  start on prod's configuration at once.
+  start on prod's configuration at once. Run it only with the RC API cut off
+  from outside systems: `LUKE_RC_EGRESS_OFF=true` on the RC stack makes its only
+  way out internal (`OPERATIONS.md`, "Restore drill on the RC"). The restore
+  neutralizing that configuration by itself is planned for a later release.
 - The script reads the whole `.lukebak` package into memory before uploading it
   (no streaming multipart client in scope). Acceptable for `DB`-only backups; to
   be revisited if the flow is ever extended to `DB_AND_FILES`. Past the script,

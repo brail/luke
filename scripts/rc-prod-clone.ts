@@ -4,7 +4,8 @@
  *
  * Successor to `refresh-rc-db.sh`, once prod runs 3.0.0 or later (the export download route)
  * and this script neutralizes the restored configuration as that one does
- * (`docs/rc-prod-clone.md`). Unlike that script, this one never touches Docker and never opens
+ * (`docs/rc-prod-clone.md`). It does not yet: run it only with the RC API cut off from outside
+ * systems (`LUKE_RC_EGRESS_OFF=true`, `OPERATIONS.md`, "Restore drill on the RC"). Unlike that script, this one never touches Docker and never opens
  * a network path between the prod and RC stacks — it only talks to each instance's
  * already-authenticated HTTP/tRPC API, the same surface a human admin uses from the browser.
  * Neither script copies prod's master key (`~/.luke/secret.key`).

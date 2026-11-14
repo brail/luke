@@ -36,6 +36,10 @@
 #   COOKIE_SECURE         — "true" for HTTPS; default "false"
 #   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
 #   LOG_LEVEL             — API log level; default "warn" ("info" adds logins and sent emails)
+#   LUKE_RC_EGRESS_OFF    — "true" cuts apps/api off from every system outside the
+#                           stack (the `edge` network below becomes internal): the
+#                           setting for a restore drill with production data
+#                           (OPERATIONS.md, "Restore drill on the RC"); default "false"
 #
 # Prerequisite, once per host: the external network `luke-rc-proxy`, shared only
 # by the web service and the reverse proxy (OPERATIONS.md, "Reverse proxy"). The
@@ -161,8 +165,13 @@ volumes:
 networks:
   # apps/web -> apps/api only. The subnet is deterministic so apps/api can be
   # told which range its reverse proxy connects from; override LUKE_RC_EDGE_SUBNET
-  # on a host where this range collides with something else.
+  # on a host where this range collides with something else. It is apps/api's only
+  # way out of the stack: LUKE_RC_EGRESS_OFF=true makes it internal, so apps/api
+  # still serves apps/web but reaches no mail, NAV, Google, LDAP, GitHub or other
+  # storage server — what a restore of production's configuration needs, since
+  # the restore itself neutralizes nothing yet (docs/rc-prod-clone.md).
   edge:
+    internal: ${LUKE_RC_EGRESS_OFF:-false}
     ipam:
       config:
         - subnet: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}

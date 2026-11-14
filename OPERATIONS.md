@@ -22,6 +22,7 @@ the health and readiness probes are documented in the
 - [Reverse proxy](#reverse-proxy)
 - [Release build variables](#release-build-variables)
 - [Purging a test brand or season](#purging-a-test-brand-or-season)
+- [Restore drill on the RC](#restore-drill-on-the-rc)
 - [Related documentation](#related-documentation)
 
 ---
@@ -443,6 +444,85 @@ events, and the Google calendars Luke created for the season calendars. What it 
   ([storage-immutable-bucket.md](docs/storage-immutable-bucket.md)); the audit entry counts them;
 - a Google copy written by a sync already running, and an exported ICS imported elsewhere;
 - history with no foreign key: notifications, links, sales data matched by code.
+
+---
+
+## Restore drill on the RC
+
+Before every minor release (X.Y.0), its RC restores a fresh production backup and proves it usable.
+A backup nobody has restored is a hope: the drill is the only run of the emergency flow — production
+backup, `.lukebak` export, import on another instance, restore — on real data (#200).
+
+The RC then holds production's configuration, and the restore neutralizes none of it yet: encrypted
+credentials fail only because the RC's master key differs, while plaintext settings, a credential an
+earlier release stored in plaintext or an anonymous LDAP bind would work against production
+([rc-prod-clone.md](docs/rc-prod-clone.md#known-limitations)). So the drill runs with the RC API cut
+off from everything outside its stack. Its volumes are the RC's own; nothing in the RC stack mounts
+production's.
+
+**Before.** In Portainer, stack `luke-rc` → environment: `LUKE_RC_EGRESS_OFF=true`, then update the
+stack. The `edge` network, the API's only way out, becomes internal (`docker-compose.rc.yml`). A
+Compose version that keeps an existing network unchanged will not apply it: stop the stack, run
+`docker network rm luke-rc_edge`, deploy it again. Then check from the host, with a TCP probe run by
+the API's own Node, so a missing tool or a stopped container cannot read as isolation:
+
+```sh
+probe() { docker exec luke-rc-api-rc-1 node -e "const s=require('net').connect({host:process.argv[1],port:+process.argv[2],timeout:5000});s.on('connect',()=>{console.log('OPEN');process.exit(0)});s.on('timeout',()=>{console.log('closed (timeout)');process.exit(1)});s.on('error',e=>{console.log('closed ('+e.code+')');process.exit(1)})" "$1" "$2"; }
+docker network inspect luke-rc_edge --format '{{.Internal}}'   # true
+probe seaweedfs-rc 8333    # OPEN — the probe runs and reaches the stack
+probe 1.1.1.1 80           # closed
+probe <NAV host> 1433      # closed — production's systems are on the LAN, not only the internet
+probe <LDAP host> 389      # closed
+probe <SMTP host> <port>   # closed
+```
+
+Use the hosts production's settings name. Do not start unless the first probe is `OPEN` and every other
+one `closed`.
+
+**Drill.**
+
+1. From a workstation, `pnpm rc:clone` ([rc-prod-clone.md](docs/rc-prod-clone.md#usage)): a fresh
+   production backup (database only, as the script creates it), export, import on the RC, restore.
+   Never with `--restore-files`: step 4's safety snapshot holds the database only and cannot take
+   production's files back off the RC. Note the backup's size and the time of each step.
+2. Leave maintenance on. Do not restart `api-rc` from here until step 4: after the restore the
+   storage settings are production's, and the API reaches the RC's own storage only through the
+   provider it already holds.
+3. Check, signed in as an administrator:
+   - sign-in works;
+   - record counts of a few key tables against production (users, collection rows, calendar
+     events, parameter sets);
+   - the collection layout, calendar and pricing pages open with production's data;
+   - the settings pages mark the credentials this instance cannot read;
+   - the import of a large package succeeded (#197).
+4. Restore the safety snapshot the restore took first (`Manutenzione` → `Backup & Restore`, the entry
+   marked `Snapshot di sicurezza`). It must complete; then the storage and mail settings pages show
+   the RC's own values again.
+
+If `api-rc` restarted before step 4 (a crash, a host reboot), it now reads production's storage
+settings and cannot open the snapshot. Keep egress off, save the RC's own storage settings again
+(`Impostazioni` → `Storage`, the SeaweedFS of this stack), then do step 4.
+
+**After.** Only once step 4 completed and the settings show the RC's values: `LUKE_RC_EGRESS_OFF=false`,
+update the stack, end maintenance. Until then the RC holds production's configuration, and opening
+the network would let its schedulers act on production.
+
+**Record.** Each drill leaves a record outside this repository, since it holds production sizes and
+counts; the drill's issue gets only the outcome. Template:
+
+```text
+Restore drill — <date>
+Production version / RC version:
+Isolation checked (network internal, no egress): yes / no
+Backup: scope, size, id
+Time: backup / export / import / restore / snapshot restore
+Checks: sign-in, record counts (table: production / RC), pages, unreadable credentials, large import
+Outcome: passed / failed
+Problems (one issue each):
+```
+
+The restore will neutralize production's configuration by itself on a non-production instance in a
+later release; until then the network switch is the drill's protection.
 
 ---
 
