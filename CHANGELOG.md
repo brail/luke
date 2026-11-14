@@ -4,6 +4,94 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.1.0-rc.3] - 2026-11-14
+
+### Added
+- **audit**: Record access changes with their before and after
+- **audit**: Record every access change in its transaction
+- **audit**: Record function-level event visibility changes
+- **audit**: Record section access changes in their transaction
+- **audit**: Record the initial access snapshot at start-up
+- **calendar**: Record Google sync outcomes and notify admins
+- **collection-layout**: Pick the row category from a catalog
+- **collection-layout**: Show catalog labels for every catalog field
+- **collection-layout**: Filter rows by criticality band
+- **web**: Paste an image into an upload area instead of opening the picker
+- **collection-layout**: Move to the previous or next row in the row editor
+- **collection-layout**: Ask whether a duplicated row takes its quotations
+
+### Changed
+- **api**: Move the settings test error helper into lib/error
+- **core**: Bind bucket, role and currency lists to their types
+- **web**: Bind role, label and category maps to core types
+- **catalog**: Key the purge count labels by the counts type
+- **calendar**: One writer for function visibility rows
+- **web**: One shared dialog for questions with two answers
+
+### Documentation
+- Recommend the better design, not the cheaper one
+- Remove regenerated Next types in a worktree without dev
+- Add a lessons postscript on evidence that a path is used
+- Name the kill switch's only saver in the RBAC rules
+- **lessons**: Gh run list needs the full commit SHA
+- Route findings outside the task to luke-lead
+
+### Fixed
+- **web**: Stream uploads to the API instead of the rewrite proxy
+- **web**: Offer logout from the context gate
+- **web**: Offer every company function in the event dialog
+- **api**: Wait for background work before disconnecting on shutdown
+- **calendar**: Ask before a save hides an event from its saver
+- **calendar**: Ask before revoking your own last access to an event
+- **calendar**: Record functions, phase and title in event audit rows
+- **auth**: Let an unreadable optional LDAP value stop nothing but sign-in
+- **api**: Answer a refused settings test with a safe, actionable text
+- **api**: Keep dependency check details in the server log
+- **api**: Validate stored rate-limit policies per route
+- **api**: Drop the upper bound on rate-limit windows
+- **config**: Declare the port, alert-band and context defaults once
+- **rbac**: Bind the section kill switch to the section list
+- **sales**: Answer a broken NAV configuration like the NAV page
+- **sales**: Answer a failed NAV query on download like NAV preview
+- **config**: Keep the keys read without decryption in plaintext
+- **rbac**: Guard every sub-section page and gate home widgets
+- **dashboard**: Measure season progress against the group budgets
+- **auth**: Validate the LDAP role mapping against the known roles
+- **notifications**: Keep dedup markers through an overdue stage
+- **backup**: List every local file, unblock pg_restore, open exports safely
+- **calendar**: Keep Google Calendar sharing in step with team access
+- **calendar**: Grant a function only on its own team's brands
+- **company**: Keep omitted fields on function and team updates
+- **dashboard**: Count KPIs as the brand list does
+- **calendar**: Handle Google events and calendars already gone
+- **dashboard**: Count collection rows of active brands only
+- **sales**: List KIMO salespersons the report can return
+- **company**: Keep function state changes on delete and restore
+- **company**: Create every company function active
+- **calendar**: Keep inactive functions off active events and templates
+- **dashboard**: Count collection rows of active seasons only
+- **calendar**: Back the inactive-function rule with database triggers
+- **api**: Keep the stored encryption choice when a config write omits it
+- **api**: Detect feedback replies by comment id, not count
+- **api**: Tell a new reply in the feedback close notice
+- **calendar**: Let the Google reader sync converge for alias addresses
+- **collection-layout**: Bind hidden columns to the column keys
+- **collection-layout**: List retired phases that still hold rows
+- **sales**: List portfolio salespersons the report can return
+- **rbac**: Hold the admin guard's lock before reading the user
+
+### Maintenance
+- Encode session roles, agent models and escalation
+- Keep long local suites awake on macOS
+- **rc**: Add an egress switch and the restore drill procedure
+
+### Tests
+- **api**: Wait for derivative work before resetting test data
+- **api**: Track background work so tests wait for all of it
+- **api**: Lower the calendar procedure-coverage count
+- **api**: Share calendar fixtures across inactive-function specs
+- **api**: Share calendar event and template factories across specs
+
 ## [3.1.0-rc.2] - 2026-11-02
 
 ### Added
