@@ -7,12 +7,22 @@ import type { ComponentProps } from 'react';
 
 /**
  * The completed rows line counts rows, not SKU, and is independent of the phase (#181): it stays
- * hidden until a row is completed, and follows the rows the card receives.
+ * hidden until a row is completed, and follows the rows the card receives. A retired phase that
+ * still holds rows gets its own line after the active ones (#188).
  */
 
-vi.mock('../../_hooks/useSeasonPhaseOrder', () => ({
-  useSeasonPhaseOrder: () => ({ phases: [{ id: 'design', label: 'Design' }, { id: 'proto', label: 'Prototipo' }] }),
-}));
+vi.mock('../../_hooks/useSeasonPhaseOrder', () => {
+  const active = [{ id: 'design', label: 'Design' }, { id: 'proto', label: 'Prototipo' }];
+  // Retired phases: the catalog still resolves them, the season order ranks them last.
+  const retired = [{ id: 'sample', label: 'Campionatura' }, { id: 'archive', label: 'Archivio' }];
+  return {
+    useSeasonPhaseOrder: () => ({
+      phases: active,
+      phaseById: new Map([...active, ...retired].map(p => [p.id, p])),
+      rank: (id: string) => { const i = active.findIndex(p => p.id === id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; },
+    }),
+  };
+});
 
 const LINE = 'Righe concluse';
 
@@ -59,4 +69,35 @@ test('shows completed rows out of all rows, with a matching bar, and follows a r
   await screen.rerender(<CollectionLayoutSummary layout={layout([null, null, null])} />);
 
   await expect.element(screen.getByText(LINE)).not.toBeInTheDocument();
+});
+
+/** The phase lines, in card order: only the `Per Fase` card draws bars, one per line. */
+async function phaseLines(screen: Awaited<ReturnType<typeof render>>) {
+  await expect.element(screen.getByText('Per Fase')).toBeInTheDocument();
+  return [...screen.container.querySelectorAll('[role="progressbar"]')].map(bar => bar.getAttribute('aria-label'));
+}
+
+test('a retired phase that holds rows gets its own marked line after the active ones', async () => {
+  const rows = [
+    { phaseId: 'design', skuForecast: 50 },
+    { phaseId: 'sample', skuForecast: 30 },
+    { phaseId: 'archive', skuForecast: 10 },
+    { phaseId: 'gone', skuForecast: 5 },
+    { phaseId: null, skuForecast: 5 },
+  ].map((row, i) => ({ ...row, id: `r${i}`, qtyForecast: 100, vendor: null, completedAt: null }));
+  // Partial fixture, as above.
+  const withRetired = { id: 'l1', groups: [{ rows }] } as unknown as ComponentProps<typeof CollectionLayoutSummary>['layout'];
+
+  const screen = await render(<CollectionLayoutSummary layout={withRetired} />);
+
+  // Every row lands on a line, a phase the catalog does not know included.
+  expect(await phaseLines(screen)).toEqual(['Design', 'Archivio (non attiva)', 'Campionatura (non attiva)', 'Fase sconosciuta', '—']);
+  await expect.element(screen.getByText('1 righe · 30 SKU · 100 paia')).toBeInTheDocument();
+  await expect.element(screen.getByRole('progressbar', { name: 'Campionatura (non attiva)' })).toHaveAttribute('aria-valuenow', '30');
+});
+
+test('a retired phase with no rows in the layout gets no line', async () => {
+  const screen = await render(<CollectionLayoutSummary layout={layout([null, null, null])} />);
+
+  expect(await phaseLines(screen)).toEqual(['Design', 'Prototipo']);
 });

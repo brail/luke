@@ -71,6 +71,9 @@ export function catalogLabeler(items: readonly CatalogItem[] | undefined): Catal
   };
 }
 
+/** The label of an item no longer active that data still holds, as every view marks it. */
+export const inactiveLabel = (label: string) => `${label} (non attiva)`;
+
 /**
  * The options of a catalog picker for a field holding `held`: the active items, plus `held` itself,
  * under its own label and marked, when no active item has it — a deactivated item stays on the rows
@@ -82,5 +85,5 @@ export function withHeldOption(catalog: Catalog, type: CollectionCatalogType, he
   const active = options ?? NO_ITEMS;
   if (!held || active.some(o => o.value === held)) return active;
   const label = catalog.label(type, held);
-  return [...active, { value: held, label: options ? `${label} (non attiva)` : label }];
+  return [...active, { value: held, label: options ? inactiveLabel(label) : label }];
 }

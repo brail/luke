@@ -10,10 +10,11 @@ import { usePhaseCatalog } from './usePhaseCatalog';
  * A layout's phases in season order (#159, `phaseAlert.seasonPhaseOrder`), for the views that span
  * its planning groups: the phases its calendar plans by their earliest deadline, then the other
  * active phases alphabetically. `rank` places any phase id — a retired phase no live event plans
- * sorts last —; `phases` and `phaseOptions` are the active catalog in that order.
+ * sorts last —; `phases` and `phaseOptions` are the active catalog in that order; `phaseById` resolves
+ * any phase, retired ones included.
  */
 export function useSeasonPhaseOrder(collectionLayoutId: string | undefined) {
-  const { phases, phaseOptions } = usePhaseCatalog();
+  const { phases, phaseById, phaseOptions } = usePhaseCatalog();
   const { data: order } = trpc.phaseAlert.seasonPhaseOrder.useQuery(
     { collectionLayoutId: collectionLayoutId ?? '' },
     { enabled: !!collectionLayoutId, staleTime: 60 * 1000 },
@@ -24,7 +25,8 @@ export function useSeasonPhaseOrder(collectionLayoutId: string | undefined) {
 
   return useMemo(() => ({
     rank,
+    phaseById,
     phases: [...phases].sort((a, b) => rank(a.id) - rank(b.id)),
     phaseOptions: [...phaseOptions].sort((a, b) => rank(a.value) - rank(b.value)),
-  }), [rank, phases, phaseOptions]);
+  }), [rank, phaseById, phases, phaseOptions]);
 }

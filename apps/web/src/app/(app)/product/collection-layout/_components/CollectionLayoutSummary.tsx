@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '../../../../../components/ui/card';
 import { Progress } from '../../../../../components/ui/progress';
+import { inactiveLabel } from '../../../../../lib/catalogOptions';
 import { groupRowsByVendor } from '../../_shared/pricingCalc';
 import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
@@ -40,29 +41,44 @@ function StatLine({ label, detail, pct }: { label: string; detail: string; pct: 
  * Returns null when the layout has no rows.
  */
 export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps) {
-  const { phases } = useSeasonPhaseOrder(layout.id);
+  const { phases, phaseById, rank } = useSeasonPhaseOrder(layout.id);
   const allRows = layout.groups.flatMap(g => g.rows);
   if (allRows.length === 0) return null;
 
   const totalSku = allRows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
 
   // ── By phase, in season order (#159) ──────────────────────────
-  const progressStats = [
-    ...phases.map(phase => {
-      const rows = allRows.filter(r => r.phaseId === phase.id);
-      const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-      const qty = rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
-      const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
-      return { label: phase.label, count: rows.length, sku, qty, pct };
-    }),
-    (() => {
-      const rows = allRows.filter(r => !r.phaseId);
-      const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-      const qty = rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
-      const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
-      return { label: '—', count: rows.length, sku, qty, pct };
-    })(),
-  ].filter(s => s.count > 0);
+  // Every row lands on one line: the active phases in season order, then any other phase the rows
+  // hold — a retired one keeps completed rows (#188) —, then the rows with no phase.
+  const rowsByPhase = new Map<string, typeof allRows>();
+  const noPhase: typeof allRows = [];
+  for (const row of allRows) {
+    if (!row.phaseId) {
+      noPhase.push(row);
+      continue;
+    }
+    const rows = rowsByPhase.get(row.phaseId);
+    if (rows) rows.push(row);
+    else rowsByPhase.set(row.phaseId, [row]);
+  }
+  const phaseStat = (key: string, label: string, rows: typeof allRows) => {
+    const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
+    const qty = rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
+    const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
+    return { key, label, count: rows.length, sku, qty, pct };
+  };
+  const activeIds = new Set(phases.map(p => p.id));
+  const otherPhases = [...rowsByPhase.keys()]
+    .filter(id => !activeIds.has(id))
+    .map(id => {
+      const phase = phaseById.get(id);
+      return { id, label: phase ? inactiveLabel(phase.label) : 'Fase sconosciuta' };
+    })
+    .sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
+  const progressStats = [...phases, ...otherPhases]
+    .filter(phase => rowsByPhase.has(phase.id))
+    .map(phase => phaseStat(phase.id, phase.label, rowsByPhase.get(phase.id) ?? []));
+  if (noPhase.length > 0) progressStats.push(phaseStat('none', '—', noPhase));
 
   // ── Completed rows: a row share, independent of the phase (#181) ──
   const completedCount = allRows.filter(r => r.completedAt).length;
@@ -85,8 +101,8 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
           <CardTitle size="compact">Per Fase</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {progressStats.map(({ label, count, sku, qty, pct }) => (
-            <StatLine key={label} label={label} detail={`${count} righe · ${sku} SKU · ${qty} paia`} pct={pct} />
+          {progressStats.map(({ key, label, count, sku, qty, pct }) => (
+            <StatLine key={key} label={label} detail={`${count} righe · ${sku} SKU · ${qty} paia`} pct={pct} />
           ))}
           {completedCount > 0 && (
             <div className="border-t pt-3">
