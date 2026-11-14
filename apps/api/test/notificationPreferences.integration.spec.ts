@@ -7,7 +7,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { createNotification, flushAllCalendarNotifications, notifyAdmins, notifyCalendarChange, notifyDeduped } from '../src/lib/notifications';
+import { APPROVED_ADMIN_WHERE } from '../src/lib/approvedUsers';
+import { createNotification, flushAllCalendarNotifications, notifyAdmins, notifyAllUsers, notifyCalendarChange, notifyDeduped } from '../src/lib/notifications';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 import { createSilentLogger } from './helpers/logger';
@@ -38,7 +39,7 @@ describe('notifications.preferences.listCalendarEventOverrides', () => {
 describe('notifyDeduped', () => {
   it('holds no window for a notice nobody received, and one for a notice delivered', async () => {
     await createTestUser('admin');
-    const admins = await prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+    const admins = await prisma.user.findMany({ where: APPROVED_ADMIN_WHERE, select: { id: true } });
     await prisma.notificationPreference.createMany({
       data: admins.map(({ id }) => ({ userId: id, category: 'SYSTEM' as const, eventKey: '', enabled: false })),
     });
@@ -54,6 +55,24 @@ describe('notifyDeduped', () => {
     await notice();
     await notice();
     expect(await prisma.notification.count({ where: { title: 't', userId: { in: admins.map(a => a.id) } } })).toBe(admins.length);
+  });
+});
+
+describe('a user still pending approval receives nothing', () => {
+  it('neither an admin notice nor a broadcast', async () => {
+    const { user: pendingAdmin } = await createTestUser('admin');
+    const { user: pendingEditor } = await createTestUser('editor');
+    await prisma.user.updateMany({ where: { id: { in: [pendingAdmin.id, pendingEditor.id] } }, data: { pendingApproval: true } });
+    const { user: approvedAdmin } = await createTestUser('admin');
+
+    await notifyAdmins(prisma, { category: 'SYSTEM', title: 'pending-admins', message: 'm' });
+    await notifyAllUsers(prisma, { category: 'SYSTEM', title: 'pending-all', message: 'm' });
+
+    const received = async (userId: string) =>
+      (await prisma.notification.findMany({ where: { userId, title: { in: ['pending-admins', 'pending-all'] } } })).map(n => n.title).sort();
+    expect(await received(pendingAdmin.id)).toEqual([]);
+    expect(await received(pendingEditor.id)).toEqual([]);
+    expect(await received(approvedAdmin.id)).toEqual(['pending-admins', 'pending-all']);
   });
 });
 

@@ -4,6 +4,7 @@ import type { PrismaClient, NotificationCategory, Prisma } from '@luke/db';
 
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 
+import { APPROVED_ADMIN_WHERE, APPROVED_USER_WHERE } from './approvedUsers';
 import { sseStore } from './sseStore';
 
 
@@ -386,14 +387,14 @@ export async function notifyAdmins(
   params: Omit<NotificationRow, 'userId'>
 ): Promise<boolean> {
   const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true },
+    where: APPROVED_ADMIN_WHERE,
     select: { id: true },
   });
   return bulkNotify(prisma, admins.map(a => a.id), params);
 }
 
 /**
- * Broadcasts a notification to every active user (all roles) in a single `createMany` call.
+ * Broadcasts a notification to every active, approved user (all roles) in a single `createMany` call.
  * Respects per-user notification preferences (disabled entries are excluded).
  * Sends an SSE ping to each notified user's active connections.
  */
@@ -402,7 +403,7 @@ export async function notifyAllUsers(
   params: Omit<NotificationRow, 'userId'>
 ): Promise<void> {
   const users = await prisma.user.findMany({
-    where: { isActive: true },
+    where: APPROVED_USER_WHERE,
     select: { id: true },
   });
   await bulkNotify(prisma, users.map(u => u.id), params);

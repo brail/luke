@@ -153,18 +153,18 @@ export const usersAdminRouter = router({
     .use(requirePermission('users:delete'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-      });
+      // Conditional delete (rule 3): an approval landing first makes the user no longer pending, and
+      // the rejection then deletes nothing. The guard does not count a pending admin, so rejecting
+      // one never touches its lock. `user` is only the audit's snapshot.
+      const user = await ctx.prisma.user.findFirst({ where: { id: input.id, pendingApproval: true } });
+      const { count } = await ctx.prisma.user.deleteMany({ where: { id: input.id, pendingApproval: true } });
 
-      if (!user || !user.pendingApproval) {
+      if (!user || count === 0) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Utente in attesa non trovato',
         });
       }
-
-      await ctx.prisma.user.delete({ where: { id: input.id } });
 
       await logAudit(ctx, {
         action: 'USER_REJECTED',

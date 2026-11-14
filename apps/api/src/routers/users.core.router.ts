@@ -746,11 +746,16 @@ export const usersCoreRouter = router({
       // Hard delete: deletes user and all relations (cascade)
       try {
         const deletedSnapshot = await ctx.prisma.$transaction(async tx => {
+          // The guard's lock before the role is read, as in `update`: the role read is the one the
+          // deletion acts on.
+          await acquireLastAdminLock(tx);
           const current = await tx.user.findUnique({
             where: { id: input.id },
             select: { role: true, email: true, username: true },
           });
-          if (current && hasPermission({ role: current.role as Role }, '*:*')) {
+          // Deleted meanwhile by another deletion that held the lock first.
+          if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+          if (hasPermission({ role: current.role as Role }, '*:*')) {
             await assertNotLastAdminWithSettingsAccess(
               tx,
               input.id,
@@ -771,18 +776,16 @@ export const usersCoreRouter = router({
         // Log SUCCESS after a successful delete — snapshot read inside the
         // transaction (not the outer pre-transaction one): reflects the
         // actually-deleted state even if a concurrent update on the same
-        // user happened in the meantime. Falls back to the outer snapshot
-        // only in the unlikely case that `current` is null (the user would
-        // already be gone anyway, and the delete above would have thrown).
+        // user happened in the meantime.
         await logAudit(ctx, {
           action: 'USER_HARD_DELETE',
           targetType: 'User',
           targetId: input.id,
           result: 'SUCCESS',
           metadata: {
-            deletedEmail: deletedSnapshot?.email ?? user.email,
-            deletedUsername: deletedSnapshot?.username ?? user.username,
-            deletedRole: deletedSnapshot?.role ?? user.role,
+            deletedEmail: deletedSnapshot.email,
+            deletedUsername: deletedSnapshot.username,
+            deletedRole: deletedSnapshot.role,
           },
         });
 

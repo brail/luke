@@ -27,6 +27,7 @@
 import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt, planningGroupName } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers.js';
 import { isUniqueViolation } from '../lib/error.js';
 import { copyToImmutableBucket } from '../storage/index.js';
 
@@ -64,13 +65,13 @@ type TriggerEvent = {
 
 /**
  * Resolves the user credited for a system-generated revision: `createdByUserId` is a non-nullable
- * `Restrict` FK and these triggers have no session. Oldest active admin, stable across ticks.
+ * `Restrict` FK and these triggers have no session. Oldest active, approved admin, stable across ticks.
  *
  * @returns The actor id, or null when no active admin exists (caller skips the revision).
  */
 async function resolveSystemActorUserId(prisma: PrismaClient): Promise<string | null> {
   const admin = await prisma.user.findFirst({
-    where: { role: 'admin', isActive: true },
+    where: APPROVED_ADMIN_WHERE,
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });

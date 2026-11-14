@@ -9,7 +9,7 @@ import { hasPermission, UserIdSchema, type LockedFields, type Role } from '@luke
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
+import { acquireLastAdminLock, assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
 import type { Context } from '../lib/trpc';
@@ -78,11 +78,16 @@ export async function deleteUserHandler({
 
   // Soft delete: sets isActive = false
   const deletedUser = await ctx.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // The guard's lock before the role is read: a role change waits on the same lock, so the role
+    // read here is the one the deletion acts on.
+    await acquireLastAdminLock(tx);
     const current = await tx.user.findUnique({
       where: { id: input.id },
       select: { role: true },
     });
-    if (current && hasPermission({ role: current.role as Role }, '*:*')) {
+    // Deleted meanwhile by a hard delete that held the lock first.
+    if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+    if (hasPermission({ role: current.role as Role }, '*:*')) {
       await assertNotLastAdminWithSettingsAccess(
         tx,
         input.id,

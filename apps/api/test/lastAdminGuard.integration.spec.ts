@@ -11,13 +11,16 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { acquireLastAdminLock, assertNotLastAdmin } from '../src/lib/lastAdminGuard';
+import { LAST_ADMIN_LOCK_KEY, acquireLastAdminLock, assertNotLastAdmin } from '../src/lib/lastAdminGuard';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
+import type { Client } from 'pg';
 
 let prisma: PrismaClient;
 
@@ -163,4 +166,87 @@ describe('lastAdminGuard — real enforcement', () => {
       expect(order).toEqual(['A-acquired', 'A-releasing', 'B-acquired']);
     }
   );
+});
+
+/** The guard's advisory lock, taken by a held transaction as `acquireLastAdminLock` takes it. */
+const holdGuardLock = (holder: Client) => holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [LAST_ADMIN_LOCK_KEY]);
+
+/** An admin who cannot reach `settings.users`: removing the only other admin who can is refused. */
+async function adminWithoutUsersSection() {
+  const { user, session } = await createTestUser('admin');
+  await prisma.userSectionAccess.create({ data: { userId: user.id, section: 'settings.users', enabled: false } });
+  return session;
+}
+
+/** The two deletions the guard covers: name, refusal message, call. */
+const DELETIONS: [string, string, (session: UserSession, id: string) => Promise<unknown>][] = [
+  ['softDelete', "Non puoi eliminare l'ultimo amministratore del sistema",
+    (session, id) => callerFor(session).softDelete({ id })],
+  ['hardDelete', "Non puoi eliminare definitivamente l'ultimo amministratore del sistema",
+    (session, id) => callerFor(session).hardDelete({ id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })],
+];
+
+describe('lastAdminGuard — the target is read under the lock', () => {
+  it.each(DELETIONS)('%s waits for the lock and judges the role a concurrent change committed', async (_name, message, remove) => {
+    const session = await adminWithoutUsersSection();
+    const { user: target } = await createTestUser('editor');
+
+    // While the deletion waits on the lock, the target becomes the only admin able to manage users.
+    const outcome = await whileHeld(
+      holdGuardLock,
+      () => remove(session, target.id),
+      holder => holder.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [target.id])
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'FORBIDDEN', message } });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ role: 'admin', isActive: true });
+  });
+
+  it('an admin still pending approval does not count as one who stays', async () => {
+    const session = await adminWithoutUsersSection();
+    const { user: target } = await createTestUser('admin');
+    const { user: pending } = await createTestUser('admin');
+    await prisma.user.update({ where: { id: pending.id }, data: { pendingApproval: true } });
+
+    await expect(callerFor(session).softDelete({ id: target.id }))
+      .rejects.toMatchObject({ code: 'FORBIDDEN', message: "Non puoi eliminare l'ultimo amministratore del sistema" });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ isActive: true });
+  });
+
+  it('an admin still pending approval can be removed by the only approved one', async () => {
+    const { session } = await createTestUser('admin');
+    const { user: pending } = await createTestUser('admin');
+    await prisma.user.update({ where: { id: pending.id }, data: { pendingApproval: true } });
+
+    await callerFor(session).softDelete({ id: pending.id });
+
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({ isActive: false });
+  });
+
+  it('an admin already deactivated can be deleted by the only active one', async () => {
+    const { session } = await createTestUser('admin');
+    const { user: former } = await createTestUser('admin');
+    await prisma.user.update({ where: { id: former.id }, data: { isActive: false } });
+
+    await callerFor(session).hardDelete({ id: former.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
+
+    expect(await prisma.user.findUnique({ where: { id: former.id } })).toBeNull();
+  });
+
+  it('a rejection deletes nobody once an approval came first', async () => {
+    const { session } = await createTestUser('admin');
+    const { user: applicant } = await createTestUser('admin');
+    await prisma.user.update({ where: { id: applicant.id }, data: { pendingApproval: true } });
+
+    // The approval holds the applicant's row, as its conditional update does, and commits while the
+    // rejection's delete waits on that row.
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [applicant.id]),
+      () => callerFor(session).rejectPending({ id: applicant.id }),
+      holder => holder.query(`UPDATE users SET "pendingApproval" = false WHERE id = $1`, [applicant.id])
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'NOT_FOUND' } });
+    expect(await prisma.user.findUnique({ where: { id: applicant.id } })).toMatchObject({ pendingApproval: false });
+  });
 });

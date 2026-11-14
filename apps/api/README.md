@@ -317,9 +317,10 @@ directory owns — username, first and last name, password (`getLockedFields` in
 soft delete), changing its role, setting its password through the admin path
 (`me.changePassword` is the route, and it asks for the current password) and
 deleting it permanently. Demoting, deactivating or deleting an administrator is
-refused when it would leave no active administrator able to reach user
+refused when it would leave no active, approved administrator able to reach user
 management (`assertNotLastAdminWithSettingsAccess` in `src/lib/lastAdminGuard.ts`,
-serialized by an advisory lock).
+serialized by an advisory lock). An administrator still pending approval cannot
+sign in, so it does not count, and removing one is not refused.
 
 ## Security headers
 

@@ -30,6 +30,8 @@
 
 import type { Prisma, PrismaClient } from '@luke/db';
 
+import { APPROVED_ADMIN_WHERE, APPROVED_USER_WHERE } from '../lib/approvedUsers';
+
 import { unionBrandScopes, type FunctionBrands } from './context.service';
 
 
@@ -105,7 +107,7 @@ async function usersWithBrandAccess(
   const memberships = await prisma.companyTeamMembership.findMany({
     where: {
       team: { isActive: true, brandScopes: { some: { brandId: { in: brandIds } } } },
-      user: { isActive: true, pendingApproval: false },
+      user: APPROVED_USER_WHERE,
     },
     // Filtered to the requested brands too — a team scoped to brands outside `brandIds` would
     // otherwise have every one of its (irrelevant) scope rows fetched and then discarded below.
@@ -132,13 +134,13 @@ export async function listUsersWithBrandAccess(
 ): Promise<{ id: string; username: string; firstName: string; lastName: string }[]> {
   const [admins, memberships] = await Promise.all([
     prisma.user.findMany({
-      where: { role: 'admin', isActive: true, pendingApproval: false },
+      where: APPROVED_ADMIN_WHERE,
       select: { id: true, username: true, firstName: true, lastName: true },
     }),
     prisma.companyTeamMembership.findMany({
       where: {
         team: { isActive: true, brandScopes: { some: { brandId } } },
-        user: { isActive: true, pendingApproval: false },
+        user: APPROVED_USER_WHERE,
       },
       select: { user: { select: { id: true, username: true, firstName: true, lastName: true } } },
     }),

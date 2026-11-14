@@ -8,6 +8,8 @@ import type { Section } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 import type { Prisma, PrismaClient } from '@luke/db';
 
+import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
+
 import type { FastifyBaseLogger } from 'fastify';
 
 type PrismaLike = PrismaClient | Prisma.TransactionClient;
@@ -149,7 +151,7 @@ export interface AdminRecoveryOverrides {
 }
 
 /**
- * The one read every recovery count works from: active admins with their override on the
+ * The one read every recovery count works from: active, approved admins with their override on the
  * recovery section. A caller that counts twice (before and after a change) loads once, so both
  * counts see the same rows.
  */
@@ -157,7 +159,7 @@ export async function loadAdminRecoveryOverrides(
   prisma: PrismaLike
 ): Promise<AdminRecoveryOverrides[]> {
   const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true },
+    where: APPROVED_ADMIN_WHERE,
     select: {
       id: true,
       sectionAccess: {
