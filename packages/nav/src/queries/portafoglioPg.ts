@@ -11,6 +11,23 @@ import { PgParams } from './pgParams.js';
 
 import type { PortafoglioParams, PortafoglioRow } from '../statistics/portafoglio.js';
 
+// ─── What the report reads ────────────────────────────────────────────────────
+//
+// One definition of the order lines the report selects, shared by the report and by the
+// salesperson filter (`queryPortafoglioSalespersonCodes`), so the filter offers exactly who the
+// report can return (#240). The report's other joins are LEFT and drop no line. Both fragments read
+// `$1` = season and `$2` = brand: build the parameters with `portafoglioBaseParams`.
+
+/** Order headers (`sh`): brand and season. */
+const PF_HEADER = `sh."sellingSeasonCode" = $1 AND sh."shortcutDimension2Code" = $2`;
+const PF_LINE_OF_HEADER = `sl."documentType" = sh."documentType" AND sl."documentNo" = sh.no_`;
+/** Order lines (`sl`): sales orders (1) or returns (5), of an item type the report reads. */
+const PF_LINE = `sl."documentType" IN (1, 5) AND sl.type IN (19, 20)`;
+
+/** `$1` = season, `$2` = brand: the order every fragment above reads. */
+const portafoglioBaseParams = (params: Pick<PortafoglioParams, 'seasonCode' | 'trademarkCode'>) =>
+  new PgParams([params.seasonCode, params.trademarkCode]);
+
 /**
  * Queries the order portfolio from the local nav_pf_* replica tables.
  * Output columns are identical to the SQL Server path for compatibility with buildPortafoglioXlsx.
@@ -23,7 +40,7 @@ export async function queryPortafoglioFromPg(
 ): Promise<PortafoglioRow[]> {
   const { seasonCode, trademarkCode, salespersonCode, customerCode } = params;
 
-  const p = new PgParams([seasonCode, trademarkCode]);
+  const p = portafoglioBaseParams({ seasonCode, trademarkCode });
 
   const spFilter = salespersonCode
     ? `AND sh."salespersonCode" = ${p.add(salespersonCode)}`
@@ -337,8 +354,7 @@ base_lines AS (
 
   FROM nav_pf_sales_line sl
   INNER JOIN nav_pf_sales_header sh
-    ON sl."documentType" = sh."documentType"
-    AND sl."documentNo" = sh.no_
+    ON ${PF_LINE_OF_HEADER}
   LEFT JOIN nav_pf_salesperson sp
     ON sh."salespersonCode" = sp.code
   LEFT JOIN nav_pf_ddt_picking ps
@@ -369,10 +385,8 @@ base_lines AS (
   LEFT JOIN nav_pf_salesperson sp5
     ON she."subject4" = sp5.code
 
-  WHERE CASE sl."documentType" WHEN 1 THEN 'SALES' WHEN 5 THEN 'RETURNS' ELSE '' END <> ''
-    AND sl.type IN (19, 20)
-    AND sh."sellingSeasonCode" = $1
-    AND sh."shortcutDimension2Code" = $2
+  WHERE ${PF_LINE}
+    AND ${PF_HEADER}
     ${spFilter}
     ${custFilter}
 ),
@@ -723,4 +737,27 @@ LEFT JOIN landed_cost lc
   // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2...); every value is bound as a parameter, never interpolated
   const rows = await prisma.$queryRawUnsafe<PortafoglioRow[]>(sql, ...p.values);
   return rows;
+}
+
+/**
+ * The salespersons the order-portfolio report can return for a brand and season — those with an
+ * order among the lines `queryPortafoglioFromPg` reads — so the filter offers no one the report
+ * would leave out (#240). A header counts once one of its lines qualifies (`EXISTS`, no line scan).
+ * A missing or blank code (NAV stores blanks as '') is not offered: the report reads '' as no filter.
+ */
+export async function queryPortafoglioSalespersonCodes(
+  prisma: PrismaClient,
+  params: Pick<PortafoglioParams, 'seasonCode' | 'trademarkCode'>,
+): Promise<string[]> {
+  const p = portafoglioBaseParams(params);
+  const sql = `
+SELECT DISTINCT sh."salespersonCode" AS "code"
+FROM nav_pf_sales_header sh
+WHERE ${PF_HEADER}
+  AND sh."salespersonCode" <> ''
+  AND EXISTS (SELECT 1 FROM nav_pf_sales_line sl WHERE ${PF_LINE_OF_HEADER} AND ${PF_LINE})`;
+
+  // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2); every value is bound as a parameter, never interpolated
+  const rows = await prisma.$queryRawUnsafe<{ code: string }[]>(sql, ...p.values);
+  return rows.map(r => r.code);
 }

@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { versionLabel } from '@luke/core';
 import type { Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
-import { createSyncRequest, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg, queryKimoSalespersonCodes } from '@luke/nav';
+import { createSyncRequest, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryPortafoglioSalespersonCodes, queryKimoFromPg, queryKimoSalespersonCodes } from '@luke/nav';
 
 import { appVersion } from '../lib/appVersion';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
@@ -52,25 +52,37 @@ const portafoglioDownloadInput = portafoglioBaseInput.extend({
 });
 
 /**
- * Resolves salesperson names for a set of codes from the nav_pf_salesperson replica.
- * Returns a Map so callers can look up names for codes gathered from different sources.
+ * The filter options for a list of salesperson codes: each with its name from `nav_pf_salesperson`
+ * (blank when the replica has none), sorted by name.
  */
-async function resolveSalespersonNames(
-  prisma: PrismaClient,
-  codes: string[],
-): Promise<Map<string, string>> {
-  if (!codes.length) return new Map();
+async function salespersonOptions(prisma: PrismaClient, codes: string[]): Promise<{ code: string; name: string }[]> {
+  if (!codes.length) return [];
   const rows = await prisma.navPfSalesperson.findMany({
     where: { code: { in: codes } },
     select: { code: true, name: true },
   });
-  return new Map(rows.map(r => [r.code, r.name ?? '']));
+  const names = new Map(rows.map(r => [r.code, r.name ?? '']));
+  return codes
+    .map(code => ({ code, name: names.get(code) ?? '' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
 /** The prefix of a replica's tables: both replicas record their tables in `navPfSyncState`. */
 const REPLICA_TABLE_PREFIX = { portafoglio: 'nav_pf_', kimo: 'nav_kimo_' } as const;
+
+/**
+ * Whether the replica holds the order portfolio for a brand and season: the report and its
+ * salesperson filter read it when it does, NAV directly when it does not, so both use one source.
+ */
+async function replicaHasPortafoglio(prisma: PrismaClient, seasonCode: string, trademarkCode: string) {
+  const header = await prisma.navPfSalesHeader.findFirst({
+    where: { sellingSeasonCode: seasonCode, shortcutDimension2Code: trademarkCode },
+    select: { no_: true },
+  });
+  return header !== null;
+}
 
 /**
  * A replica's sync state: its tables, and the two fields of its automatic sync schedule a
@@ -102,7 +114,9 @@ async function replicaSyncState(prisma: PrismaClient, entity: keyof typeof REPLI
 
 const portafoglioRouter = router({
   /**
-   * Returns available filter options (salespersons) for the order portfolio of a brand+season, reading from PG replica with NAV direct fallback.
+   * Returns available filter options (salespersons) for the order portfolio of a brand+season: from the
+   * PG replica, exactly the salespersons the report can return (`queryPortafoglioSalespersonCodes`,
+   * #240); with the replica empty, from NAV headers directly (that path's row selection is #253's).
    *
    * @auth {sales:read}
    * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
@@ -125,30 +139,17 @@ const portafoglioRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Tries first with data replicated in PG
-      const headerRows = await ctx.prisma.navPfSalesHeader.findMany({
-        where: {
-          sellingSeasonCode: season.code,
-          shortcutDimension2Code: brand.code,
-          salespersonCode: { not: null },
-        },
-        select: { salespersonCode: true },
-        distinct: ['salespersonCode'],
-      });
-      const salespersonCodes = headerRows
-        .map(r => r.salespersonCode)
-        .filter((c): c is string => c !== null);
-
-      if (salespersonCodes.length > 0) {
-        const nameMap = await resolveSalespersonNames(ctx.prisma, salespersonCodes);
-        const pgRows = salespersonCodes
-          .map(code => ({ code, name: nameMap.get(code) ?? '' }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-
+      // From the replica when the report reads it, with the report's own conditions, so no
+      // salesperson is offered for an empty report (#240).
+      if (await replicaHasPortafoglio(ctx.prisma, season.code, brand.code)) {
+        const salespersonCodes = await queryPortafoglioSalespersonCodes(ctx.prisma, {
+          seasonCode: season.code,
+          trademarkCode: brand.code,
+        });
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
-          salespersons: pgRows,
+          salespersons: await salespersonOptions(ctx.prisma, salespersonCodes),
         };
       }
 
@@ -270,14 +271,7 @@ const portafoglioRouter = router({
         'sales.statistics.portafoglio.download start',
       );
 
-      // Checks if PG data is available for this season/brand
-      const pgCount = await ctx.prisma.navPfSalesHeader.count({
-        where: {
-          sellingSeasonCode: season.code,
-          shortcutDimension2Code: brand.code,
-        },
-      });
-      const pgHasData = pgCount > 0;
+      const pgHasData = await replicaHasPortafoglio(ctx.prisma, season.code, brand.code);
 
       const queryStart = Date.now();
       let rows: Awaited<ReturnType<typeof queryPortafoglioFromPg>>;
@@ -379,10 +373,7 @@ const kimoRouter = router({
         seasonCode: season.code,
         trademarkCode: brand.code,
       });
-      const nameMap = await resolveSalespersonNames(ctx.prisma, allCodes);
-      const salespersons = allCodes
-        .map(code => ({ code, name: nameMap.get(code) ?? '' }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const salespersons = await salespersonOptions(ctx.prisma, allCodes);
 
       return {
         brand:  { code: brand.code, name: brand.name },

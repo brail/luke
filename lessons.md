@@ -1007,6 +1007,20 @@ logic, no reliance on stale client data. A smaller diff, fewer files or no Codex
 round are costs to state next to it, never the reason to choose. Recommend the
 cheaper option only with a stated reason the better one does not fit.
 
+### Verify a subagent's claim in the code before reporting it on (2026-11-14)
+
+**What happened.** During S0p2 (#240) a `/simplify` reviewer wrote that
+`nav_pf_sales_header` had no index on (`sellingSeasonCode`,
+`shortcutDimension2Code`). luke-dev forwarded it to luke-lead as a finding
+outside the task without opening the schema. The index exists
+(`packages/db/prisma/nav-analytics.prisma`, migration 20260327132730), so
+luke-lead spent a class assessment disproving it.
+
+**Rule.** Before a reviewer's or subagent's factual claim leaves the session —
+as a finding to luke-lead, an issue comment or a plan entry — check it against
+the code with a direct read or grep, and quote the evidence. A claim that was
+not checked is labelled «unverified».
+
 ---
 
 ## React & UI
