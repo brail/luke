@@ -30,6 +30,17 @@ luke-lead was named luke-backlog until 2026-11-10; older issues and notes use th
   It informs the owner, who can reverse those decisions.
 - luke-dev decides how and when to write code within the approved plan.
 
+**Findings outside the task**
+
+Any session or agent, reviewers included, that notices something off outside its task — a rule
+broken in more than one place, a repeated workaround, a check weaker than its neighbours — sends
+luke-lead what, where and which rule; it does not fix it in place or widen the task. luke-lead
+checks for an existing issue and commissions one read-only assessment per class: count, real risk
+versus form, and whether Semgrep or ESLint can prevent recurrence, with its exceptions. It records
+the count, correction list and guard in an issue, or why no action is needed. Small findings are
+grouped; ongoing units are not interrupted. Only rule changes or accepted risks need an owner
+decision brief.
+
 **Models and effort**
 
 | Role | Model | Effort |

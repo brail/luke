@@ -40,4 +40,5 @@ Each model call re-sends the whole session, so accumulated context — not reaso
 - If you are handed a unit outside the areas listed in [Collaboration with Codex](CLAUDE.md#collaboration-with-codex) and the owner did not ask for the review, say so in one line and keep the answer short.
 - Check the handoff against that section; if acceptance criteria are missing, state the ones you reviewed against.
 - Answer with an approval or with findings, each with `path:line`, each marked as verified in code or inferred.
+- Route unrelated findings to luke-lead under `CLAUDE.md`, "Findings outside the task"; do not expand the review or block the current unit on them.
 - Judge the aggregate, not only the change in front of you. Do not endorse new bespoke tooling — a checker, a script, a gate — unless you can name an incident that actually happened that it would have prevented, or a new invariant it is the only practical way to hold, and say how much equivalent tooling already exists. Prefer an existing gate, a standard mechanism, or none.
