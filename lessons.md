@@ -1019,7 +1019,11 @@ luke-lead spent a class assessment disproving it.
 **Rule.** Before a reviewer's or subagent's factual claim leaves the session —
 as a finding to luke-lead, an issue comment or a plan entry — check it against
 the code with a direct read or grep, and quote the evidence. A claim that was
-not checked is labelled «unverified».
+not checked is labelled «unverified». A claim about what a caller receives (a
+status code, a message) is checked in the helper that builds the answer, not
+only at the call site: during S0t (#255) a review said four backup/restore sites
+answered a 412 with provider text; the grep found the sites, but `preflightError`
+answers 412 only for `RestorePreconditionError`, whose text is the app's own.
 
 ---
 
