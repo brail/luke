@@ -64,6 +64,18 @@ export type LdapLogin = { user: User } | LdapRefusal;
 const REFUSED: LdapRefusal = { user: null, reason: 'invalid_credentials' };
 
 /**
+ * The directory verified the password, and the local user record could not be read or written.
+ * Its own type so the caller can tell it from a failure before any proof: it is the one LDAP
+ * failure that may be answered as such before a session exists.
+ */
+export class LdapUserNotWrittenError extends Error {
+  constructor(cause: unknown) {
+    super('LDAP user record could not be written after the password was verified', { cause });
+    this.name = 'LdapUserNotWrittenError';
+  }
+}
+
+/**
  * Authenticates a user against the configured LDAP directory: service-account bind, search, bind as
  * the user, then creation or update of the local user record.
  *
@@ -72,11 +84,13 @@ const REFUSED: LdapRefusal = { user: null, reason: 'invalid_credentials' };
  * it — a failure says nothing about the person logging in, and is thrown. From the search on, a
  * failure is returned as a refusal, whatever its cause: answering differently there would tell a
  * caller with no password which usernames the directory knows. The one throw past that point needs
- * the password: the user record could not be written after the directory verified it.
+ * the password: the user record could not be written after the directory verified it
+ * (`LdapUserNotWrittenError`).
  *
  * @returns The local `User`, or a refusal with the reason for the audit trail.
- * @throws {TRPCError} When the login could not complete for a reason independent of the username,
- *   or the user record could not be synced after the password was verified.
+ * @throws {TRPCError} When the login could not complete for a reason independent of the username.
+ * @throws {LdapUserNotWrittenError} When the user record could not be synced after the password was
+ *   verified.
  */
 export async function authenticateViaLdap(
   prisma: PrismaClient,
@@ -129,13 +143,18 @@ export async function authenticateViaLdap(
     const role = determineUserRole(userGroups, config.roleMapping);
 
     // Create or update the user in the database; an account it may not sign in is a refusal.
-    const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
+    let user: User | null;
+    try {
+      user = await createOrUpdateUser(prisma, username, role, verified.attributes);
+    } catch (error) {
+      throw new LdapUserNotWrittenError(error);
+    }
     if (!user) return { user: null, reason: 'account_refused' };
 
     logger.info({ username, role }, 'LDAP authentication successful');
     return { user };
   } catch (error) {
-    if (error instanceof TRPCError) {
+    if (error instanceof TRPCError || error instanceof LdapUserNotWrittenError) {
       throw error;
     }
 

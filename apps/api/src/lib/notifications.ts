@@ -5,6 +5,7 @@ import type { PrismaClient, NotificationCategory, Prisma } from '@luke/db';
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 
 import { APPROVED_ADMIN_WHERE, APPROVED_USER_WHERE } from './approvedUsers';
+import { isUniqueViolation } from './error';
 import { sseStore } from './sseStore';
 
 
@@ -355,9 +356,14 @@ export const SYSTEM_FAILURE_DEDUP_MS = 6 * 60 * 60 * 1000;
  * The dedup ledger is persisted in `NotificationDedupKey` (not in-memory) so it survives
  * process restarts — otherwise every redeploy/restart would reset the window and re-fire
  * recurring notifications (e.g. sync failures, deadline notices) regardless of how
- * recently one was already sent. The timestamp is updated only after `send()` reports a delivery,
- * so a failed send, or one every recipient had muted, is retried on the next call instead of being
- * silently suppressed for the full window.
+ * recently one was already sent.
+ *
+ * The window is claimed before the send, by a conditional write (rule 3): a `create` when the key
+ * has no row (a unique violation means another caller holds it), or an `updateMany` on the
+ * `lastSentAt` read (no row updated means another caller claimed it). So concurrent callers send
+ * once. A send that reports no delivery (`false`, every recipient muted) or throws releases the
+ * claim, under the same condition, so the next call retries instead of being silently suppressed
+ * for the full window; a throw is rethrown.
  */
 export async function notifyDeduped(
   prisma: PrismaClient,
@@ -367,12 +373,36 @@ export async function notifyDeduped(
 ): Promise<void> {
   const existing = await prisma.notificationDedupKey.findUnique({ where: { key } });
   if (existing && Date.now() - existing.lastSentAt.getTime() < windowMs) return;
-  if (!(await send())) return;
-  await prisma.notificationDedupKey.upsert({
-    where: { key },
-    create: { key, lastSentAt: new Date() },
-    update: { lastSentAt: new Date() },
-  });
+
+  const claimedAt = new Date();
+  if (existing) {
+    const { count } = await prisma.notificationDedupKey.updateMany({
+      where: { key, lastSentAt: existing.lastSentAt },
+      data: { lastSentAt: claimedAt },
+    });
+    if (count === 0) return;
+  } else {
+    try {
+      await prisma.notificationDedupKey.create({ data: { key, lastSentAt: claimedAt } });
+    } catch (err) {
+      if (isUniqueViolation(err, 'notification_dedup_keys_pkey')) return;
+      throw err;
+    }
+  }
+
+  // ponytail: a crash between the claim and the send suppresses this notice for one window;
+  // accepted, a lease column would close it.
+  const release = () =>
+    existing
+      ? prisma.notificationDedupKey.updateMany({ where: { key, lastSentAt: claimedAt }, data: { lastSentAt: existing.lastSentAt } })
+      : prisma.notificationDedupKey.deleteMany({ where: { key, lastSentAt: claimedAt } });
+
+  let delivered = false;
+  try {
+    delivered = await send();
+  } finally {
+    if (!delivered) await release();
+  }
 }
 
 /**

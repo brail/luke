@@ -140,7 +140,7 @@ Relevant architectural decisions are documented in [`docs/decisions/`](docs/deci
 ## Troubleshooting
 
 - **Wrong Node version** — `nvm use` reads `.nvmrc`.
-- **Sporadic 429s, or the backend reported unreachable, in local development** —
+- **Sporadic 429s, or logins refused, in local development** —
   `NODE_ENV=development` is missing from `apps/api/.env`; see
   [Running the API locally](apps/api/README.md#running-the-api-locally).
 - **`Cannot find module @luke/core/dist`** — Turbo's cache can be stale: stop

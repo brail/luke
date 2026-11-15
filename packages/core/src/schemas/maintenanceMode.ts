@@ -29,7 +29,7 @@ export const MaintenanceModeActivateInputSchema = z.object({
   forceLogout: z.boolean().default(false),
 });
 
-/** Full maintenance-mode state as returned by `getStatus` — deliberately public (pre-login banner). */
+/** Full maintenance-mode state as returned by `getStatus`, to signed-in users only (ADR-042). */
 export const MaintenanceModeStateSchema = z.object({
   status: MaintenanceModeStatusSchema,
   scheduledAt: z.string().nullable(),

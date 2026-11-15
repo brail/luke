@@ -153,12 +153,20 @@ export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Procedure that requires a valid authenticated session.
+ * A valid session and nothing else: no maintenance guard, no permission. Only for a read every
+ * signed-in user needs while maintenance refuses everything else — today the window's own state
+ * (`maintenance.mode.getStatus`), which the lock screen shows. Each use never writes, carries a
+ * reasoned `nosemgrep` and is listed in ADR-042; everything else stays on `protectedProcedure`.
  */
-export const protectedProcedure = publicProcedure
+export const sessionProcedure = publicProcedure
   .use(loggingMiddleware)
-  .use(authMiddleware)
-  .use(maintenanceGuard);
+  .use(authMiddleware);
+
+/**
+ * Procedure that requires a valid authenticated session, refused during maintenance to whoever
+ * cannot bypass it.
+ */
+export const protectedProcedure = sessionProcedure.use(maintenanceGuard);
 
 /**
  * `protectedProcedure` for an endpoint that works on the caller's own data. It writes only rows the

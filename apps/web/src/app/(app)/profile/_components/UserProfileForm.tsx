@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { UserProfileSchema, type UserProfileInput } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, UserProfileSchema, type UserProfileInput } from '@luke/core';
 
 import { TimeZoneSelect } from '../../../../components/TimeZoneSelect';
 import { Button } from '../../../../components/ui/button';
@@ -89,11 +89,13 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         window.location.reload();
       },
       onErrorMessage: 'Errore cambio email',
-      // The password is proven as a login proves it: UNAUTHORIZED is a wrong password (or an expired
-      // session), each with its own server text; SERVICE_UNAVAILABLE is the directory, its text masked.
+      // The password is proven as a login proves it, answered for a signed-in user: UNAUTHORIZED is a
+      // wrong password (or an expired session) and TOO_MANY_REQUESTS the account's bucket, each with
+      // its own server text; SERVICE_UNAVAILABLE is the directory, its text masked.
       entityMessages: {
         UNAUTHORIZED: true,
-        SERVICE_UNAVAILABLE: 'Servizio di autenticazione non disponibile. Riprova più tardi.',
+        TOO_MANY_REQUESTS: true,
+        SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE,
       },
     });
 

@@ -6,8 +6,9 @@
  * callback always answers `200`. Two things still cross that boundary:
  *
  * - the `code` of a `CredentialsSignin` subclass thrown from `authorize()`, which `signIn()` returns
- *   to the page — used here when the login service itself is unavailable, so that the page does
- *   not tell the user their password is wrong, and for an account awaiting approval;
+ *   to the page — used only for answers the API gives once the password is proven: an account
+ *   awaiting approval, an email still to verify, maintenance, a directory that verified the
+ *   password and could not complete the login;
  * - a mark left in `loginThrottleContext`, which the route wrapper
  *   (`app/api/auth/[...nextauth]/route.ts`) turns into a real `429`.
  *
@@ -23,12 +24,19 @@ import { debugError } from './debug';
 import { markLoginThrottled } from './loginThrottleContext';
 
 /**
- * The login could not be attempted: the API answered `SERVICE_UNAVAILABLE` (the authentication
- * service cannot complete a login, or the application is in maintenance). `code` is what reaches
- * the page, through the sign-in URL: it says nothing about the account.
+ * The API answered `SERVICE_UNAVAILABLE`, which before a session it does only after the password is
+ * proven: the directory verified it and the login could not be completed.
  */
 export class LoginUnavailable extends CredentialsSignin {
   code = 'unavailable';
+}
+
+/**
+ * The password is right and maintenance is active for a role that cannot bypass it. Like
+ * `LoginPending`, answered only after the password is proven.
+ */
+export class LoginMaintenance extends CredentialsSignin {
+  code = 'maintenance';
 }
 
 /**
@@ -56,8 +64,9 @@ const PENDING_MESSAGES = new Set(['ACCOUNT_PENDING_APPROVAL', 'ACCOUNT_PENDING_A
 /**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data, a
  * `{ pendingApproval, needsEmail }` object for accounts awaiting approval, `{ emailUnverified }`
- * for an email still to verify, or `{ unavailable }` when the API answers `SERVICE_UNAVAILABLE`.
- * Returns `null` on any other error or non-OK response.
+ * for an email still to verify, `{ maintenance }` for maintenance, or `{ unavailable }` when the
+ * API answers `SERVICE_UNAVAILABLE`. Returns `null` on any other error or non-OK response: every
+ * refusal before the password is proven, which the page answers with one message.
  *
  * It returns the unavailable case instead of throwing it: the `catch` below is for a failed fetch,
  * and would swallow it.
@@ -90,20 +99,25 @@ async function callTRPCAuth(
       const errorData = await response.json().catch(() => null);
       const message: string = errorData?.error?.message || '';
       const code: unknown = errorData?.error?.data?.code;
-      // The two exact messages `authenticateUser` throws, once the password is proven.
+      // The exact markers `authenticateUser` throws, once the password is proven.
       if (response.status === 403 && code === 'FORBIDDEN' && PENDING_MESSAGES.has(message)) {
         return { pendingApproval: true, needsEmail: message === 'ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL' };
       }
       if (response.status === 403 && code === 'FORBIDDEN' && message === 'EMAIL_NOT_VERIFIED') {
         return { emailUnverified: true };
       }
+      if (response.status === 403 && code === 'FORBIDDEN' && message === 'MAINTENANCE_ACTIVE') {
+        return { maintenance: true };
+      }
       // Read from the code, never the message: production replaces the message of every 5xx.
       if (code === 'SERVICE_UNAVAILABLE') {
         return { unavailable: true };
       }
-      // Signals the rate limit to the route wrapper ([...nextauth]/route.ts) through
-      // AsyncLocalStorage: NextAuth responds with 200 anyway below (return null →
-      // generic CredentialsSignin), the real 429 is constructed outside this call stack.
+      // The caller's own per-IP bucket (the API's per-account one answers like a wrong password).
+      // Signals it to the route wrapper ([...nextauth]/route.ts) through AsyncLocalStorage:
+      // NextAuth responds with 200 anyway below (return null → generic CredentialsSignin), the
+      // real 429 is constructed outside this call stack. The global limiter's 429 carries no tRPC
+      // code, and reads as any other refusal.
       if (code === 'TOO_MANY_REQUESTS') {
         const retryAfterSeconds =
           typeof errorData.error.data.retryAfterSeconds === 'number'
@@ -126,7 +140,8 @@ async function callTRPCAuth(
  * `authorize()` for the credentials provider.
  *
  * @returns The user to open a session for, or `null` for a login that was refused.
- * @throws {LoginUnavailable} When the login service is unavailable.
+ * @throws {LoginUnavailable} When the directory verified the password and the login could not complete.
+ * @throws {LoginMaintenance} When the password is right and maintenance is active.
  * @throws {LoginPending} When the password is right and the account awaits approval.
  * @throws {LoginEmailUnverified} When the password is right and the email is still to verify.
  */
@@ -155,6 +170,9 @@ export async function authorizeLogin(
     }
     if (authResult?.emailUnverified) {
       throw new LoginEmailUnverified();
+    }
+    if (authResult?.maintenance) {
+      throw new LoginMaintenance();
     }
 
     if (!authResult?.user) {

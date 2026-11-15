@@ -12,22 +12,24 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import * as ldapAuth from '../src/lib/ldapAuth';
+import { getMaintenanceState, writeMaintenanceState } from '../src/lib/maintenanceMode';
 import * as notifications from '../src/lib/notifications';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 let ip = 0;
 
 const WRONG_PASSWORD = 'Wrong-password-1!';
-const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE' };
-const INVALID = { code: 'UNAUTHORIZED', message: 'Credenziali non valide' };
+/** Every refusal before the password is proven, an LDAP outage included, reads the same. */
+const REFUSED = { code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE };
 
 beforeEach(async () => {
   prisma = await setupTestDb();
@@ -40,7 +42,7 @@ afterEach(() => {
 
 /** Spied on the module namespace: `appRouter` is loaded by the setup file before any `vi.mock`. */
 const ldap = {
-  /** LDAP failed before the username was sent: R1c answers 503. */
+  /** LDAP failed before the username was sent: audited as an outage, answered as a refusal. */
   throws: () =>
     vi.spyOn(ldapAuth, 'authenticateViaLdap').mockRejectedValue(
       new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'LDAP service unavailable' }),
@@ -59,10 +61,6 @@ function login(username: string, password = TEST_USER_PASSWORD) {
   return appRouter.createCaller(ctx).auth.login({ username, password });
 }
 
-async function lastAudit(action: 'AUTH_LOGIN' | 'AUTH_LOGIN_FAILED') {
-  return prisma.auditLog.findFirst({ where: { action }, orderBy: { createdAt: 'desc' } });
-}
-
 async function emergencyNotifications() {
   return prisma.notification.count({ where: { category: 'SYSTEM', title: { contains: 'emergenza' } } });
 }
@@ -73,9 +71,9 @@ async function requireEmailVerification() {
 
 describe('ldap-only: an administrator with a LOCAL credential', () => {
   describe.each([
-    ['LDAP failed before the username was sent', 'throws', UNAVAILABLE],
-    ['LDAP found no entry', 'refuses', INVALID],
-    ['LDAP is not configured', 'disabled', INVALID],
+    ['LDAP failed before the username was sent', 'throws', REFUSED],
+    ['LDAP found no entry', 'refuses', REFUSED],
+    ['LDAP is not configured', 'disabled', REFUSED],
   ] as const)('%s', (_name, outcome, wrongPasswordAnswer) => {
     beforeEach(() => {
       ldap[outcome]();
@@ -127,6 +125,16 @@ describe('ldap-only: an administrator with a LOCAL credential', () => {
     expect(await emergencyNotifications()).toBe(0);
   });
 
+  it('logs in during active maintenance: an administrator bypasses it', async () => {
+    ldap.throws();
+    const inactive = await getMaintenanceState(prisma);
+    await writeMaintenanceState(prisma, { ...inactive, status: 'ACTIVE', activatedAt: new Date().toISOString() });
+    onTestFinished(() => writeMaintenanceState(prisma, inactive).then(() => undefined));
+    const { user } = await createTestUser('admin');
+
+    await expect(login(user.username)).resolves.toMatchObject({ user: { id: user.id } });
+  });
+
   it('still logs in when the notification fails', async () => {
     ldap.refuses();
     vi.spyOn(notifications, 'notifyAdmins').mockRejectedValue(new Error('notification store down'));
@@ -138,8 +146,8 @@ describe('ldap-only: an administrator with a LOCAL credential', () => {
 
 describe('ldap-only: anybody else with a correct local password', () => {
   it.each([
-    ['LDAP failed before the username was sent', 'throws', UNAVAILABLE],
-    ['LDAP found no entry', 'refuses', INVALID],
+    ['LDAP failed before the username was sent', 'throws', REFUSED],
+    ['LDAP found no entry', 'refuses', REFUSED],
   ] as const)('%s: refused as a wrong password would be, with nothing done', async (_name, outcome, answer) => {
     ldap[outcome]();
     const { user } = await createTestUser('editor');
@@ -158,7 +166,7 @@ describe('ldap-only: anybody else with a correct local password', () => {
     const { user } = await createTestUser('editor');
     await prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true } });
 
-    await expect(login(user.username)).rejects.toMatchObject(INVALID);
+    await expect(login(user.username)).rejects.toMatchObject(REFUSED);
   });
 
   it('an unverified email under required verification: refused as a wrong password, never with a 403', async () => {
@@ -167,6 +175,6 @@ describe('ldap-only: anybody else with a correct local password', () => {
     const { user } = await createTestUser('viewer');
     await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: null } });
 
-    await expect(login(user.username)).rejects.toMatchObject(INVALID);
+    await expect(login(user.username)).rejects.toMatchObject(REFUSED);
   });
 });

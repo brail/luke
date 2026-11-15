@@ -10,20 +10,23 @@
  * applies, and the checks after authentication (active user, local credential, pending approval,
  * email verification) still decide.
  *
- * When the fallback does not authenticate either, the answer is `SERVICE_UNAVAILABLE` and the audit
- * row says `ldap_unavailable`: the directory never judged the credentials. It used to read
- * "invalid credentials" in both places.
+ * When the fallback does not authenticate either, the audit row says `ldap_unavailable` — the
+ * directory never judged the credentials — and the administrators are told, once per window. The
+ * public answer is the one every refusal before proof gets (`SIGN_IN_REFUSED_MESSAGE`): nothing
+ * before sign-in tells the app's state. Only a directory that verified the password and a user
+ * record that could not be written is answered `SERVICE_UNAVAILABLE`.
  */
 
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import * as ldapAuth from '../src/lib/ldapAuth';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 let ip = 0;
@@ -40,8 +43,11 @@ async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only')
   await prisma.appConfig.create({ data: { key: 'auth.strategy', value: strategy, isEncrypted: false } });
 }
 
-/** What a login is answered when nobody was authenticated and LDAP could not complete. */
-const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', message: 'Servizio di autenticazione non disponibile' };
+/** What a login is answered for every refusal before the password is proven. */
+const REFUSED = { code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE };
+
+/** The administrators' notice of an LDAP check that could not complete. */
+const outageNotices = () => prisma.notification.count({ where: { title: 'Verifica LDAP non riuscita' } });
 
 /** LDAP throws `code`, as a wrong service-account bind (`UNAUTHORIZED`) or a broken config does. */
 function ldapFailsWith(code: TRPCError['code']) {
@@ -57,10 +63,6 @@ function login(username: string, password = TEST_USER_PASSWORD) {
   Object.assign(ctx.req, { ip: `10.19.0.${++ip}` });
   const warn = vi.spyOn(ctx.logger, 'warn');
   return { warn, result: appRouter.createCaller(ctx).auth.login({ username, password }) };
-}
-
-async function lastAudit(action: 'AUTH_LOGIN' | 'AUTH_LOGIN_FAILED') {
-  return prisma.auditLog.findFirst({ where: { action }, orderBy: { createdAt: 'desc' } });
 }
 
 describe('ldap-first, LDAP failing', () => {
@@ -98,11 +100,12 @@ describe('ldap-first, LDAP failing', () => {
       ldapFailsWith('UNAUTHORIZED');
     });
 
-    // Nobody was authenticated and the directory never judged the credentials: an outage, said so.
+    // Nobody was authenticated and the directory never judged the credentials: audited as an
+    // outage, answered as every refusal before proof.
     it('a wrong password', async () => {
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({
         reason: 'ldap_unavailable',
         errorCode: 'UNAUTHORIZED',
@@ -113,14 +116,14 @@ describe('ldap-first, LDAP failing', () => {
       const { user } = await createTestUser('editor');
       await prisma.identity.deleteMany({ where: { userId: user.id } });
 
-      await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
+      await expect(login(user.username).result).rejects.toMatchObject(REFUSED);
     });
 
     it('an inactive user', async () => {
       const { user } = await createTestUser('editor');
       await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });
 
-      await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
+      await expect(login(user.username).result).rejects.toMatchObject(REFUSED);
     });
 
     it('a user pending approval', async () => {
@@ -155,12 +158,12 @@ describe('ldap-first, LDAP failing', () => {
 });
 
 describe('local-first, LDAP failing', () => {
-  it('a wrong local password is answered as an outage, not as a server error', async () => {
+  it('a wrong local password is refused as before proof, not as a server error', async () => {
     await useStrategy('local-first');
     ldapFailsWith('INTERNAL_SERVER_ERROR');
     const { user } = await createTestUser('editor');
 
-    await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
+    await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
   });
 });
 
@@ -168,7 +171,7 @@ describe('an outage met after the username was sent to the directory', () => {
   // `authenticateViaLdap` returns it as a refusal: a 503 there would tell a caller with no password
   // which usernames the directory knows. The public answer stays generic; the audit row is exact.
   it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
-    '%s: answered as invalid credentials, audited as an outage',
+    '%s: refused as before proof, audited as an outage',
     async strategy => {
       await useStrategy(strategy);
       vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({
@@ -178,10 +181,7 @@ describe('an outage met after the username was sent to the directory', () => {
       });
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
-        code: 'UNAUTHORIZED',
-        message: 'Credenziali non valide',
-      });
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({
         reason: 'ldap_unavailable',
         errorCode: 'SERVICE_UNAVAILABLE',
@@ -216,10 +216,7 @@ describe('a stored LDAP row this instance cannot decrypt', () => {
       await prisma.appConfig.create({ data: { key: 'auth.ldap.enabled', value: 'false', isEncrypted: false } });
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
-        code: 'UNAUTHORIZED',
-        message: 'Credenziali non valide',
-      });
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'invalid_credentials' });
     },
   );
@@ -233,23 +230,127 @@ describe('a stored LDAP row this instance cannot decrypt', () => {
       });
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
-        code: 'UNAUTHORIZED',
-        message: 'Credenziali non valide',
-      });
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'invalid_credentials' });
     },
   );
 
   it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
-    '%s, LDAP on: the configuration is broken, and answered as an outage',
+    '%s, LDAP on: the configuration is broken, audited as an outage',
     async strategy => {
       await useStrategy(strategy);
       await prisma.appConfig.create({ data: { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false } });
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(REFUSED);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'ldap_unavailable' });
     },
   );
+});
+
+describe('a directory that verified the password, and a user record that could not be written', () => {
+  function recordNotWritten() {
+    vi.spyOn(ldapAuth, 'authenticateViaLdap').mockRejectedValue(
+      new ldapAuth.LdapUserNotWrittenError(new Error('write failed')),
+    );
+  }
+
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
+    '%s: answered SERVICE_UNAVAILABLE once the local fallback has failed',
+    async strategy => {
+      await useStrategy(strategy);
+      recordNotWritten();
+      const { user } = await createTestUser('editor');
+
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+      });
+      expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'ldap_unavailable' });
+    },
+  );
+
+  it('a local fallback that authenticates still logs in', async () => {
+    await useStrategy('ldap-first');
+    recordNotWritten();
+    const { user } = await createTestUser('editor');
+
+    await expect(login(user.username).result).resolves.toMatchObject({ user: { id: user.id } });
+  });
+});
+
+describe('the administrators hear of an LDAP check that could not complete', () => {
+  beforeEach(async () => {
+    await createTestUser('admin');
+  });
+
+  it.each([
+    ['thrown before the username was sent', () => ldapFailsWith('UNAUTHORIZED')],
+    [
+      'returned from the search or the user bind',
+      () =>
+        vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({
+          user: null,
+          reason: 'ldap_unavailable',
+          errorCode: 'SERVICE_UNAVAILABLE',
+        }),
+    ],
+    [
+      'thrown once the password was verified',
+      () =>
+        vi.spyOn(ldapAuth, 'authenticateViaLdap').mockRejectedValue(
+          new ldapAuth.LdapUserNotWrittenError(new Error('write failed')),
+        ),
+    ],
+  ])('%s: once per window', async (_name, failLdap) => {
+    await useStrategy('ldap-first');
+    failLdap();
+    const { user } = await createTestUser('editor');
+
+    await login(user.username, 'Wrong-password-1!').result.catch(() => null);
+    await login(user.username, 'Wrong-password-1!').result.catch(() => null);
+
+    // The one administrator, from the first refusal only.
+    expect(await outageNotices()).toBe(1);
+  });
+
+  it('never for a refusal', async () => {
+    await useStrategy('ldap-first');
+    vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({ user: null, reason: 'invalid_credentials' });
+    const { user } = await createTestUser('editor');
+
+    await login(user.username, 'Wrong-password-1!').result.catch(() => null);
+
+    expect(await outageNotices()).toBe(0);
+  });
+
+  it('never when a local fallback authenticates', async () => {
+    await useStrategy('ldap-first');
+    ldapFailsWith('UNAUTHORIZED');
+    const { user } = await createTestUser('editor');
+
+    await login(user.username).result;
+
+    expect(await outageNotices()).toBe(0);
+  });
+
+  it('never with LDAP disabled', async () => {
+    await useStrategy('ldap-first');
+    await prisma.appConfig.create({ data: { key: 'auth.ldap.enabled', value: 'false', isEncrypted: false } });
+    const { user } = await createTestUser('editor');
+
+    await login(user.username, 'Wrong-password-1!').result.catch(() => null);
+
+    expect(await outageNotices()).toBe(0);
+  });
+
+  it('under ldap-only, an outage then a correct local password of a non-admin', async () => {
+    await useStrategy('ldap-only');
+    ldapFailsWith('UNAUTHORIZED');
+    const { user } = await createTestUser('editor');
+
+    await expect(login(user.username).result).rejects.toMatchObject(REFUSED);
+
+    expect(await outageNotices()).toBe(1);
+    expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'local_login_not_allowed' });
+  });
 });

@@ -27,7 +27,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { encryptValue, saveConfig, type BatchConfigKey } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
-import { authenticateViaLdap } from '../src/lib/ldapAuth';
+import { authenticateViaLdap, LdapUserNotWrittenError } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
 
 import { createCallerAs, createTestUser, setupTestDb } from './helpers';
@@ -316,9 +316,8 @@ describe('authenticateViaLdap', () => {
     const { user: other } = await createTestUser('viewer');
     await prisma.user.update({ where: { id: other.id }, data: { email: ALICE.mail } });
 
-    await expect(authenticateViaLdap(prisma, 'alice', 'her-password')).rejects.toMatchObject({
-      code: 'INTERNAL_SERVER_ERROR',
-    });
+    // Its own type: the one LDAP failure the caller may answer as such before a session.
+    await expect(authenticateViaLdap(prisma, 'alice', 'her-password')).rejects.toBeInstanceOf(LdapUserNotWrittenError);
   });
 
   // The property the whole arrangement exists for. With the service bind answered and the user

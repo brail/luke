@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [042 — Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md)
 
 ## Context
 

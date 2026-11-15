@@ -6,18 +6,18 @@ import { createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import { hasPermission } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, hasPermission, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { Prisma, PrismaClient, User } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
-import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, issueUserToken, type IssuedUserToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
-import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
+import { authenticateViaLdap, LdapUserNotWrittenError, type LdapRefusal } from '../lib/ldapAuth';
 import { sendPasswordResetEmail } from '../lib/mailer';
-import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
-import { notifyAdmins } from '../lib/notifications';
+import { isBlockedByMaintenance } from '../lib/maintenanceMode';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from '../lib/notifications';
 import { dummyPasswordHash, hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
@@ -106,6 +106,45 @@ export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<numbe
 }
 
 /**
+ * The answer to every failure before the password is proven, for a caller with no session: one
+ * text, and no `cause` — the error formatter copies `retryAfterSeconds` from a cause, which would
+ * tell a full account bucket from a wrong password. A fresh error each time, so nothing a caller
+ * sees differs between outcomes.
+ */
+function credentialsRefused(): TRPCError {
+  return new TRPCError({ code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE });
+}
+
+/** The `signedIn` answer to a wrong password or any refusal of a session's own password. */
+export const WRONG_CURRENT_PASSWORD = 'Password attuale non corretta';
+
+/** The `signedIn` answer to a full per-account bucket. */
+const SIGNED_IN_THROTTLED = 'Troppi tentativi: riprova tra qualche minuto';
+
+/**
+ * Tells the administrators that an LDAP password check could not complete, at most once per
+ * `SYSTEM_FAILURE_DEDUP_MS`. Awaited by the caller, and never the answer's cost: a failure is logged.
+ */
+async function notifyLdapUnavailable(ctx: Context): Promise<void> {
+  await notifyDeduped(ctx.prisma, 'auth.ldap_unavailable', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(ctx.prisma, {
+    category: 'SYSTEM',
+    title: 'Verifica LDAP non riuscita',
+    message:
+      'Una verifica della password via LDAP non è stata completata (directory non raggiungibile o errore del server). ' +
+      'Gli utenti vedono solo un messaggio generico; il dettaglio è nel registro di audit, motivo ldap_unavailable.',
+    data: { type: 'ldap_unavailable' },
+  })).catch(err => ctx.logger.error({ err }, 'Failed to notify admins of an LDAP outage'));
+}
+
+/**
+ * Who reads the answer of `verifyCredentials`. `public` — the default, so a caller that forgets the
+ * option gets the safe answer — is a caller with no session, told nothing about the app's state
+ * before the password is proven. `signedIn` is a session re-proving its own password
+ * (`me.changeEmail`), which may be told what went wrong.
+ */
+export type CredentialsAnswerMode = 'public' | 'signedIn';
+
+/**
  * Verifies a username and password with the configured auth strategy (local-first, ldap-first,
  * local-only, or ldap-only), as a login does, and nothing more: no pending-approval,
  * email-verification or maintenance check, no token. Every endpoint that takes a user's password —
@@ -113,18 +152,23 @@ export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<numbe
  * signed-in `me.changeEmail` — goes through it, so they share the per-account `loginByUsername`
  * bucket and none adds guesses.
  *
- * A failure writes the `AUTH_LOGIN_FAILED` audit row and throws the answer a login gets. A success
- * has the strategy's own side effects before any eligibility check: an LDAP bind provisions the
- * user at first login, or syncs their name (`authenticateViaLdap`).
+ * A failure writes the `AUTH_LOGIN_FAILED` audit row, with the real reason, and throws the answer
+ * `mode` calls for. A success has the strategy's own side effects before any eligibility check: an
+ * LDAP bind provisions the user at first login, or syncs their name (`authenticateViaLdap`). When
+ * nobody was authenticated because LDAP could not complete a check, the administrators are told,
+ * at most once per `SYSTEM_FAILURE_DEDUP_MS`.
  *
  * @returns The authenticated user, the method that authenticated them, and the strategy in force.
- * @throws {TRPCError} TOO_MANY_REQUESTS if the account's bucket is full, UNAUTHORIZED if nobody was
- *   authenticated, SERVICE_UNAVAILABLE if nobody was authenticated and LDAP could not complete the
- *   login for a reason that has nothing to do with the username.
+ * @throws {TRPCError} In `public` mode, UNAUTHORIZED with `SIGN_IN_REFUSED_MESSAGE` for every
+ *   failure before the password is proven (a full account bucket included), and SERVICE_UNAVAILABLE
+ *   only when the directory verified the password and the user record could not be written. In
+ *   `signedIn` mode, UNAUTHORIZED for a wrong password or a refusal, TOO_MANY_REQUESTS for a full
+ *   account bucket, SERVICE_UNAVAILABLE when LDAP could not complete the check.
  */
 export async function verifyCredentials(
   ctx: Context,
-  input: { username: string; password: string }
+  input: { username: string; password: string },
+  mode: CredentialsAnswerMode = 'public'
 ): Promise<{ user: User; authMethod: 'local' | 'ldap'; strategy: string }> {
   const { username, password } = input;
 
@@ -142,14 +186,17 @@ export async function verifyCredentials(
   try {
     // Checked before touching DB/LDAP to avoid wasting that work during a spray.
     enforceRateLimit('loginByUsername', usernameRateLimitKey, usernameRateLimitPolicy);
-  } catch (error) {
+  } catch {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
       result: 'FAILURE',
       metadata: { username, reason: 'rate_limited_username' },
     });
-    throw error;
+    // In public, answered like a wrong password: a distinct answer would tell a sprayer which
+    // accounts it has reached. The per-IP bucket, about the caller's own rate, stays distinct.
+    if (mode === 'public') throw credentialsRefused();
+    throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: SIGNED_IN_THROTTLED });
   }
 
   const strategy = authStrategyConfig || 'local-first';
@@ -159,15 +206,15 @@ export async function verifyCredentials(
   let authenticatedUser: User | null;
   let authMethod: 'local' | 'ldap';
 
-  // Why the LDAP attempt, if one is made, did not authenticate. `couldNotComplete` is what decides
-  // the public answer: it is set only when `authenticateViaLdap` threw, which it does for a failure
-  // that has nothing to do with the username (incomplete configuration, the service-account bind,
-  // the circuit breaker) or once the directory has verified the password. A refusal it returns
-  // stays a generic one in public, and carries the reason for the audit row.
+  // Why the LDAP attempt, if one is made, did not authenticate, for the audit row and the answer.
+  // `reason: 'ldap_unavailable'` covers every check the directory could not complete: thrown before
+  // the username was sent (configuration, service bind, breaker), returned from the search or the
+  // user bind, or thrown once the password was verified (`afterProof`). Only `afterProof` may be
+  // answered as such in public: everything else happened before any proof.
   // Held in an object: `tryLdap` assigns it from inside a closure, which the compiler does not
   // follow when it narrows a plain `let`.
   const ldap: {
-    failure: { couldNotComplete: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
+    failure: { afterProof: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
   } = { failure: null };
   // Set when `ldap-only` meets a correct local password that is not an administrator's.
   let localLoginRefused = false;
@@ -178,13 +225,14 @@ export async function verifyCredentials(
     try {
       const login = await authenticateViaLdap(ctx.prisma, username, password);
       if (login.user) return login.user;
-      ldap.failure = { couldNotComplete: false, reason: login.reason, errorCode: login.errorCode };
+      ldap.failure = { afterProof: false, reason: login.reason, errorCode: login.errorCode };
     } catch (e) {
       ctx.logger.warn(
         { username, code: e instanceof TRPCError ? e.code : undefined, err: e },
         'LDAP authentication could not complete'
       );
-      ldap.failure = { couldNotComplete: true, reason: 'ldap_unavailable', errorCode: toErrorCode(e) };
+      const afterProof = e instanceof LdapUserNotWrittenError;
+      ldap.failure = { afterProof, reason: 'ldap_unavailable', errorCode: toErrorCode(afterProof ? e.cause : e) };
     }
     return null;
   };
@@ -264,9 +312,8 @@ export async function verifyCredentials(
   }
 
   if (!authenticatedUser) {
-    // The audit row says what happened; the answer says only what cannot tell one username from
-    // another. An outage met after the username was sent to the directory is recorded here as
-    // `ldap_unavailable` and answered like a wrong password.
+    // The audit row says what happened; a public answer says only what cannot tell one outcome
+    // from another.
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
@@ -279,17 +326,16 @@ export async function verifyCredentials(
       },
     });
 
-    if (ldap.failure?.couldNotComplete) {
-      throw new TRPCError({
-        code: 'SERVICE_UNAVAILABLE',
-        message: 'Servizio di autenticazione non disponibile',
-      });
-    }
+    // Never for a refusal, nor when a local fallback authenticated: only a check the directory
+    // could not complete.
+    const ldapUnavailable = ldap.failure?.reason === 'ldap_unavailable';
+    if (ldapUnavailable) await notifyLdapUnavailable(ctx);
 
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Credenziali non valide',
-    });
+    if (ldap.failure?.afterProof || (mode === 'signedIn' && ldapUnavailable)) {
+      throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE });
+    }
+    if (mode === 'public') throw credentialsRefused();
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: WRONG_CURRENT_PASSWORD });
   }
 
   return { user: authenticatedUser, authMethod, strategy };
@@ -300,8 +346,9 @@ export async function verifyCredentials(
  * local-only, or ldap-only). Writes an audit log entry on success or failure.
  *
  * @returns User profile, signed JWT token, and the auth method used.
- * @throws {TRPCError} What `verifyCredentials` throws; FORBIDDEN if the account is pending or the
- *   email unverified — only once the password is proven, so neither tells anything to a caller
+ * @throws {TRPCError} What `verifyCredentials` throws in `public` mode; FORBIDDEN if the account is
+ *   pending, the email unverified, or maintenance active for a role that cannot bypass it
+ *   (`MAINTENANCE_ACTIVE`) — only once the password is proven, so none tells anything to a caller
  *   without it.
  */
 export async function authenticateUser(
@@ -358,7 +405,7 @@ export async function authenticateUser(
   }
 
   // Block logins that cannot bypass maintenance while it is active
-  if (!bypassesMaintenance(authenticatedUser.role) && await isMaintenanceActive(ctx.prisma)) {
+  if (await isBlockedByMaintenance(ctx.prisma, authenticatedUser.role)) {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
@@ -367,9 +414,9 @@ export async function authenticateUser(
       metadata: { username: input.username, reason: 'maintenance_mode_active', strategy },
     });
 
-    // Same enforcement (predicate + error) as the tRPC guard in trpc.ts — a single source
-    // of truth so the two copies don't diverge in the future.
-    await assertNotBlockedByMaintenance(ctx.prisma, authenticatedUser.role);
+    // Answered after proof as a marker the web turns into its own message, as
+    // `ACCOUNT_PENDING_APPROVAL` above.
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'MAINTENANCE_ACTIVE' });
   }
 
   // Update login statistics
@@ -481,38 +528,39 @@ export async function requestPasswordReset(ctx: Context, email: string) {
   // Issued only while the account still has the address asked for: under the user row lock, a
   // change of address pending now either finishes first (and nothing is issued) or waits for this
   // link, then revokes it. Earlier reset links stay valid: a new request does not revoke them.
-  const issued = await ctx.prisma.$transaction(tx =>
-    issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
-  );
-  if (!issued) return notFound();
-  const { token, userToken } = issued;
-
-  const baseUrl =
-    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
-
+  // Everything from the issue to the send is in the `try`: a failure anywhere answers the same
+  // success, or the answer would differ for an address that has a local account.
+  let issued: IssuedUserToken | null = null;
   try {
-    await sendPasswordResetEmail(ctx.prisma, issued.email, token, baseUrl);
+    issued = await ctx.prisma.$transaction(tx =>
+      issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
+    );
+    if (issued) {
+      const baseUrl = await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
+      await sendPasswordResetEmail(ctx.prisma, issued.email, issued.token, baseUrl);
 
-    await logAudit(ctx, {
-      action: 'PASSWORD_RESET_REQUESTED',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'SUCCESS',
-      metadata: { expiresAt: userToken.expiresAt.toISOString() },
-    });
-
-    return genericResponse;
+      await logAudit(ctx, {
+        action: 'PASSWORD_RESET_REQUESTED',
+        targetType: 'Auth',
+        targetId: user.id,
+        result: 'SUCCESS',
+        metadata: { expiresAt: issued.userToken.expiresAt.toISOString() },
+      });
+    }
   } catch (error) {
-    // Email sending failed (e.g. SMTP not configured).
-    // Delete the orphaned token and log the error server-side.
+    // Email sending failed (e.g. SMTP not configured), or the link could not be issued.
+    // Delete the orphaned token, if any, and log the error server-side.
     // We don't expose the problem to the user to preserve enumeration protection.
-    await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
-      ctx.logger.warn({ err: e, tokenId: userToken.id }, 'Failed to delete orphaned password reset token');
-    });
+    const tokenId = issued?.userToken.id;
+    if (tokenId) {
+      await ctx.prisma.userToken.delete({ where: { id: tokenId } }).catch(e => {
+        ctx.logger.warn({ err: e, tokenId }, 'Failed to delete orphaned password reset token');
+      });
+    }
 
     ctx.logger.error(
       { err: error, userId: user.id },
-      'Password reset email failed — check SMTP config in AppConfig'
+      issued ? 'Password reset email failed — check SMTP config in AppConfig' : 'Password reset link could not be issued'
     );
 
     await logAudit(ctx, {
@@ -521,13 +569,15 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       targetId: user.id,
       result: 'FAILURE',
       metadata: {
-        reason: 'email_send_failed',
+        reason: issued ? 'email_send_failed' : 'token_issue_failed',
         error: toErrorMessage(error),
       },
     });
 
     return genericResponse;
   }
+
+  return issued ? genericResponse : notFound();
 }
 
 /** Thrown inside {@link consumeLink}'s transaction to roll back its writes. */

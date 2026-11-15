@@ -234,6 +234,11 @@ export async function createCallerWithIP(
   return appRouter.createCaller(ctx);
 }
 
+/** The newest audit row with `action`, or null. */
+export function lastAudit(action: string) {
+  return testPrisma.auditLog.findFirst({ where: { action }, orderBy: { createdAt: 'desc' } });
+}
+
 /**
  * Helper to wait for a promise to resolve or reject
  */

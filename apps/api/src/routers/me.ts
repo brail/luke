@@ -25,7 +25,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { selfProcedure, router } from '../lib/trpc';
 import { resolveUserTimeZone } from '../lib/userTimeZone';
-import { verifyCredentials } from '../services/auth.service';
+import { verifyCredentials, WRONG_CURRENT_PASSWORD } from '../services/auth.service';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -207,9 +207,11 @@ export const meRouter = router({
    * @auth {authenticated}
    * @input {ChangeEmailSchema} — newEmail (must be unique), currentPassword.
    * @output {{ success: true, message: string }}
-   * @throws {TRPCError} UNAUTHORIZED for a wrong password; TOO_MANY_REQUESTS when the login's per-IP
-   *   or per-account bucket is full; SERVICE_UNAVAILABLE when LDAP could not complete the check
-   *   (`verifyCredentials`); BAD_REQUEST for the address the account already has (which
+   * @throws {TRPCError} What `verifyCredentials` throws in `signedIn` mode: UNAUTHORIZED
+   *   `WRONG_CURRENT_PASSWORD` for a wrong password or a refusal (a password that proves another
+   *   account included), TOO_MANY_REQUESTS when the per-account bucket is full,
+   *   SERVICE_UNAVAILABLE when LDAP could not complete the check; TOO_MANY_REQUESTS when the
+   *   login's per-IP bucket is full; BAD_REQUEST for the address the account already has (which
    *   would only unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address —
    *   the unique constraint's answer at the write, with no read before it.
    */
@@ -232,9 +234,14 @@ export const meRouter = router({
       if (!self) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
       }
-      const { user: proven } = await verifyCredentials(ctx, { username: self.username, password: currentPassword });
+      // Signed in, so the answers say what went wrong (`signedIn` mode).
+      const { user: proven } = await verifyCredentials(
+        ctx,
+        { username: self.username, password: currentPassword },
+        'signedIn'
+      );
       if (proven.id !== userId) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: WRONG_CURRENT_PASSWORD });
       }
 
       // The current address is excluded in the write itself: re-submitting it would only unverify it.

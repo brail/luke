@@ -13,13 +13,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -179,7 +180,7 @@ describe('auth.resendVerification', () => {
     const wrong = await anonymous().resendVerification({ username: user.username, password: 'Not-the-passw0rd!' }).catch(e => e);
     const unknown = await anonymous().resendVerification({ username: 'nobody-here', password: 'Not-the-passw0rd!' }).catch(e => e);
 
-    expect(wrong).toMatchObject({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
+    expect(wrong).toMatchObject({ code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE });
     expect({ code: unknown.code, message: unknown.message }).toEqual({ code: wrong.code, message: wrong.message });
     expect(send).not.toHaveBeenCalled();
   });
@@ -212,8 +213,12 @@ describe('auth.resendVerification', () => {
       await appRouter.createCaller(ctx).auth.login({ username: user.username, password: 'wrong' }).catch(() => undefined);
     }
 
+    // Answered like a wrong password: only the right one proves the bucket tripped.
     await expect(anonymous().resendVerification({ username: user.username, password: TEST_USER_PASSWORD })).rejects.toMatchObject({
-      code: 'TOO_MANY_REQUESTS',
+      code: 'UNAUTHORIZED',
+      message: SIGN_IN_REFUSED_MESSAGE,
     });
+    const row = await lastAudit('AUTH_LOGIN_FAILED');
+    expect(row?.metadata).toMatchObject({ reason: 'rate_limited_username' });
   });
 });

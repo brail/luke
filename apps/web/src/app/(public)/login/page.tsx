@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
+import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+
 import { AppVersionLabel } from '../../../components/AppVersionLabel';
-import { BackendStatus } from '../../../components/BackendStatus';
 import LogoLockup from '../../../components/LogoLockup';
 import { Button } from '../../../components/ui/button';
 import {
@@ -52,7 +53,13 @@ export default function LoginPage() {
       setError('');
       setUnverified('sent');
     } catch (err) {
-      setError(getTrpcErrorMessage(err, { UNAUTHORIZED: true, PRECONDITION_FAILED: true }));
+      setError(
+        getTrpcErrorMessage(err, {
+          UNAUTHORIZED: true,
+          PRECONDITION_FAILED: true,
+          SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE,
+        })
+      );
       setUnverified('offered');
     }
   };
@@ -72,20 +79,14 @@ export default function LoginPage() {
 
       if (result?.error) {
         // Auth.js v5 flattens every authorize() error to "CredentialsSignin"; `code` is the one
-        // thing that tells them apart.
-        if (result.code === 'unavailable') {
-          // The API refuses with the same code during maintenance and during a directory outage;
-          // only the status tells them apart, read now (a polled one can be a minute old).
-          const maintenance = await client.maintenance.mode.getStatus.query().catch(() => null);
-          setError(
-            maintenance?.status === 'ACTIVE'
-              ? 'Sistema in manutenzione: accesso non disponibile. Riprova al termine.'
-              : 'Servizio di autenticazione non disponibile. Riprova più tardi.'
-          );
+        // thing that tells them apart. Every code but `credentials` and `throttled` comes from an
+        // answer given once the password is proven.
+        if (result.code === 'maintenance') {
+          setError('Sistema in manutenzione: accesso non disponibile. Riprova al termine.');
           return;
         }
-        if (result.code === 'throttled') {
-          setError('Troppi tentativi. Riprova tra qualche minuto.');
+        if (result.code === 'unavailable') {
+          setError(AUTH_UNAVAILABLE_MESSAGE);
           return;
         }
 
@@ -105,14 +106,16 @@ export default function LoginPage() {
           );
           setUnverified('offered');
         } else {
-          setError('Credenziali non valide');
+          // `credentials`, and `throttled` too: one message for every refusal before the password
+          // is proven, so the page tells none of them apart.
+          setError(SIGN_IN_REFUSED_MESSAGE);
         }
       } else {
         // Redirect to dashboard after successful login
         router.push('/dashboard');
       }
     } catch {
-      setError('Errore durante il login');
+      setError(SIGN_IN_REFUSED_MESSAGE);
     } finally {
       setIsLoading(false);
     }
@@ -210,9 +213,6 @@ export default function LoginPage() {
               </div>
             </>
           )}
-          <div className="mt-4">
-            <BackendStatus />
-          </div>
           {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
           <AppVersionLabel className="mt-3 text-center text-[10px] text-muted-foreground/50 select-none" />
         </CardContent>

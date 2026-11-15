@@ -16,7 +16,7 @@
 import { Client, InvalidCredentialsError } from 'ldapts';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type { AppConfigKey } from '@luke/core';
+import { SIGN_IN_REFUSED_MESSAGE, type AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { saveConfig, type BatchConfigKey } from '../src/lib/configManager';
@@ -26,7 +26,7 @@ import { resetLdapBreakers } from '../src/lib/ldapClient';
 import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const ALICE_DN = 'uid=alice,ou=people,dc=test';
@@ -34,8 +34,8 @@ const ALICE_PASSWORD = 'her-password';
 /** No `mail`: provisioning gives her the synthetic `alice@ldap.local`. */
 const ALICE = { dn: ALICE_DN, cn: 'Alice Rossi' };
 
-/** What every refusal before the password is proven reads like: a wrong password. */
-const REFUSED = { code: 'UNAUTHORIZED', message: 'Credenziali non valide' };
+/** What every refusal before the password is proven reads like. */
+const REFUSED = { code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE };
 /** After it: the account is not one whose address can be set here, said plainly. */
 const NOT_SETTABLE = { code: 'PRECONDITION_FAILED' };
 
@@ -170,7 +170,7 @@ describe('auth.submitPendingEmail', () => {
 
     expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe('alice@ldap.local');
     expect(sendVerification).not.toHaveBeenCalled();
-    const failed = await prisma.auditLog.findFirst({ where: { action: 'AUTH_LOGIN_FAILED' }, orderBy: { createdAt: 'desc' } });
+    const failed = await lastAudit('AUTH_LOGIN_FAILED');
     expect(failed?.metadata).toMatchObject({ username: 'alice', reason: 'invalid_credentials' });
   });
 
@@ -189,7 +189,10 @@ describe('auth.submitPendingEmail', () => {
       await expect(caller().login({ username: 'alice', password: 'wrong' })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     }
 
-    await expect(submit('alice@example.com')).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+    // Answered like a wrong password: only the right one proves the bucket tripped.
+    await expect(submit('alice@example.com')).rejects.toMatchObject(REFUSED);
+    const row = await lastAudit('AUTH_LOGIN_FAILED');
+    expect(row?.metadata).toMatchObject({ reason: 'rate_limited_username' });
   });
 
   it('refuses an account whose address is already real', async () => {

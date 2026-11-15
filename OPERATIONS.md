@@ -119,7 +119,17 @@ limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
 (`passwordReset`). `me.changeEmail`, which asks a signed-in user for the current
 password, applies `login` by IP and `userMutations` by user, and counts against
 the same `loginByUsername` bucket: a mistyped password on the profile page uses
-up the account's login attempts. `integrations.google.exchangeOAuthCode`, which checks the
+up the account's login attempts.
+
+Only the IP bucket is answered as a rate limit before the password is proven:
+`TOO_MANY_REQUESTS` with `retryAfterSeconds` in the error data, which the web
+turns into a `429` with `Retry-After`. A full `loginByUsername` bucket answers
+a public endpoint like a wrong password (`UNAUTHORIZED`, the one sign-in refusal
+text), so a sprayer cannot tell which accounts it has reached; the
+`AUTH_LOGIN_FAILED` audit row records it as `rate_limited_username`. On
+`me.changeEmail`, signed in, it is `TOO_MANY_REQUESTS`.
+
+`integrations.google.exchangeOAuthCode`, which checks the
 OAuth `state`, pairs `googleOAuthExchange` by IP with `configMutations` by
 account.
 
@@ -229,7 +239,9 @@ never on the message text:
 | Condition | `error.data.code` | HTTP |
 |---|---|---|
 | Rate limit exceeded | `TOO_MANY_REQUESTS` | 429 |
-| Login that LDAP could not complete — which failures count is in the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
+| Sign-in refused before the password is proven: wrong password, unknown user, full per-account bucket, a check LDAP could not complete — one text for all, the cause only in the audit row | `UNAUTHORIZED` | 401 |
+| Login whose password the directory verified and whose user record could not be written, or a signed-in password check LDAP could not complete — see the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
+| Login with a proven password during maintenance, for a role that cannot bypass it (message `MAINTENANCE_ACTIVE`) | `FORBIDDEN` | 403 |
 | Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
@@ -283,12 +295,17 @@ The [global limiter](#global-limiter)'s 429 has its own body and no
 ## Signing in when LDAP is unreachable
 
 Under `ldap-only`, a directory outage refuses every login that has no local
-path. In order:
+path. The sign-in page shows only the generic refusal; the administrators get
+an in-app notice (`Verifica LDAP non riuscita`, at most once every six hours),
+and the `AUTH_LOGIN_FAILED` rows say `ldap_unavailable`. In order:
 
 1. **An administrator with a LOCAL credential signs in with it.** Under
    `ldap-only` that path is always open to administrators (the break-glass rule in
    the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback));
    the login is audited as `provider: 'local'` and notifies the administrators.
+   An administrator whose account bucket is full (`loginByUsername`, ten
+   attempts in fifteen minutes) sees the same generic refusal even with the
+   right password: wait for the window to pass.
    That administrator can then switch `auth.strategy` to `local-first` from the
    LDAP settings page, which saves the whole LDAP form with it, until the
    directory is back.
@@ -317,10 +334,12 @@ sure at least one administrator can log in locally.
 
 ## Ending maintenance without the web
 
-A maintenance window never ends by itself. During one, the web leaves the login
-form and the password reset page uncovered, and the lock screen links to the
-form (`Accesso amministratori`): an administrator signs in there and ends the
-window from the banner. When no browser reaches the form — the web container
+A maintenance window never ends by itself. During one, a signed-out visitor
+sees no maintenance screen at all — the state needs a session (ADR-042) — and
+reaches the login form and the password reset page as usual; a signed-in user
+who cannot bypass maintenance sees the lock screen, which links to the form
+(`Accesso amministratori`). An administrator signs in there and ends the window
+from the banner. When no browser reaches the form — the web container
 down, the proxy misrouted — end it through the API from inside its container:
 
 1. Open a shell in the API container: `docker exec -it luke-api-1 sh` (the name

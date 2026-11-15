@@ -54,20 +54,25 @@ or `ldap-first` using `auth.strategy`. `src/lib/ldapAuth.ts` runs the LDAP half
 of a login, and what it does with a failure depends on whether the username has
 been sent to the directory yet:
 
-| Where the LDAP login stopped | `authenticateViaLdap` | Answer when nobody is authenticated | Audit `reason` |
-|------------------------------|-----------------------|-------------------------------------|----------------|
-| Before the username is sent: incomplete configuration, a stored value that does not decrypt, breaker open, service-account bind refused or left without an answer | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
-| From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
-| From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
-| LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
-| After the directory verified the password: the username belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `account_refused` |
-| After the directory verified the password: the user record could not be written | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| Where the LDAP login stopped | `authenticateViaLdap` | Public answer when nobody is authenticated | Signed-in answer (`me.changeEmail`) | Audit `reason` |
+|------------------------------|-----------------------|--------------------------------------------|-------------------------------------|----------------|
+| Before the username is sent: incomplete configuration, a stored value that does not decrypt, breaker open, service-account bind refused or left without an answer | throws | `UNAUTHORIZED` | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `invalid_credentials` |
+| From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| LDAP disabled | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `invalid_credentials` |
+| After the directory verified the password: the username belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `account_refused` |
+| After the directory verified the password: the user record could not be written | throws `LdapUserNotWrittenError` | `SERVICE_UNAVAILABLE` | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 
-The answer is decided by what happens before the username is on the wire, and
-by nothing else. A 503 for a failure met after that point would tell a caller
-with no password which usernames the directory knows, so such a failure is
-answered like a wrong password and recorded in the audit row, with its
-`errorCode`, as what it was. The last row needs the password.
+A caller with no session is told nothing about the application's state before
+the password is proven: every public `UNAUTHORIZED` above is one answer, the
+same text (`SIGN_IN_REFUSED_MESSAGE` in `@luke/core`) for a wrong password, an
+unknown user, a full per-account bucket and an LDAP outage, and the audit row
+records, with its `errorCode`, what it was. Only the last row needs the
+password, so only it is answered `SERVICE_UNAVAILABLE` in public. A signed-in
+user re-proving their own password (`verifyCredentials` in `signedIn` mode) is
+told what went wrong. When nobody was authenticated because of an
+`ldap_unavailable`, the administrators get an in-app notice, at most once per
+six hours (`notifyDeduped`, key `auth.ldap_unavailable`).
 
 Every failure, thrown or returned, counts as no LDAP login, so each strategy's
 local fallback applies first: under `ldap-first` and `local-first` a user with a
@@ -84,12 +89,14 @@ is the name of a SASL mechanism is never bound as. The group lookup decides only
 the role of a user created at first login, so its failure — or that of the
 service-account rebind before it — does not fail the login.
 
-On the web side the two answers that say nothing about the account reach the
-login page as the `code` of the Auth.js sign-in result. `unavailable`, for a
-`SERVICE_UNAVAILABLE` (this one, or maintenance mode's), is thrown by
-`apps/web/src/lib/loginAuthorize.ts`. `throttled`, for a rate-limited login, is
-written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`, through
-`throttledSignIn` in `lib/loginThrottleContext.ts`) together with the `429`.
+On the web side the answers given once the password is proven reach the login
+page as the `code` of the Auth.js sign-in result, thrown by
+`apps/web/src/lib/loginAuthorize.ts`: `pending` and `pending_email`,
+`email_unverified`, `maintenance` (the `MAINTENANCE_ACTIVE` marker), and
+`unavailable` (the last row above). `throttled`, for the caller's own per-IP
+bucket, is written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`,
+through `throttledSignIn` in `lib/loginThrottleContext.ts`) together with the
+`429`; the page shows it, like `credentials`, with `SIGN_IN_REFUSED_MESSAGE`.
 
 Under `ldap-only` the directory decides every login, with one exception: once
 LDAP has not authenticated them, an administrator with a LOCAL credential can
@@ -361,8 +368,8 @@ is gitignored, and `isDevelopment()` compares with `'development'` exactly. Left
 unset, the local API runs as neither development nor production: CSP on, `info`
 logs without pino-pretty, and the global rate limit at 100 requests per minute
 with no loopback exemption. The symptom is not a clear error but sporadic 429s,
-which the browser shows as an unreachable backend and the end-to-end suite as
-failed logins.
+which the browser shows as failed requests and the end-to-end suite as failed
+logins.
 
 ## Health and readiness
 

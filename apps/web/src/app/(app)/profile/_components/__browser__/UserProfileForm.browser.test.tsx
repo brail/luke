@@ -99,10 +99,19 @@ async function refusedEmailChange(error: { message: string; data: { code: string
 }
 
 test('a wrong current password is told as such, not as an expired session', async () => {
-  const [title, options] = await refusedEmailChange({ message: 'Credenziali non valide', data: { code: 'UNAUTHORIZED' } });
+  const [title, options] = await refusedEmailChange({ message: 'Password attuale non corretta', data: { code: 'UNAUTHORIZED' } });
 
   expect(title).toBe('Errore cambio email');
-  expect(options).toEqual({ description: 'Credenziali non valide' });
+  expect(options).toEqual({ description: 'Password attuale non corretta' });
+});
+
+test("a full account bucket is told with the server's text, signed in", async () => {
+  const [, options] = await refusedEmailChange({
+    message: 'Troppi tentativi: riprova tra qualche minuto',
+    data: { code: 'TOO_MANY_REQUESTS' },
+  });
+
+  expect(options).toEqual({ description: 'Troppi tentativi: riprova tra qualche minuto' });
 });
 
 test('an unreachable directory is told as an unavailable sign-in service, not as maintenance', async () => {

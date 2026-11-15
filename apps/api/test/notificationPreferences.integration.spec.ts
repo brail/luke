@@ -3,7 +3,7 @@
  * key switched off mutes that kind too; the switches the user sees report exactly that.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
@@ -55,6 +55,48 @@ describe('notifyDeduped', () => {
     await notice();
     await notice();
     expect(await prisma.notification.count({ where: { title: 't', userId: { in: admins.map(a => a.id) } } })).toBe(admins.length);
+  });
+
+  it('concurrent callers send once', async () => {
+    const send = vi.fn(async () => true);
+
+    await Promise.all(Array.from({ length: 5 }, () => notifyDeduped(prisma, 'test:race', 60_000, send)));
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent callers on a stale window send once', async () => {
+    await prisma.notificationDedupKey.create({ data: { key: 'test:stale-race', lastSentAt: new Date(Date.now() - 120_000) } });
+    const send = vi.fn(async () => true);
+
+    await Promise.all(Array.from({ length: 5 }, () => notifyDeduped(prisma, 'test:stale-race', 60_000, send)));
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a send that throws is rethrown, and retried on the next call', async () => {
+    const failing = vi.fn(async (): Promise<boolean> => { throw new Error('smtp down'); });
+
+    await expect(notifyDeduped(prisma, 'test:throw', 60_000, failing)).rejects.toThrow('smtp down');
+    expect(await prisma.notificationDedupKey.count({ where: { key: 'test:throw' } })).toBe(0);
+
+    const send = vi.fn(async () => true);
+    await notifyDeduped(prisma, 'test:throw', 60_000, send);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['reports no delivery', async () => false],
+    ['throws', async (): Promise<boolean> => { throw new Error('smtp down'); }],
+  ])('a send on a stale window that %s restores the previous time', async (name, failing) => {
+    const key = `test:stale:${name}`;
+    const previous = new Date(Date.now() - 120_000);
+    await prisma.notificationDedupKey.create({ data: { key, lastSentAt: previous } });
+
+    await notifyDeduped(prisma, key, 60_000, failing).catch(() => null);
+
+    const row = await prisma.notificationDedupKey.findUniqueOrThrow({ where: { key } });
+    expect(row.lastSentAt).toEqual(previous);
   });
 });
 

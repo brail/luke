@@ -1,5 +1,7 @@
 import { expect } from '@playwright/test';
 
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+
 import { login, expectNoErrorBoundary, logoutAccount, test } from '../support/smoke';
 
 /**
@@ -23,7 +25,7 @@ test.describe('smoke: authentication', () => {
   }) => {
     await login(page, 'no-such-user-smoke', 'wrong-password');
 
-    await expect(page.getByText('Credenziali non valide')).toBeVisible();
+    await expect(page.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
     // The check that matters: the error is visible *and* the session did not start.
     // A login that fails but lets you in is worse than one that does not work.
     await expect(page).toHaveURL(/\/login$/);

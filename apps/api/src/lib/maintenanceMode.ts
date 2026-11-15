@@ -63,7 +63,7 @@ export async function getMaintenanceState(prisma: PrismaClient): Promise<Mainten
   return state;
 }
 
-/** Convenience check for the enforcement guard (trpc middleware, login) — avoids exposing the full state shape at call sites that only need a boolean. */
+/** Convenience check for `isBlockedByMaintenance` — avoids exposing the full state shape at call sites that only need a boolean. */
 export async function isMaintenanceActive(prisma: PrismaClient): Promise<boolean> {
   const state = await getMaintenanceState(prisma);
   return state.status === 'ACTIVE';
@@ -81,13 +81,20 @@ export function bypassesMaintenance(role: string): boolean {
 }
 
 /**
- * Throws `SERVICE_UNAVAILABLE` if maintenance mode is `ACTIVE` and `role` cannot bypass it. The one
- * enforcement predicate shared by the tRPC guard (`maintenanceGuard` in trpc.ts) and the login
- * flow (`auth.service.ts`) — two independent copies of this same check would silently drift the
- * next time either changes (e.g. an admin-adjacent role gets added).
+ * Whether maintenance is `ACTIVE` and `role` cannot bypass it. The one predicate shared by the tRPC
+ * guard (`assertNotBlockedByMaintenance`) and the login's post-proof check (`auth.service.ts`),
+ * which answers its own `FORBIDDEN 'MAINTENANCE_ACTIVE'` marker.
+ */
+export async function isBlockedByMaintenance(prisma: PrismaClient, role: string): Promise<boolean> {
+  return !bypassesMaintenance(role) && (await isMaintenanceActive(prisma));
+}
+
+/**
+ * Throws `SERVICE_UNAVAILABLE` if maintenance blocks `role` (`isBlockedByMaintenance`): the tRPC
+ * guard (`maintenanceGuard` in trpc.ts) for signed-in traffic.
  */
 export async function assertNotBlockedByMaintenance(prisma: PrismaClient, role: string): Promise<void> {
-  if (!bypassesMaintenance(role) && await isMaintenanceActive(prisma)) {
+  if (await isBlockedByMaintenance(prisma, role)) {
     throw new TRPCError({
       code: 'SERVICE_UNAVAILABLE',
       message: 'Sistema in manutenzione. Riprova più tardi.',
@@ -98,8 +105,8 @@ export async function assertNotBlockedByMaintenance(prisma: PrismaClient, role: 
 /**
  * Persists the full next state as one AppConfig row, updates the cache directly (no re-read —
  * `next` already *is* the resulting state, encode/decode round-trips exactly), and broadcasts
- * it over SSE so every connected client (including the login screen's poll-only fallback, on
- * its next tick) picks up the change without waiting out the cache TTL.
+ * it over SSE so every connected client (and every signed-in poll, on its next tick) picks up the
+ * change without waiting out the cache TTL.
  *
  * Takes the *whole* state rather than a partial patch: every router mutation (`schedule`,
  * `activateNow`, `cancelScheduled`, `end`) already builds a complete state object, and the two

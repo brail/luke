@@ -8,10 +8,10 @@ import { MaintenanceGate } from '../MaintenanceGate';
 import type { ReactNode } from 'react';
 
 /**
- * During an active window the lock screen covers every page for whoever cannot bypass maintenance,
- * signed out included, except the two that come before a session: the login form and the password
- * reset link. Otherwise an administrator signed out during the window could not sign back in to end
- * it. The lock screen links to the login form for them.
+ * During an active window the lock screen covers every page for a signed-in user who cannot bypass
+ * maintenance, except the two that come before a session: the login form and the password reset
+ * link. The lock screen links to the login form. Signed out, no state reaches the gate
+ * (`useMaintenanceStatus`, tested on its own).
  */
 
 const h = vi.hoisted(() => ({ pathname: '/dashboard' }));

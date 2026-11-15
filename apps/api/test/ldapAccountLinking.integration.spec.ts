@@ -12,7 +12,7 @@
 import { Client, InvalidCredentialsError } from 'ldapts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AppConfigKey } from '@luke/core';
+import { SIGN_IN_REFUSED_MESSAGE, type AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { saveConfig, type BatchConfigKey } from '../src/lib/configManager';
@@ -24,7 +24,7 @@ import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } fr
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const DIRECTORY_PASSWORD = 'Directory-password-1!';
-const INVALID = { code: 'UNAUTHORIZED', message: 'Credenziali non valide' };
+const INVALID = { code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE };
 
 type Strategy = 'local-first' | 'ldap-first' | 'ldap-only';
 

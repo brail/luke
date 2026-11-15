@@ -1,9 +1,9 @@
 /**
  * tRPC router for standalone maintenance mode (INACTIVE -> SCHEDULED -> ACTIVE -> INACTIVE).
  *
- * `getStatus` is public by design: it must be readable even pre-login (login screen,
- * "maintenance in progress" banner) — no sensitive data in the state, only status/time/message.
- * Every mutation requires `maintenance:mode_manage` on `protectedProcedure`, so the maintenance
+ * `getStatus` needs a session and nothing more (`sessionProcedure`, ADR-042): nothing before sign-in
+ * tells the app's state, and a signed-in user who cannot bypass maintenance still reads it during
+ * the window, when every other procedure refuses them. Every mutation requires `maintenance:mode_manage` on `protectedProcedure`, so the maintenance
  * guard runs first: while maintenance is active only whoever bypasses it (`maintenance:update`)
  * reaches them — the admin who has to end it.
  */
@@ -23,7 +23,7 @@ import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail
 import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
-import { protectedProcedure, publicProcedure, router } from '../lib/trpc';
+import { protectedProcedure, router, sessionProcedure } from '../lib/trpc';
 import { groupByTimeZone } from '../lib/userTimeZone';
 
 import type { MaintenanceModeState } from '../lib/maintenanceMode';
@@ -62,14 +62,15 @@ function emailUsers<T>(ctx: Context, recipients: T[], send: (recipient: T) => Pr
 
 export const maintenanceModeRouter = router({
   /**
-   * Returns the current maintenance-mode state. Public — no session required.
+   * Returns the current maintenance-mode state to any signed-in user, during maintenance too.
    *
-   * @auth public
+   * @auth {authenticated — maintenance-exempt (ADR-042)}
    * @input None
    * @output `MaintenanceModeState` — `{ status, scheduledAt, activatedAt, message, forceLogout,
    * warningLeadMinutes, warningsSent, activatedByUserId, notifyByEmail }`.
    */
-  getStatus: publicProcedure.query(({ ctx }) => getMaintenanceState(ctx.prisma)),
+  // nosemgrep: luke-procedure-requires-permission -- every signed-in user reads the window's state: the lock screen needs it while maintenance refuses everything else (ADR-042)
+  getStatus: sessionProcedure.query(({ ctx }) => getMaintenanceState(ctx.prisma)),
 
   /**
    * Schedules maintenance mode to activate at a future time, with a warning ladder

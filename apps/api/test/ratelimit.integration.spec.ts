@@ -9,7 +9,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { TRPC_MAX_BATCH_SIZE } from '@luke/core';
+import { SIGN_IN_REFUSED_MESSAGE, TRPC_MAX_BATCH_SIZE } from '@luke/core';
 
 import { enforceRateLimit, rateLimitStore } from '../src/lib/ratelimit';
 import { resolveRateLimitPolicy } from '../src/lib/rateLimitPolicy';
@@ -23,6 +23,7 @@ import {
   createCallerWithSession,
   createTestUser,
   expectToThrow,
+  lastAudit,
   TEST_USER_PASSWORD,
 } from './helpers';
 
@@ -30,9 +31,11 @@ import type { FastifyServerOptions } from 'fastify';
 
 
 describe('Rate-Limit Integration', () => {
+  let prisma: Awaited<ReturnType<typeof setupTestDb>>;
+
   beforeEach(async () => {
     // The rate-limit store is cleared by `test/setup.ts` before every test.
-    await setupTestDb();
+    prisma = await setupTestDb();
   });
 
   describe('auth.login rate limiting', () => {
@@ -104,45 +107,51 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('auth.login rate limiting per username (anti password-spray)', () => {
+    /**
+     * A full account bucket answers like a wrong password (#55 c), so only the correct password
+     * proves it tripped: refused, no token, and the `rate_limited_username` audit row.
+     */
+    async function expectAccountBucketFull(username: string, fromIp: string) {
+      const caller = await createCallerWithIP(fromIp, null);
+      await expectToThrow(caller.auth.login({ username, password: TEST_USER_PASSWORD }), {
+        code: 'UNAUTHORIZED',
+        message: SIGN_IN_REFUSED_MESSAGE,
+      });
+      const row = await lastAudit('AUTH_LOGIN_FAILED');
+      expect(row?.metadata).toMatchObject({ username, reason: 'rate_limited_username' });
+    }
+
     it('should block after 10 attempts on the same username from different IPs', async () => {
       // The 'login' bucket (keyBy: 'ip') doesn't stop a spray distributed across many IPs
       // against a single account: each IP below is under the IP threshold (5/60s), yet the
       // 'loginByUsername' bucket must still trip on the 11th attempt against the same username.
-      const targetUsername = 'spray-target-user';
+      const { user } = await createTestUser('viewer');
 
       for (let i = 0; i < 10; i++) {
         const caller = await createCallerWithIP(`10.0.0.${i + 1}`, null);
         await expectToThrow(
-          caller.auth.login({ username: targetUsername, password: 'wrong' }),
+          caller.auth.login({ username: user.username, password: 'wrong' }),
           { code: 'UNAUTHORIZED' }
         );
       }
 
-      const caller11 = await createCallerWithIP('10.0.0.11', null);
-      await expectToThrow(
-        caller11.auth.login({ username: targetUsername, password: 'wrong' }),
-        { code: 'TOO_MANY_REQUESTS' }
-      );
+      await expectAccountBucketFull(user.username, '10.0.0.11');
     });
 
     it('must not be bypassable by changing the username case', async () => {
-      const targetUsername = 'CaseSprayTarget';
+      const { user } = await createTestUser('viewer');
 
       for (let i = 0; i < 10; i++) {
         const caller = await createCallerWithIP(`10.0.1.${i + 1}`, null);
         const usernameVariant =
-          i % 2 === 0 ? targetUsername.toLowerCase() : targetUsername.toUpperCase();
+          i % 2 === 0 ? user.username.toLowerCase() : user.username.toUpperCase();
         await expectToThrow(
           caller.auth.login({ username: usernameVariant, password: 'wrong' }),
           { code: 'UNAUTHORIZED' }
         );
       }
 
-      const caller11 = await createCallerWithIP('10.0.1.11', null);
-      await expectToThrow(
-        caller11.auth.login({ username: targetUsername, password: 'wrong' }),
-        { code: 'TOO_MANY_REQUESTS' }
-      );
+      await expectAccountBucketFull(user.username, '10.0.1.11');
     });
 
     it('must not block different usernames from each other', async () => {
@@ -294,7 +303,6 @@ describe('Rate-Limit Integration', () => {
       ['collectionLayoutRevision.export.xlsx', c => c.collectionLayoutRevision.export.xlsx({ revisionId: randomUUID() })],
       ['collectionLayoutRevision.export.pdf', c => c.collectionLayoutRevision.export.pdf({ revisionId: randomUUID() })],
     ])('%s is refused once the export bucket is full', async (_label, invoke) => {
-      const prisma = await setupTestDb();
       const { session } = await createTestUser('admin');
       const policy = await resolveRateLimitPolicy('exportGeneration', prisma);
       for (let i = 0; i < policy.max; i++) enforceRateLimit('exportGeneration', session.user.id, policy);

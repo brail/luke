@@ -18,7 +18,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   FORBIDDEN: 'Non hai i permessi per eseguire questa operazione',
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
   TOO_MANY_REQUESTS: 'Troppe richieste. Riprova tra qualche istante.',
-  // A 5xx, so production masks the server's text; in the browser only maintenance mode sends it.
+  // A 5xx, so production masks the server's text. Maintenance mode sends it to signed-in traffic;
+  // the screens that call a password check (sign-in, profile) override it for the directory's.
   SERVICE_UNAVAILABLE: 'Sistema in manutenzione. Riprova più tardi.',
 };
 

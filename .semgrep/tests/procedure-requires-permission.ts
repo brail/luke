@@ -10,6 +10,7 @@ interface Builder {
 }
 declare const protectedProcedure: Builder;
 declare const selfProcedure: Builder;
+declare const sessionProcedure: Builder;
 declare const publicProcedure: Builder;
 declare const BrandInputSchema: unknown;
 type TargetInput = { targetType: string };
@@ -38,6 +39,12 @@ export const router = {
 
   // ruleid: luke-procedure-requires-permission
   blockComment: protectedProcedure /* .use(requirePermission('users:read')) */ .query(async () => null),
+
+  // ruleid: luke-procedure-requires-permission
+  status: sessionProcedure.query(async () => null),
+
+  // ok: luke-procedure-requires-permission
+  statusGated: sessionProcedure.use(requirePermission('maintenance:read')).query(async () => null),
 
   nested: {
     // ruleid: luke-procedure-requires-permission
@@ -78,5 +85,11 @@ export const router = {
 const aliased = protectedProcedure;
 // ruleid: luke-procedure-requires-permission
 const partial = protectedProcedure.input(BrandInputSchema);
+// ruleid: luke-procedure-requires-permission
+const sessionAliased = sessionProcedure;
 
-export const other = { a: aliased.query(async () => null), b: partial.query(async () => null) };
+export const other = {
+  a: aliased.query(async () => null),
+  b: partial.query(async () => null),
+  c: sessionAliased.query(async () => null),
+};

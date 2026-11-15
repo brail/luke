@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+
 import LoginPage from '../page';
 
 import type { ReactNode } from 'react';
@@ -9,8 +11,11 @@ import type { ReactNode } from 'react';
  * What the login page tells someone whose sign-in did not go through.
  *
  * Auth.js gives the page one `error` for every refused login; `code` is the only thing that tells
- * them apart. Two codes say nothing about the account — the login service is unavailable, or the
- * login is throttled — and used to read "Credenziali non valide" like everything else.
+ * them apart. Before the password is proven the page tells nothing apart — a wrong password, a
+ * throttled login, a sign-in that failed outright all read `SIGN_IN_REFUSED_MESSAGE` — and it asks
+ * nothing about the app's state (no maintenance read, no backend indicator). The codes the API
+ * sends only once the password is proven — maintenance, a directory that could not complete the
+ * login, email unverified, pending approval — each say what they are.
  *
  * Two more say the account awaits approval, and the API sends them only after the password is
  * proven. The page used to ask a public endpoint whether the username was pending after every
@@ -53,7 +58,6 @@ vi.mock('../../../../lib/trpc', () => ({
 }));
 // Page furniture with requests and images of its own, irrelevant to the form.
 vi.mock('../../../../components/AppVersionLabel', () => ({ AppVersionLabel: () => null }));
-vi.mock('../../../../components/BackendStatus', () => ({ BackendStatus: () => null }));
 
 /** Fills the form and submits it; `signIn` answers as Auth.js does for a refused login. */
 async function signInRefusedWith(code: string) {
@@ -80,39 +84,45 @@ beforeEach(() => {
 });
 
 describe('a sign-in that did not go through', () => {
-  test('an unavailable login service is said to be unavailable', async () => {
+  test('a login the directory could not complete after proof is said to be unavailable', async () => {
     const screen = await signInRefusedWith('unavailable');
 
-    await expect
-      .element(screen.getByText('Servizio di autenticazione non disponibile. Riprova più tardi.'))
-      .toBeVisible();
+    await expect.element(screen.getByText(AUTH_UNAVAILABLE_MESSAGE)).toBeVisible();
     expect(router.push).not.toHaveBeenCalled();
+    expect(maintenanceStatus).not.toHaveBeenCalled();
   });
 
-  test('during an active maintenance window, an unavailable login says maintenance', async () => {
-    // Read when the login is refused: a status polled up to a minute earlier could be stale.
-    maintenanceStatus.mockResolvedValue({ status: 'ACTIVE' });
-    const screen = await signInRefusedWith('unavailable');
+  test('maintenance, answered after proof, is said to be maintenance', async () => {
+    const screen = await signInRefusedWith('maintenance');
 
     await expect
       .element(screen.getByText('Sistema in manutenzione: accesso non disponibile. Riprova al termine.'))
       .toBeVisible();
-    expect(maintenanceStatus).toHaveBeenCalledTimes(1);
+    expect(maintenanceStatus).not.toHaveBeenCalled();
   });
 
-  test('an unavailable login whose maintenance status cannot be read says the service is unavailable', async () => {
-    maintenanceStatus.mockRejectedValue(new Error('Failed to fetch'));
-    const screen = await signInRefusedWith('unavailable');
+  test.each(['credentials', 'throttled'])('a %s refusal reads the one pre-proof message', async code => {
+    const screen = await signInRefusedWith(code);
 
-    await expect
-      .element(screen.getByText('Servizio di autenticazione non disponibile. Riprova più tardi.'))
-      .toBeVisible();
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
+    expect(maintenanceStatus).not.toHaveBeenCalled();
   });
 
-  test('a throttled login is said to be throttled', async () => {
-    const screen = await signInRefusedWith('throttled');
+  test('a sign-in that fails outright reads the one pre-proof message', async () => {
+    signIn.mockRejectedValue(new TypeError('Failed to fetch'));
+    const screen = await render(<LoginPage />);
+    await screen.getByLabelText('Username').fill('alice');
+    await screen.getByLabelText('Password').fill('her-password');
+    await screen.getByRole('button', { name: 'Accedi' }).click();
 
-    await expect.element(screen.getByText('Troppi tentativi. Riprova tra qualche minuto.')).toBeVisible();
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
+  });
+
+  test('the page shows no backend indicator', async () => {
+    const screen = await render(<LoginPage />);
+
+    await expect.element(screen.getByRole('button', { name: 'Accedi' })).toBeVisible();
+    expect(screen.getByText('Servizio non disponibile').query()).toBeNull();
   });
 
   test('an email still to verify is said so, once the password is proven', async () => {
@@ -133,17 +143,39 @@ describe('a sign-in that did not go through', () => {
     expect(screen.getByText(/Email non verificata/).query()).toBeNull();
   });
 
+  test('a refused new link reads the server text, the one pre-proof message', async () => {
+    resendVerification.mockRejectedValue(
+      Object.assign(new Error(SIGN_IN_REFUSED_MESSAGE), { data: { code: 'UNAUTHORIZED' } }),
+    );
+    const screen = await signInRefusedWith('email_unverified');
+
+    await screen.getByRole('button', { name: 'Invia di nuovo il link di verifica' }).click();
+
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
+  });
+
+  test('a new link the directory could not complete says unavailable, not maintenance', async () => {
+    resendVerification.mockRejectedValue(
+      Object.assign(new Error('Internal server error'), { data: { code: 'SERVICE_UNAVAILABLE' } }),
+    );
+    const screen = await signInRefusedWith('email_unverified');
+
+    await screen.getByRole('button', { name: 'Invia di nuovo il link di verifica' }).click();
+
+    await expect.element(screen.getByText(AUTH_UNAVAILABLE_MESSAGE)).toBeVisible();
+  });
+
   test('refused credentials offer no new link', async () => {
     const screen = await signInRefusedWith('credentials');
 
-    await expect.element(screen.getByText('Credenziali non valide')).toBeVisible();
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Invia di nuovo il link di verifica' }).query()).toBeNull();
   });
 
   test('refused credentials read as such, and nothing about the account is asked or offered', async () => {
     const screen = await signInRefusedWith('credentials');
 
-    await expect.element(screen.getByText('Credenziali non valide')).toBeVisible();
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
     expect(screen.getByLabelText('Indirizzo email').query()).toBeNull();
     expect(submitPendingEmail).not.toHaveBeenCalled();
   });
@@ -189,6 +221,30 @@ describe('an account pending approval', () => {
 
     await expect.element(screen.getByText('Email già in uso da un altro account')).toBeVisible();
     await expect.element(screen.getByLabelText('Indirizzo email')).toHaveValue('taken@example.com');
+  });
+
+  test('without an address, a save refused before proof reads the one pre-proof message', async () => {
+    submitPendingEmail.mockRejectedValue(
+      Object.assign(new Error(SIGN_IN_REFUSED_MESSAGE), { data: { code: 'UNAUTHORIZED' } }),
+    );
+    const screen = await signInRefusedWith('pending_email');
+
+    await screen.getByLabelText('Indirizzo email').fill('alice@example.com');
+    await screen.getByRole('button', { name: 'Salva email' }).click();
+
+    await expect.element(screen.getByText(SIGN_IN_REFUSED_MESSAGE)).toBeVisible();
+  });
+
+  test('without an address, a save the directory could not complete says unavailable, not maintenance', async () => {
+    submitPendingEmail.mockRejectedValue(
+      Object.assign(new Error('Internal server error'), { data: { code: 'SERVICE_UNAVAILABLE' } }),
+    );
+    const screen = await signInRefusedWith('pending_email');
+
+    await screen.getByLabelText('Indirizzo email').fill('alice@example.com');
+    await screen.getByRole('button', { name: 'Salva email' }).click();
+
+    await expect.element(screen.getByText(AUTH_UNAVAILABLE_MESSAGE)).toBeVisible();
   });
 
   test('without an address, leaving the form drops the password and saves nothing', async () => {

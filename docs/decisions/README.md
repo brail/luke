@@ -40,10 +40,11 @@
 | [035](035-date-and-time-model-calendar-days-instants-and-two-zone-roles.md) | Date and Time Model: Calendar Days, Instants and Two Zone Roles | Superseded by [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) |
 | [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
-| [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Accepted |
+| [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Superseded by [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) |
 | [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Accepted |
 | [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
 | [041](041-calendar-visibility-function-and-brand-from-one-team.md) | Calendar Visibility: Function and Brand from One Team | Accepted |
+| [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Accepted |
 
 _Last updated: 2026-10-31_
 <!-- luke-docs:end:adr-index -->
