@@ -364,7 +364,12 @@ Two distinct layers that must stay in sync.
 - For resources mapped to leaf sections, every role holding a mutating permission must have at
   least one mapped leaf visible in `SECTION_ACCESS_DEFAULTS`; every default-visible leaf must
   have its mapped permission granted. `sectionHierarchy.test.ts` enforces this static invariant;
-  runtime section overrides never grant resource permissions (ADR-038, ADR-042)
+  runtime section overrides never grant resource permissions (ADR-038, ADR-042).
+  `sectionAccess.set` and `sectionAccess.setRoleDefaults` reject leaf overrides `true` and role
+  defaults `enabled` with `BAD_REQUEST` unless the target user's role or the configured role holds
+  the mapped permission (`sectionPermissionHeld`, `packages/core/src/rbac/effectiveAccess.ts`).
+  Disabling or reverting to auto needs no mapped permission; recovery guards still apply.
+  Stored violations are logged at every API start, never automatically changed (ADR-043).
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
 - The kill switch `app.sections.disabled` is saved only by `saveSectionsDisabled` (the last-admin

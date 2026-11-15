@@ -44,3 +44,9 @@ this record adds one rule to them and changes nothing it decides.
 - A page that queries without a permission gate of its own is protected by this rule rather than by
   a gate added to the page.
 - Navigation derived from privileges (#221) would remove section overrides and this rule with them.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-11-15 — Consequences, first item, "for every write made through the API".** Not every API write: a role change through `users.update` can leave an enabled override or role default on a leaf the new role cannot read, without refusal. Only `sectionAccess.set` and `sectionAccess.setRoleDefaults` check the rule; the next sentence of that item, violations created afterwards are reported, covers this case.
