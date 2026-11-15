@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import type { MaintenanceModeState } from '@luke/core';
+import type { MaintenanceModeView } from '@luke/core';
 
 import MaintenanceModePage from '../page';
 
@@ -12,7 +12,7 @@ import MaintenanceModePage from '../page';
  */
 
 const h = vi.hoisted(() => {
-  const state: Partial<MaintenanceModeState> = {};
+  const state: Partial<MaintenanceModeView> = {};
   return { state, me: { data: { timezone: 'America/Los_Angeles' }, error: null }, schedule: vi.fn() };
 });
 

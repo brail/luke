@@ -7,7 +7,6 @@ import React, { useState } from 'react';
 
 import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 
-import { AppVersionLabel } from '../../../components/AppVersionLabel';
 import LogoLockup from '../../../components/LogoLockup';
 import { Button } from '../../../components/ui/button';
 import {
@@ -213,8 +212,6 @@ export default function LoginPage() {
               </div>
             </>
           )}
-          {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
-          <AppVersionLabel className="mt-3 text-center text-[10px] text-muted-foreground/50 select-none" />
         </CardContent>
       </Card>
     </div>

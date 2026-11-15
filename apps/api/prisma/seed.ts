@@ -124,16 +124,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       encrypt: true,
     },
     {
-      key: 'app.name',
-      value: APP_CONFIG_DEFAULTS['app.name'],
-      encrypt: false,
-    },
-    {
-      key: 'app.environment',
-      value: process.env.NODE_ENV || 'development',
-      encrypt: false,
-    },
-    {
       key: 'app.locale',
       value: 'it-IT',
       encrypt: false,

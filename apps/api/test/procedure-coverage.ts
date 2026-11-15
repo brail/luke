@@ -72,8 +72,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   users: {
     reason:
-      'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); forceVerifyEmail by its audit case in auditlog.integration.spec.ts; list by its search case in users.integration.spec.ts; rejectPending by its approval race in lastAdminGuard.integration.spec.ts; heartbeat, listPending and the menu preferences are not',
-    uncovered: 4,
+      'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); forceVerifyEmail by its audit case in auditlog.integration.spec.ts; list by its search case in users.integration.spec.ts; rejectPending by its approval race in lastAdminGuard.integration.spec.ts; listPending by its key set in responseKeySets.integration.spec.ts; heartbeat and the menu preferences are not',
+    uncovered: 3,
   },
   seasonCalendar: {
     reason:
@@ -147,11 +147,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     reason:
       'no tests on the router. `context.service` is covered by companyAccess, the two get/set procedures are not',
     uncovered: 2,
-  },
-  public: {
-    reason:
-      'passwordPolicy is covered by passwordPolicy.integration.spec.ts; appInfo remains, which reads a single key and has a hardcoded fallback',
-    uncovered: 1,
   },
 };
 

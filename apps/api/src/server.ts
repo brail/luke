@@ -27,7 +27,6 @@ import { createPrismaClient } from '@luke/db';
 
 import { shutdownTelemetry } from './instrument';
 import { runInitialAccessSnapshot } from './lib/accessSnapshot';
-import { appVersion } from './lib/appVersion';
 import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
 import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
@@ -52,7 +51,7 @@ import { registerRetentionScheduler } from './lib/retentionScheduler';
 import { createContext } from './lib/trpc';
 import { createTrustProxy } from './lib/trustProxy';
 import { pinoTraceMiddleware } from './observability/pinoTrace';
-import { checkBootstrapDependencies, runReadinessChecks } from './observability/readiness';
+import { checkBootstrapDependencies } from './observability/readiness';
 import { storagePlugin } from './plugins/storageUpload';
 import { appRouter, type AppRouter } from './routers';
 import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
@@ -61,6 +60,7 @@ import { registerBackupImportRoute } from './routes/backupImport';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
+import { registerHealthRoutes } from './routes/health';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { registerSseRoute } from './routes/sse';
@@ -241,73 +241,6 @@ async function registerSpecsheetImageRoutes() {
 /** Registers the season calendar export routes (iCal, PDF, XLSX). */
 async function registerSeasonCalendarExportRoutes() {
   await fastify.register(seasonCalendarExportRoutes, { prisma });
-}
-
-/**
- * Registers health and readiness probe routes:
- *  - GET /livez   — liveness (always 200 if the process is running)
- *  - GET /readyz  — readiness (runs all registered checks, 503 if any fail)
- *  - GET /healthz — target of the API container healthcheck in the compose files (Docker, Portainer)
- *  - GET /api/health — detailed health info including uptime and version
- *  - GET /         — root discovery endpoint listing available endpoints
- */
-async function registerHealthRoute() {
-  // Liveness: process alive (always 200 if the process is alive)
-  fastify.get('/livez', async (_request, _reply) => {
-    return { status: 'ok' };
-  });
-
-  // Readiness: system ready to serve requests
-  fastify.get('/readyz', async (request, reply) => {
-    const result = await runReadinessChecks(prisma, request.log);
-
-    if (!result.allOk) reply.status(503);
-
-    return {
-      status: result.allOk ? 'ready' : 'unready',
-      timestamp: result.timestamp,
-      checks: result.checks, // OK to expose status for K8s debugging
-    };
-  });
-
-  // Container healthcheck target (docker-compose.*.yml): the API's reported health depends on it
-  fastify.get('/healthz', async (_request, _reply) => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-    };
-  });
-
-  fastify.get('/api/health', async (_request, _reply) => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: appVersion(),
-      environment: isDevelopment() ? 'development' : 'production',
-    };
-  });
-
-  // Root route for compatibility
-  fastify.get('/', async (_request, _reply) => {
-    return {
-      message: 'Luke API is running!',
-      version: appVersion(),
-      endpoints: {
-        health: '/api/health',
-        livez: '/livez',
-        readyz: '/readyz',
-        trpc: '/trpc',
-        docs: 'https://trpc.io/docs',
-      },
-    };
-  });
-
-  if (process.env.NODE_ENV === 'test') {
-    fastify.get('/__test__/boom', async () => {
-      throw new Error('Boom test error');
-    });
-  }
 }
 
 /**
@@ -560,7 +493,7 @@ const start = async () => {
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal, PDF and XLSX export
     await registerSseRoute(fastify, corsAllowedOrigins, { prisma }); // SSE real-time push
-    await registerHealthRoute();
+    registerHealthRoutes(fastify, prisma);
 
     // Configure temp file cleanup
     setupTempFileCleanup();

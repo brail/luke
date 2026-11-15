@@ -1,0 +1,16 @@
+rules:
+  - id: luke-session-procedure-read-only
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      `sessionProcedure` (ADR-042) is for reads only: a valid session, no
+      maintenance guard, no permission. A mutation or subscription on it
+      would write past the maintenance guard. Use `protectedProcedure` with
+      `requirePermission`. Its own rule id, so the permission rule's
+      `nosemgrep` does not silence it.
+    pattern-either:
+      - pattern: 'sessionProcedure. ... .mutation($H)'
+      - pattern: 'sessionProcedure. ... .subscription($H)'
+    paths:
+      include:
+        - '/apps/api/src/routers/**'

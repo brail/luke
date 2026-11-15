@@ -29,7 +29,7 @@ export const MaintenanceModeActivateInputSchema = z.object({
   forceLogout: z.boolean().default(false),
 });
 
-/** Full maintenance-mode state as returned by `getStatus`, to signed-in users only (ADR-042). */
+/** Full maintenance-mode state as stored, and as the mode mutations return it to their caller. */
 export const MaintenanceModeStateSchema = z.object({
   status: MaintenanceModeStatusSchema,
   scheduledAt: z.string().nullable(),
@@ -42,10 +42,24 @@ export const MaintenanceModeStateSchema = z.object({
   notifyByEmail: z.boolean(),
 });
 
+/**
+ * The maintenance state as `getStatus` gives it to every signed-in user (ADR-042): what the lock
+ * screen, the banner and the maintenance page read. Its output schema, so any other stored field is
+ * stripped from the answer.
+ */
+export const MaintenanceModeViewSchema = MaintenanceModeStateSchema.pick({
+  status: true,
+  scheduledAt: true,
+  activatedAt: true,
+  message: true,
+  warningsSent: true,
+});
+
 export type MaintenanceModeStatus = z.infer<typeof MaintenanceModeStatusSchema>;
 export type MaintenanceModeScheduleInput = z.infer<typeof MaintenanceModeScheduleInputSchema>;
 export type MaintenanceModeActivateInput = z.infer<typeof MaintenanceModeActivateInputSchema>;
 export type MaintenanceModeState = z.infer<typeof MaintenanceModeStateSchema>;
+export type MaintenanceModeView = z.infer<typeof MaintenanceModeViewSchema>;
 
 export type MaintenanceUrgencyTier = 'far' | 'normal' | 'approaching' | 'imminent';
 

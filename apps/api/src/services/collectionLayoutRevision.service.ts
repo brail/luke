@@ -14,11 +14,17 @@ import { imageFetchLimiter } from '../lib/export/concurrency.js';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
+/** The author of a revision as its pages show it: the name, nothing that identifies the account. */
+export type RevisionAuthor = { firstName: string; lastName: string };
+
+const REVISION_AUTHOR = { select: { firstName: true, lastName: true } } as const;
+const REVISION_OMIT = { createdByUserId: true } as const;
+
 export type RevisionSummary = Pick<
   CollectionLayoutRevision,
-  'id' | 'revisionNumber' | 'revisionTypeValue' | 'cause' | 'milestoneId' | 'notes' | 'createdAt' | 'createdByUserId'
+  'id' | 'revisionNumber' | 'revisionTypeValue' | 'cause' | 'milestoneId' | 'notes' | 'createdAt'
 > & {
-  createdBy: { id: string; firstName: string; lastName: string; email: string };
+  createdBy: RevisionAuthor;
   rowCount: number;
 };
 
@@ -41,8 +47,9 @@ export type GroupRevisionData = CollectionGroupRevision & {
   rows: RowRevisionData[];
 };
 
-export type RevisionDetail = CollectionLayoutRevision & {
-  createdBy: { id: string; firstName: string; lastName: string; email: string };
+// Without `createdByUserId`: no reader takes the author's id from a revision response.
+export type RevisionDetail = Omit<CollectionLayoutRevision, 'createdByUserId'> & {
+  createdBy: RevisionAuthor;
   groups: GroupRevisionData[];
 };
 
@@ -222,8 +229,9 @@ export async function createRevision(
     // Return full revision detail
     return tx.collectionLayoutRevision.findUniqueOrThrow({
       where: { id: revision.id },
+      omit: REVISION_OMIT,
       include: {
-        createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        createdBy: REVISION_AUTHOR,
         groups: {
           include: {
             rows: {
@@ -255,7 +263,7 @@ export async function listRevisions(
   const revisions = await prisma.collectionLayoutRevision.findMany({
     where: { collectionLayoutId },
     include: {
-      createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      createdBy: REVISION_AUTHOR,
       rowRevisions: { select: { id: true } },
     },
     orderBy: { revisionNumber: 'desc' },
@@ -269,7 +277,6 @@ export async function listRevisions(
     milestoneId: r.milestoneId,
     notes: r.notes,
     createdAt: r.createdAt,
-    createdByUserId: r.createdByUserId,
     createdBy: r.createdBy,
     rowCount: r.rowRevisions.length,
   }));
@@ -288,8 +295,9 @@ export async function getRevisionDetail(
 ): Promise<RevisionDetail> {
   return prisma.collectionLayoutRevision.findUniqueOrThrow({
     where: { id: revisionId },
+    omit: REVISION_OMIT,
     include: {
-      createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      createdBy: REVISION_AUTHOR,
       groups: {
         include: {
           rows: {
@@ -320,7 +328,7 @@ export async function getLayoutAsOfRevision(
   const targetRevision = await prisma.collectionLayoutRevision.findUniqueOrThrow({
     where: { id: revisionId },
     include: {
-      createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      createdBy: REVISION_AUTHOR,
       rowRevisions: { select: { id: true } },
     },
   });
@@ -389,7 +397,6 @@ export async function getLayoutAsOfRevision(
       milestoneId: targetRevision.milestoneId,
       notes: targetRevision.notes,
       createdAt: targetRevision.createdAt,
-      createdByUserId: targetRevision.createdByUserId,
       createdBy: targetRevision.createdBy,
       rowCount: targetRevision.rowRevisions.length,
     },

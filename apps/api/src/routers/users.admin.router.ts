@@ -50,7 +50,7 @@ export const usersAdminRouter = router({
           role: true,
           createdAt: true,
           identities: {
-            select: { provider: true, providerId: true },
+            select: { provider: true },
           },
         },
         orderBy: { createdAt: 'asc' },

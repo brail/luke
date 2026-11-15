@@ -37,23 +37,3 @@ export function appVersionLabel(): string | null {
   if (version === '') return null;
   return versionLabel(version);
 }
-
-/**
- * The full text of the sidebar/login version line: the release identity and the development marker,
- * composed here rather than in the component.
- *
- * The composition is the part that is easy to get wrong. `pnpm dev` sets no
- * `NEXT_PUBLIC_APP_VERSION`, so a component that nested the marker inside a version guard would drop
- * the marker in exactly the environment it exists for. Keeping it in a pure function means that
- * mistake is a failing test rather than something only a human clicking around would notice.
- *
- * Returns `null` when there is nothing to say at all.
- */
-export function appVersionText(): string | null {
-  const version = appVersionLabel();
-  const development = process.env.NODE_ENV === 'development';
-
-  if (version && development) return `${version} · development`;
-  if (version) return version;
-  return development ? 'development' : null;
-}

@@ -378,7 +378,7 @@ logins.
 | `/healthz` | `200` with `{ status, timestamp }`; checks nothing | the API container healthcheck in `docker-compose.prod.yml` and `docker-compose.rc.yml`, the health Docker and Portainer report — keep it |
 | `/livez` | `200` while the process runs | liveness, for an orchestrator that wants one |
 | `/readyz` | `200` when every readiness check passes, `503` otherwise | readiness |
-| `/api/health` | `200` with uptime, version and environment | manual checks |
+| `/api/health` | `200` with status, timestamp and uptime; no version or environment, as no route answers them before sign-in | manual checks |
 | `/` | discovery payload listing the endpoints | — |
 
 `/readyz` runs its checks in parallel (`src/observability/readiness.ts`):

@@ -37,7 +37,7 @@ const user: UserListItem = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   lastLoginAt: null,
-  identities: [{ id: 'i-1', provider: 'LOCAL', providerId: 'mario' }],
+  identities: [{ id: 'i-1', provider: 'LOCAL' }],
   isOnline: false,
 };
 

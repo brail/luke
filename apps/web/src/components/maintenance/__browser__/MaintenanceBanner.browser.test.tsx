@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE_TIME, type MaintenanceModeState } from '@luke/core';
+import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE_TIME, type MaintenanceModeView } from '@luke/core';
 
 import { MaintenanceBanner } from '../MaintenanceBanner';
 
@@ -36,16 +36,12 @@ afterEach(() => {
   meGet.mockClear();
 });
 
-const active: MaintenanceModeState = {
+const active: MaintenanceModeView = {
   status: 'ACTIVE',
   scheduledAt: null,
   activatedAt: '2026-10-04T10:00:00.000Z',
   message: null,
-  forceLogout: false,
-  warningLeadMinutes: [],
   warningsSent: [],
-  activatedByUserId: null,
-  notifyByEmail: false,
 };
 
 test.each([
@@ -59,7 +55,7 @@ test.each([
 });
 
 const AT = '2026-11-02T09:00:00.000Z';
-const scheduled: MaintenanceModeState = { ...active, status: 'SCHEDULED', scheduledAt: AT, activatedAt: null };
+const scheduled: MaintenanceModeView = { ...active, status: 'SCHEDULED', scheduledAt: AT, activatedAt: null };
 const threeDays = 3 * 24 * 60 * 60_000;
 
 test('a window days away is dated in the profile zone', async () => {

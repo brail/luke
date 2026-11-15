@@ -7,8 +7,8 @@ import AboutPage from '../page';
  * Behavioral coverage that the About badge delegates to `appVersionLabel()`.
  *
  * The page renders the version in its own Badge, next to a separate `development` Badge it owns, so
- * it deliberately consumes `appVersionLabel()` (version only) rather than `appVersionText()` (the
- * composed sidebar line). It used to write `v{process.env.NEXT_PUBLIC_APP_VERSION}` inline, which
+ * it consumes `appVersionLabel()` (version only), the one place after sign-in that shows the
+ * version. It used to write `v{process.env.NEXT_PUBLIC_APP_VERSION}` inline, which
  * is how it rendered a bare `v` on any build that carried no release identity, and how a second `v`
  * could be prepended on top of a value that already had one.
  */
@@ -23,7 +23,6 @@ vi.mock('next/image', () => ({
 
 vi.mock('../../../../lib/appVersion', () => ({
   appVersionLabel: vi.fn(),
-  appVersionText: vi.fn(),
 }));
 
 const { appVersionLabel } = await import('../../../../lib/appVersion');

@@ -56,8 +56,6 @@ vi.mock('../../../../lib/trpc', () => ({
     }),
   },
 }));
-// Page furniture with requests and images of its own, irrelevant to the form.
-vi.mock('../../../../components/AppVersionLabel', () => ({ AppVersionLabel: () => null }));
 
 /** Fills the form and submits it; `signIn` answers as Auth.js does for a refused login. */
 async function signInRefusedWith(code: string) {

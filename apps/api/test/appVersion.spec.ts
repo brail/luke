@@ -5,10 +5,9 @@
  * so these tests pin two things that used to be wrong at the same time: the value passes through
  * untouched, and the one display surface that adds a `v` adds exactly one.
  *
- * The route-level assertions below are deliberately source contracts rather than HTTP tests:
- * `server.ts` exports no builder, so an HTTP test would have to exercise the parallel stub routes in
- * `test/helpers.ts` (which return a hardcoded `'test'`) and would prove nothing about the real
- * handlers. The behaviour itself is proved by the module tests above them.
+ * The wiring assertions below are source contracts rather than workbook or telemetry tests. No
+ * unauthenticated route reports the version (#57): `responseKeySets.integration.spec.ts` checks the
+ * health and root routes' keys over HTTP.
  */
 
 import { readFileSync } from 'fs';
@@ -94,12 +93,6 @@ describe('wiring contracts over the production sources (no route or workbook is 
     ]) {
       expect(read(...file), file.join('/')).not.toContain('npm_package_version');
     }
-  });
-
-  it('the health and root routes report the release identity, not a hardcoded 0.1.0', () => {
-    const server = read('server.ts');
-    expect(server).not.toContain("'0.1.0'");
-    expect(server.match(/version: appVersion\(\),/g)).toHaveLength(2);
   });
 
   it('both xlsx call sites label the version through the shared display rule', () => {

@@ -74,6 +74,8 @@ const integerConfigSchema = <T extends z.ZodType<number, number>>(inner: T) =>
  */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
+  // Deprecated in 3.1.0, no reader: kept so stored rows stay valid; removed at the next major
+  // (ADR-033). The seed no longer writes them.
   'app.name':            z.string().min(1),
   'app.environment':     z.string(),
   'app.locale':          z.string(),

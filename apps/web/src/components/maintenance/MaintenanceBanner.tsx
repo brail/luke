@@ -3,7 +3,7 @@
 import { AlertTriangle, Info, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { getMaintenanceUrgencyTier, type MaintenanceModeState, type MaintenanceUrgencyTier } from '@luke/core';
+import { getMaintenanceUrgencyTier, type MaintenanceModeView, type MaintenanceUrgencyTier } from '@luke/core';
 
 import { useFormatDate } from '../../hooks/useFormatDate';
 import { trpc } from '../../lib/trpc';
@@ -32,7 +32,7 @@ const TIER_ICON: Record<MaintenanceUrgencyTier, typeof Info> = {
 };
 
 interface MaintenanceBannerProps {
-  state: MaintenanceModeState;
+  state: MaintenanceModeView;
   isAdmin: boolean;
   /** Holds `maintenance:mode_manage`, which `maintenance.mode.end` requires. */
   canEnd: boolean;

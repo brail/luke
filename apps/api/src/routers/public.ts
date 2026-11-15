@@ -1,45 +1,23 @@
 /**
- * tRPC router for public endpoints
- * Accessible without authentication for app information
+ * tRPC router for the few endpoints that need no session. None of them tells a caller anything about
+ * the application itself — name, version, environment (#57).
  */
 
-import { PASSWORD_SPECIAL_CHARS, isDevelopment } from '@luke/core';
+import { PASSWORD_SPECIAL_CHARS } from '@luke/core';
 
-import { appVersion } from '../lib/appVersion';
-import { getConfig, getPasswordPolicy } from '../lib/configManager';
+import { getPasswordPolicy } from '../lib/configManager';
 import { router, publicProcedure } from '../lib/trpc';
 
 export const publicRouter = router({
   /**
-   * Returns public application metadata (name, version, environment) for the login page and unauthenticated clients.
+   * Answers that the API is reachable, and nothing else: the test probes that reach the API through
+   * the web origin, where a deployed stack exposes no health route, call it.
    *
    * @auth {public}
    * @input {none}
-   * @output {{ name: string, version: string, environment: string, timestamp: string }}
+   * @output {{ ok: true }}
    */
-  appInfo: publicProcedure.query(async ({ ctx }) => {
-    try {
-      const appName = await getConfig(ctx.prisma, 'app.name').catch(() => null);
-
-      return {
-        name: appName || 'Luke',
-        version: appVersion(),
-        environment: isDevelopment() ? 'development' : 'production',
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      ctx.logger.warn(
-        { err: error },
-        'Fallback to default app info'
-      );
-      return {
-        name: 'Luke',
-        version: appVersion(),
-        environment: isDevelopment() ? 'development' : 'production',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }),
+  ping: publicProcedure.query(() => ({ ok: true as const })),
 
   /**
    * Returns the configured password policy, so a client can tell the user the rules it will be

@@ -15,32 +15,19 @@ import {
   formatInstant,
   MaintenanceModeActivateInputSchema,
   MaintenanceModeScheduleInputSchema,
+  MaintenanceModeViewSchema,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
-import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
+import { DEFAULT_STATE, forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router, sessionProcedure } from '../lib/trpc';
 import { groupByTimeZone } from '../lib/userTimeZone';
 
-import type { MaintenanceModeState } from '../lib/maintenanceMode';
 import type { Context } from '../lib/trpc';
-
-/** Shared by `cancelScheduled`/`end` — both return to a clean `INACTIVE` slate, just from a different starting status. */
-const INACTIVE_RESET: MaintenanceModeState = {
-  status: 'INACTIVE',
-  scheduledAt: null,
-  activatedAt: null,
-  message: null,
-  forceLogout: false,
-  warningLeadMinutes: [],
-  warningsSent: [],
-  activatedByUserId: null,
-  notifyByEmail: false,
-};
 
 /** Resolves the app base URL used in email CTAs — same fallback used elsewhere for local dev. */
 async function getBaseUrl(ctx: Context): Promise<string> {
@@ -62,15 +49,18 @@ function emailUsers<T>(ctx: Context, recipients: T[], send: (recipient: T) => Pr
 
 export const maintenanceModeRouter = router({
   /**
-   * Returns the current maintenance-mode state to any signed-in user, during maintenance too.
+   * Returns the current maintenance-mode state to any signed-in user, during maintenance too: only
+   * what the lock screen, the banner and the maintenance page read. The output schema strips every
+   * other stored field.
    *
    * @auth {authenticated — maintenance-exempt (ADR-042)}
    * @input None
-   * @output `MaintenanceModeState` — `{ status, scheduledAt, activatedAt, message, forceLogout,
-   * warningLeadMinutes, warningsSent, activatedByUserId, notifyByEmail }`.
+   * @output `MaintenanceModeView` — `{ status, scheduledAt, activatedAt, message, warningsSent }`.
    */
   // nosemgrep: luke-procedure-requires-permission -- every signed-in user reads the window's state: the lock screen needs it while maintenance refuses everything else (ADR-042)
-  getStatus: sessionProcedure.query(({ ctx }) => getMaintenanceState(ctx.prisma)),
+  getStatus: sessionProcedure
+    .output(MaintenanceModeViewSchema)
+    .query(({ ctx }) => getMaintenanceState(ctx.prisma)),
 
   /**
    * Schedules maintenance mode to activate at a future time, with a warning ladder
@@ -204,7 +194,7 @@ export const maintenanceModeRouter = router({
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessuna manutenzione pianificata da annullare' });
     }
 
-    const state = await writeMaintenanceState(ctx.prisma, INACTIVE_RESET);
+    const state = await writeMaintenanceState(ctx.prisma, DEFAULT_STATE);
 
     await logAudit(ctx, {
       action: 'MAINTENANCE_MODE_CANCELLED',
@@ -232,7 +222,7 @@ export const maintenanceModeRouter = router({
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'La modalità manutenzione non è attiva' });
     }
 
-    const state = await writeMaintenanceState(ctx.prisma, INACTIVE_RESET);
+    const state = await writeMaintenanceState(ctx.prisma, DEFAULT_STATE);
 
     if (current.notifyByEmail) {
       const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { email: true } });

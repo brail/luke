@@ -80,10 +80,11 @@ describe('Bootstrap & Seed', () => {
   it('seedAppConfigs crea configurazioni base', async () => {
     await seedAppConfigs(prisma);
 
-    const [nextAuthSecret, appName, passwordMinLength, authStrategy] =
+    const [nextAuthSecret, appName, appEnvironment, passwordMinLength, authStrategy] =
       await Promise.all([
         prisma.appConfig.findUnique({ where: { key: 'auth.nextAuthSecret' } }),
         prisma.appConfig.findUnique({ where: { key: 'app.name' } }),
+        prisma.appConfig.findUnique({ where: { key: 'app.environment' } }),
         prisma.appConfig.findUnique({
           where: { key: 'security.password.minLength' },
         }),
@@ -92,7 +93,9 @@ describe('Bootstrap & Seed', () => {
 
     expect(nextAuthSecret).toBeTruthy();
     expect(nextAuthSecret?.isEncrypted).toBe(true);
-    expect(appName?.value).toBe('Luke');
+    // Deprecated keys with no reader: no longer seeded (ADR-033 keeps them registered).
+    expect(appName).toBeNull();
+    expect(appEnvironment).toBeNull();
     expect(passwordMinLength?.value).toBe('12');
     expect(authStrategy?.value).toBe('local-first');
   });
@@ -124,7 +127,6 @@ describe('Bootstrap & Seed', () => {
 
     const criticalKeys = [
       'auth.nextAuthSecret',
-      'app.name',
       'security.password.minLength',
       'auth.strategy',
       'app.locale',
@@ -138,11 +140,9 @@ describe('Bootstrap & Seed', () => {
     expect(configs).toHaveLength(criticalKeys.length);
 
     // Verify specific values
-    const appName = configs.find(c => c.key === 'app.name');
     const authStrategy = configs.find(c => c.key === 'auth.strategy');
     const locale = configs.find(c => c.key === 'app.locale');
 
-    expect(appName?.value).toBe('Luke');
     expect(authStrategy?.value).toBe('local-first');
     expect(locale?.value).toBe('it-IT');
   });

@@ -16,6 +16,7 @@ import { buildHelmetConfig } from '../src/lib/helmet';
 import { hashPassword } from '../src/lib/password';
 import { type Context } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
+import { registerHealthRoutes } from '../src/routes/health';
 
 import { setupTestDb as setupSharedTestDb } from './helpers/database';
 import { createSilentLogger } from './helpers/logger';
@@ -303,35 +304,17 @@ export async function expectUnauthorized(
 }
 
 /**
- * Creates an isolated Fastify server for HTTP tests
- * Registers only the essential plugins to test security headers
+ * Creates an isolated Fastify server for HTTP tests: Helmet with the test configuration and the
+ * API's own health routes (`registerHealthRoutes`), so a test reads what production answers. Only
+ * `/readyz` touches the database.
  */
 export async function buildTestServer() {
   const fastify = Fastify({
     logger: false, // Disables logging for tests
   });
 
-  // Registers Helmet with test configuration
   await fastify.register(helmet, buildHelmetConfig('test'));
-
-  // Registers test route to verify headers
-  fastify.get('/api/health', async () => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: 'test',
-      environment: 'test',
-    };
-  });
-
-  // Root route for tests
-  fastify.get('/', async () => {
-    return {
-      message: 'Luke API Test Server',
-      version: 'test',
-    };
-  });
+  registerHealthRoutes(fastify, testPrisma);
 
   await fastify.ready();
   return fastify;

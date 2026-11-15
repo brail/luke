@@ -47,7 +47,6 @@ import { useLogout } from '../hooks/useLogout';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
-import { AppVersionLabel } from './AppVersionLabel';
 import { FeedbackDialog } from './FeedbackDialog';
 import LogoLockup from './LogoLockup';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -129,8 +128,6 @@ export default function AppSidebar() {
           </h2>
           <SidebarTrigger />
         </div>
-        {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
-        <AppVersionLabel className="px-3 pb-1 text-[10px] text-muted-foreground/50 select-none" />
       </SidebarHeader>
       <SidebarContent>
 

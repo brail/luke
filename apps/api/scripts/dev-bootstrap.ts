@@ -81,7 +81,6 @@ async function bootstrap() {
             key: {
               in: [
                 'auth.nextAuthSecret',
-                'app.name',
                 'security.password.minLength',
               ],
             },
@@ -92,9 +91,9 @@ async function bootstrap() {
     console.log(`   - User count: ${userCount}`);
     console.log(`   - Config count: ${configCount}`);
     console.log(`   - Admin user: ${adminUser ? '✅' : '❌'}`);
-    console.log(`   - Critical configs: ${criticalConfigs.length}/3`);
+    console.log(`   - Critical configs: ${criticalConfigs.length}/2`);
 
-    if (!adminUser || criticalConfigs.length < 3) {
+    if (!adminUser || criticalConfigs.length < 2) {
       throw new Error('Sanity checks failed');
     }
 

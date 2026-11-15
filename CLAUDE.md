@@ -225,8 +225,9 @@ packages/
    no permission, never writes. Use it only for reads every signed-in user needs during maintenance;
    each use carries a reasoned `// nosemgrep` and is listed in ADR-042 (a further use is a new ADR
    that supersedes it). `.semgrep/rules/procedure-requires-permission.yml` checks for permission
-   middleware on both builders unless suppressed; suppression reasons and the `sessionProcedure`
-   contract are reviewed (`luke-audit`)
+   middleware on both builders unless suppressed; `.semgrep/rules/session-procedure-read-only.yml`
+   rejects `sessionProcedure` mutations and subscriptions. Suppression reasons, writes inside queries
+   and the remaining procedure contracts are reviewed (`luke-audit`)
 6. **Explicit `onDelete` on every Prisma `@relation`** — default `onDelete: Restrict`; `Cascade`
    only if intentional and commented (P13 in `tools/scripts/check-platform-integrity.ts`)
 7. **Never duplicate schema/types** — if it exists in `@luke/core`, import it from there

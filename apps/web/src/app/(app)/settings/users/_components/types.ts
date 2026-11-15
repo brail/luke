@@ -19,7 +19,6 @@ export interface UserListItem {
   identities: Array<{
     id: string;
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
-    providerId: string;
   }>;
   isOnline: boolean;
 }

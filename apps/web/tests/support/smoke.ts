@@ -19,7 +19,7 @@ const MIN_RATE_LIMIT_REMAINING = 50;
 export const test = base.extend<{ rateLimitHeadroom: void }>({
   rateLimitHeadroom: [
     async ({ request }, use) => {
-      const response = await request.get('/trpc/public.appInfo');
+      const response = await request.get('/trpc/public.ping');
       const headers = response.headers();
       const remaining = Number(headers['x-ratelimit-remaining']);
       // The local dev stack sends no such headers: `NaN` compares false and nothing waits.

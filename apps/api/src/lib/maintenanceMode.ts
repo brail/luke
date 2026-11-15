@@ -25,7 +25,8 @@ export type { MaintenanceModeState, MaintenanceModeStatus } from '@luke/core';
 
 const CONFIG_KEY = 'maintenance.mode.state';
 
-const DEFAULT_STATE: MaintenanceModeState = {
+/** The inactive state with nothing scheduled: what a missing row reads as, and what ending or cancelling writes. */
+export const DEFAULT_STATE: MaintenanceModeState = {
   status: 'INACTIVE',
   scheduledAt: null,
   activatedAt: null,

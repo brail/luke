@@ -39,7 +39,7 @@ async function globalSetup(config: FullConfig) {
 
   await probe('Frontend', baseURL);
   // Through the web origin: a deployed stack exposes the API only there, and not its `/healthz`.
-  await probe('API', `${baseURL}/trpc/public.appInfo`);
+  await probe('API', `${baseURL}/trpc/public.ping`);
 }
 
 export default globalSetup;

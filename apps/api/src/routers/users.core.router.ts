@@ -109,8 +109,7 @@ export const usersCoreRouter = router({
           select: {
             id: true,
             provider: true,
-            providerId: true,
-            // NO localCredential, NO metadata
+            // NO providerId (no screen shows it), NO localCredential, NO metadata
           },
         },
       } satisfies Prisma.UserSelect;

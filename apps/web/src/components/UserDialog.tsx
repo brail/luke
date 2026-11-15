@@ -23,7 +23,6 @@ interface User {
   isActive: boolean;
   identities?: Array<{
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
-    providerId: string;
   }>;
 }
 

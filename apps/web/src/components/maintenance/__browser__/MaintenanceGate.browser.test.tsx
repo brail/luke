@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import type { MaintenanceModeState } from '@luke/core';
+import type { MaintenanceModeView } from '@luke/core';
 
 import { MaintenanceGate } from '../MaintenanceGate';
 
@@ -32,16 +32,12 @@ vi.mock('../../../hooks/useMaintenanceStatus', () => ({
 // Shows nothing to a viewer who cannot bypass maintenance; its mutation hooks are not under test.
 vi.mock('../MaintenanceBanner', () => ({ MaintenanceBanner: () => null }));
 
-const ACTIVE: MaintenanceModeState = {
+const ACTIVE: MaintenanceModeView = {
   status: 'ACTIVE',
   scheduledAt: null,
   activatedAt: '2030-01-15T09:00:00.000Z',
   message: null,
-  forceLogout: false,
-  warningLeadMinutes: [],
   warningsSent: [],
-  activatedByUserId: null,
-  notifyByEmail: false,
 };
 
 afterEach(() => {
