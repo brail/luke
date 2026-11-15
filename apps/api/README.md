@@ -329,6 +329,12 @@ management (`assertNotLastAdminWithSettingsAccess` in `src/lib/lastAdminGuard.ts
 serialized by an advisory lock). An administrator still pending approval cannot
 sign in, so it does not count, and removing one is not refused.
 
+The same definition chooses every other set of users by state — the recipients
+of a broadcast, a count, the candidates a picker offers: `APPROVED_USER_WHERE`
+and `APPROVED_ADMIN_WHERE` in `src/lib/approvedUsers.ts`, active and not pending
+approval. Semgrep rule `luke-user-selection-approved` refuses the filter written
+inline in such a query.
+
 ## Security headers
 
 `src/lib/helmet.ts` is the single Helmet configuration; `server.ts` applies it

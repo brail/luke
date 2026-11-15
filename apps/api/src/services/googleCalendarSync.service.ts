@@ -15,6 +15,7 @@ import {
 import { planningGroupName, toErrorMessage, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { APPROVED_USER_WHERE } from '../lib/approvedUsers.js';
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from '../lib/notifications.js';
 
@@ -250,8 +251,7 @@ export async function getCalendarReaderEmails(
 ): Promise<string[]> {
   const users = await prisma.user.findMany({
     where: {
-      isActive: true,
-      pendingApproval: false,
+      ...APPROVED_USER_WHERE,
       OR: [
         { role: 'admin' },
         { teamMemberships: { some: { team: teamGrantsFunctionAndBrand(companyFunctionId, brandId) } } },

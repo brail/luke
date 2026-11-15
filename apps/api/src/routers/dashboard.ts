@@ -19,6 +19,7 @@ import {
 } from '@luke/core';
 import { type Prisma } from '@luke/db';
 
+import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -189,7 +190,7 @@ export const dashboardRouter = router({
       const [brands, seasons, users, collectionRows] = await Promise.all([
         ctx.prisma.brand.count({ where: { isActive: true, id: brandIn } }),
         ctx.prisma.season.count({ where: { isActive: true } }),
-        ctx.prisma.user.count({ where: { isActive: true } }),
+        ctx.prisma.user.count({ where: APPROVED_USER_WHERE }),
         ctx.prisma.collectionLayoutRow.count({
           where: {
             collectionLayout: { brand: { isActive: true, id: brandIn }, season: { isActive: true } },

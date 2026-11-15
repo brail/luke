@@ -18,6 +18,7 @@ import {
   MaintenanceModeViewSchema,
 } from '@luke/core';
 
+import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
@@ -97,10 +98,9 @@ export const maintenanceModeRouter = router({
         notifyByEmail: input.notifyByEmail,
       });
 
-      // A single user query, reused for both the in-app notification and the optional email
-      // (previously there were two identical fetches on `isActive:true`, one inside `notifyAllUsers`, one
-      // inside the email fan-out).
-      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true, timezone: true } });
+      // A single query of the approved users, reused for both the in-app notification and the
+      // optional email.
+      const users = await ctx.prisma.user.findMany({ where: APPROVED_USER_WHERE, select: { id: true, email: true, timezone: true } });
       const scheduledAt = new Date(input.scheduledAt);
       const usersByZone = await groupByTimeZone(ctx.prisma, users, ctx.logger);
 
@@ -225,7 +225,7 @@ export const maintenanceModeRouter = router({
     const state = await writeMaintenanceState(ctx.prisma, DEFAULT_STATE);
 
     if (current.notifyByEmail) {
-      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { email: true } });
+      const users = await ctx.prisma.user.findMany({ where: APPROVED_USER_WHERE, select: { email: true } });
       const baseUrl = await getBaseUrl(ctx);
       emailUsers(ctx, users.map(u => u.email), email => sendMaintenanceEndedEmail(ctx.prisma, email, baseUrl));
     }

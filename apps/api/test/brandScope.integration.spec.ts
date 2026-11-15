@@ -20,6 +20,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { COLLECTION_STATUS } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { APPROVED_USER_WHERE } from '../src/lib/approvedUsers';
+
 import {
   createCallerWithSession,
   createTestUser,
@@ -227,7 +229,7 @@ describe('brand scope — collectionLayout and dashboard', () => {
       }),
       prisma.collectionLayoutRow.count(),
       prisma.season.count({ where: { isActive: true } }),
-      prisma.user.count({ where: { isActive: true } }),
+      prisma.user.count({ where: APPROVED_USER_WHERE }),
     ]);
 
     // Seasons and users are not brand data: counted in full.

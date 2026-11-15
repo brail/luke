@@ -59,12 +59,10 @@ export async function resolveBrandAccess(
   if (userIds.length === 0) return new Map();
 
   const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
+    where: { id: { in: userIds }, ...APPROVED_USER_WHERE },
     select: {
       id: true,
       role: true,
-      isActive: true,
-      pendingApproval: true,
       teamMemberships: {
         where: { team: { isActive: true } },
         select: { team: { select: { brandScopes: { select: { brandId: true } } } } },
@@ -74,7 +72,6 @@ export async function resolveBrandAccess(
 
   const result = new Map<string, Set<string> | null>();
   for (const u of users) {
-    if (!u.isActive || u.pendingApproval) continue;
     if (u.role === 'admin') {
       result.set(u.id, null);
       continue;

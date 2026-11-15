@@ -152,6 +152,18 @@ describe('assigning a row', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('refuses an account still pending approval, which cannot open the row', async () => {
+    const { admin, row } = await planAndRow();
+    const { user } = await createTestUser('admin');
+    await prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true } });
+
+    await expect(
+      admin.merchandisingPlan.assignUser({ rowId: row.id, userId: user.id }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(await prisma.merchandisingPlanRow.findUnique({ where: { id: row.id }, select: { assignedUserId: true } })).toEqual({ assignedUserId: null });
+    expect(await prisma.notification.count({ where: { userId: user.id } })).toBe(0);
+  });
+
   it('assigns a user who can open the brand', async () => {
     const { admin, row } = await planAndRow();
     const { user } = await createTestUser('admin');

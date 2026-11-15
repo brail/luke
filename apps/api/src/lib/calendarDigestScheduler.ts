@@ -54,6 +54,7 @@ import type { Prisma, PrismaClient } from '@luke/db';
 
 import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../services/calendarAudience.service';
 
+import { APPROVED_USER_WHERE } from './approvedUsers';
 import { isRedactedValue } from './auditLog';
 import { getConfigOrDefault } from './configManager';
 import { toErrorMessage } from './error';
@@ -509,7 +510,7 @@ export async function buildDigestTasks(
       where: { id: { in: allCalendarIds } },
       select: { id: true, brand: { select: { name: true } }, season: { select: { name: true } } },
     }),
-    prisma.user.findMany({ where: { id: { in: allUserIds }, isActive: true }, select: { id: true, email: true } }),
+    prisma.user.findMany({ where: { id: { in: allUserIds }, ...APPROVED_USER_WHERE }, select: { id: true, email: true } }),
     // The CALENDAR category, then the digest's own switch (`receives`): muting one kind of change or
     // of deadline notice leaves the email alone.
     recipientsOf(prisma, allUserIds, 'CALENDAR', CALENDAR_DIGEST_KEY),
@@ -714,7 +715,7 @@ async function retryDeliveries(prisma: PrismaClient, log: FastifyInstance['log']
 }
 
 /**
- * First sends for one cohort (the active users reading in `timeZone`) once 07:00 has come there:
+ * First sends for one cohort (the approved users reading in `timeZone`) once 07:00 has come there:
  * the window is their local "yesterday", pairs already recorded for the local date are skipped
  * before rendering, and each email is claimed only while its send day lasts.
  */
@@ -794,7 +795,7 @@ export async function runDigestTick(
     return;
   }
 
-  const users = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, timezone: true } });
+  const users = await prisma.user.findMany({ where: APPROVED_USER_WHERE, select: { id: true, timezone: true } });
   const cohorts = await groupByTimeZone(prisma, users, log);
 
   try {

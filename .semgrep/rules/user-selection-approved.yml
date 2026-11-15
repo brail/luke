@@ -1,0 +1,26 @@
+rules:
+  - id: luke-user-selection-approved
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      A set of users chosen by state (a broadcast's recipients, a count, the
+      candidates a picker offers) goes through APPROVED_USER_WHERE or
+      APPROVED_ADMIN_WHERE (apps/api/src/lib/approvedUsers.ts), not an inline
+      `isActive: true` or `pendingApproval: false`: an inline filter drifts
+      from the definition, and `isActive` alone counts accounts still pending
+      approval, which cannot sign in. A guard against inline filters, not
+      proof of completeness: it does not see a `where` built in a variable, a
+      relation filter (`user: { isActive: true }`), a single-account lookup
+      (findFirst, findUnique) or recipients taken from input.
+    patterns:
+      - pattern-either:
+          - pattern: '$P.user.$M({..., where: {..., isActive: true, ...}, ...})'
+          - pattern: '$P.user.$M({..., where: {..., pendingApproval: false, ...}, ...})'
+      # The accounts awaiting approval are a set of their own (`users.admin.listPending`).
+      - pattern-not: '$P.user.$M({..., where: {..., pendingApproval: true, ...}, ...})'
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(findMany|count|groupBy|aggregate)$
+    paths:
+      include:
+        - '/apps/api/src/**'

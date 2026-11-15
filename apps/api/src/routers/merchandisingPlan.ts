@@ -24,6 +24,7 @@ import {
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
 import { createNotification } from '../lib/notifications';
@@ -549,7 +550,7 @@ export const merchandisingPlanRouter = router({
       // notification below, with the article code, since `createNotification` does not re-check.
       if (input.userId) {
         const assignee = await ctx.prisma.user.findFirst({
-          where: { id: input.userId, isActive: true },
+          where: { id: input.userId, ...APPROVED_USER_WHERE },
           select: { id: true, role: true },
         });
         if (!assignee) {

@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server';
 import { AUTH_UNAVAILABLE_MESSAGE, hasPermission, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { Prisma, PrismaClient, User } from '@luke/db';
 
+import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
@@ -91,9 +92,7 @@ export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<numbe
   const admins = await prisma.user.findMany({
     where: {
       // The one role holding `*:*`, which is what the break-glass path checks.
-      role: 'admin',
-      isActive: true,
-      pendingApproval: false,
+      ...APPROVED_ADMIN_WHERE,
       emailVerifiedAt: requireEmailVerification ? { not: null } : undefined,
       identities: { some: localIdentity },
     },
