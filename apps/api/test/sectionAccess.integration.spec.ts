@@ -22,7 +22,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { appRouter } from '../src/routers/index';
 
-import { createCallerWithSession, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { createCallerWithSession, createTestContext, createTestUser, grantEditor, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -107,6 +107,15 @@ describe('sectionAccess — procedure permissions', () => {
     await expect(appRouter.createCaller(ctx).sectionAccess.getByUser({ userId: target.id })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: user.id, deniedPermissions: ['*:*'] }),
+      'Permission denied',
+    );
+
+    // Reading the role defaults is managing authorization too: `users:read` is not enough.
+    grantEditor('users:read');
+    warn.mockClear();
+    await expect(appRouter.createCaller(ctx).sectionAccess.getDefaults()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ userId: user.id, deniedPermissions: ['*:*'] }),
       'Permission denied',

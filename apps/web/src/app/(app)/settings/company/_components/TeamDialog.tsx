@@ -176,6 +176,9 @@ interface EditTeamDialogProps {
 export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialogProps) {
   const { can } = usePermission();
   const canUpdate = can('company_team:update');
+  // Picking new members needs the users list, asked only with the permission `users.list` checks;
+  // the read-only view names members from the team's own memberships.
+  const canPickMembers = canUpdate && can('users:read');
   const refresh = useRefresh();
 
   const { data: team, isLoading: teamLoading } = trpc.company.team.getById.useQuery(
@@ -183,7 +186,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
     { enabled: open },
   );
   const { data: brands = [] } = trpc.company.team.listAllBrands.useQuery(undefined, { enabled: open });
-  const { data: usersData } = trpc.users.list.useQuery({ limit: 100 }, { enabled: open });
+  const { data: usersData } = trpc.users.list.useQuery({ limit: 100 }, { enabled: open && canPickMembers });
   const allUsers = useMemo(() => usersData?.users ?? [], [usersData]);
 
   const form = useForm<TeamFormData>({
@@ -324,7 +327,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
             {/* ── Members ── */}
             <TabsContent value="members" className="px-6 py-4">
               <div className="space-y-4">
-                {canUpdate && availableUsers.length > 0 && (
+                {canPickMembers && availableUsers.length > 0 && (
                   <div className="flex items-center gap-2">
                     <Select value={addMemberValue} onValueChange={userId => {
                       setLocalMemberIds(prev => prev.includes(userId) ? prev : [...prev, userId]);
@@ -345,7 +348,9 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
                 )}
 
                 {localMemberIds.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">Nessun membro. Aggiungi utenti dal menu sopra.</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    {canPickMembers ? 'Nessun membro. Aggiungi utenti dal menu sopra.' : 'Nessun membro.'}
+                  </p>
                 ) : (
                   <div className="divide-y rounded-md border">
                     {localMemberIds.map(userId => {

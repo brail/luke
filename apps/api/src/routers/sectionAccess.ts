@@ -45,14 +45,14 @@ const setInput = z.object({
 export const sectionAccessRouter = router({
   /**
    * Returns sectionAccessDefaults and disabledSections, read by the administrators' section-override
-   * editor.
+   * editor. Reading authorization configuration is managing it: `*:*`, like its siblings.
    *
-   * @auth {users:read}
+   * @auth {*:*}
    * @input {none}
    * @output {{ sectionAccessDefaults, disabledSections }}
    */
   getDefaults: protectedProcedure
-    .use(requirePermission('users:read'))
+    .use(requirePermission('*:*'))
     .query(async ({ ctx }) => {
       return getSectionDefaults(ctx.prisma);
     }),
