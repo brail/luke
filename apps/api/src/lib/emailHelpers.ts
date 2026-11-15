@@ -11,10 +11,13 @@ import { Prisma, PrismaClient, type TokenType } from '@luke/db';
 
 import { logAudit } from './auditLog';
 import { getConfigOrDefault } from './configManager';
-import { toErrorMessage } from './error';
+import { externalCheckFailed, toErrorMessage } from './error';
+import { rootLogger } from './logger';
 import { sendEmailVerificationEmail } from './mailer';
 
 import type { Context } from './context';
+
+const logger = rootLogger.child({ module: 'email-verification' });
 
 /**
  * True if the email is the synthetic one generated for an LDAP user with no `mail` value set. It
@@ -51,8 +54,8 @@ export interface SendVerificationEmailOptions {
  * @param ctx - Optional tRPC-like context for request correlation in the audit log.
  * @returns Success flag and a human-readable message.
  * @throws {TRPCError} NOT_FOUND if the user is not found or inactive; BAD_REQUEST for a synthetic
- *   LDAP address, refused before any token is created.
- * @throws {Error} If the email send fails after retries.
+ *   LDAP address, refused before any token is created; PRECONDITION_FAILED with a fixed text if
+ *   the email send fails after retries.
  */
 export async function sendVerificationEmail(
   prisma: PrismaClient,
@@ -92,55 +95,48 @@ export async function sendVerificationEmail(
   const baseUrl =
     await getConfigOrDefault(prisma, 'app.baseUrl');
 
-  // Send email (with automatic internal retry)
+  // Some callers have no request at all (LDAP provisioning), and `logAudit` writes their row
+  // without one.
+  const auditCtx = {
+    prisma,
+    session: actorId ? { user: { id: actorId } } : undefined,
+    req: ctx?.req,
+    logger: ctx?.logger,
+  };
+
+  // Send email (with automatic internal retry), SMTP settings read included: whatever stops the
+  // mail is a failed send to the person asking. The audit row after it stays outside, so a
+  // database failure there is a server error, not a failed send.
   try {
     await sendEmailVerificationEmail(prisma, email, token, baseUrl);
-
-    // Audit log SUCCESS (no PII). Some callers have no request at all (LDAP provisioning), and
-    // `logAudit` writes their row without one.
-    await logAudit(
-      {
-        prisma,
-        session: actorId ? { user: { id: actorId } } : undefined,
-        req: ctx?.req,
-        logger: ctx?.logger,
-      },
-      {
-        action: 'EMAIL_VERIFICATION_SENT',
-        targetType: 'Auth',
-        targetId: user.id,
-        result: 'SUCCESS',
-        metadata: { reason, expiresAt: expiresAt.toISOString() },
-      }
-    );
-
-    return {
-      success: true,
-      message: 'Email di verifica inviata con successo.',
-    };
   } catch (error) {
     // Audit log FAILURE (no PII)
-    await logAudit(
-      {
-        prisma,
-        session: actorId ? { user: { id: actorId } } : undefined,
-        req: ctx?.req,
-        logger: ctx?.logger,
-      },
-      {
-        action: 'EMAIL_VERIFICATION_SENT',
-        targetType: 'Auth',
-        targetId: user.id,
-        result: 'FAILURE',
-        metadata: {
-          reason,
-          error: toErrorMessage(error),
-        },
-      }
-    );
-
-    throw new Error('Impossibile inviare email. Verifica configurazione SMTP.', { cause: error });
+    await logAudit(auditCtx, {
+      action: 'EMAIL_VERIFICATION_SENT',
+      targetType: 'Auth',
+      targetId: user.id,
+      result: 'FAILURE',
+      metadata: { reason, error: toErrorMessage(error) },
+    });
+    // The client sees a fixed text that tells nothing about the account; the mailer's error goes
+    // to the audit row and this log only (#255). LDAP provisioning calls without a request.
+    (ctx?.logger ?? logger).warn({ err: error }, 'Verification email send failed');
+    throw externalCheckFailed('Invio della mail di verifica non riuscito: riprova più tardi o contatta un amministratore.');
   }
+
+  // Audit log SUCCESS (no PII)
+  await logAudit(auditCtx, {
+    action: 'EMAIL_VERIFICATION_SENT',
+    targetType: 'Auth',
+    targetId: user.id,
+    result: 'SUCCESS',
+    metadata: { reason, expiresAt: expiresAt.toISOString() },
+  });
+
+  return {
+    success: true,
+    message: 'Email di verifica inviata con successo.',
+  };
 }
 
 /** The pieces of a transaction a link needs: the user row lock and the `userToken` table. */

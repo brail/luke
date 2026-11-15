@@ -398,7 +398,7 @@ describe('Google settings', () => {
   const connects = () => vi.mocked(calendar.testGoogleConnection);
 
   beforeEach(() => {
-    vi.spyOn(calendar, 'testGoogleConnection').mockResolvedValue({ ok: true });
+    vi.spyOn(calendar, 'testGoogleConnection').mockResolvedValue(undefined);
   });
 
   describe('service account', () => {
@@ -513,9 +513,9 @@ describe('Google settings', () => {
         oauthTokenUnreadable: true,
         oauthUserEmail: 'admin@example.com',
       });
-      await expect(caller.integrations.google.testConnection()).resolves.toEqual({
-        ok: false,
-        error: "Il token salvato non è leggibile: connetti di nuovo l'account.",
+      await expect(caller.integrations.google.testConnection()).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: "Il token salvato non è leggibile: connetti di nuovo l'account.",
       });
       expect(connects()).not.toHaveBeenCalled();
     });

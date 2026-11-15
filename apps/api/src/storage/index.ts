@@ -11,6 +11,8 @@ import { homedir } from 'os';
 import { basename, join } from 'path';
 import { Readable } from 'stream';
 
+import { TRPCError } from '@trpc/server';
+
 
 import {
   AppConfigRegistry,
@@ -19,6 +21,7 @@ import {
   sanitizeFileName,
   StorageObjectNotFoundError,
   type IStorageProvider,
+  type S3StorageConfig,
   type StorageBucket,
   type StorageType,
   type StoredObjectMeta,
@@ -84,6 +87,21 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
  * @returns Initialized S3Provider ready for use.
  */
 export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> {
+  return connectS3Provider(await readS3Config(prisma));
+}
+
+/**
+ * Builds an S3Provider and runs its `init`, the first call that reaches S3: kept apart from
+ * reading the settings so the connection test can tell S3's failures from the database's.
+ */
+export async function connectS3Provider(config: S3StorageConfig): Promise<S3Provider> {
+  const provider = new S3Provider(config);
+  await provider.init();
+  return provider;
+}
+
+/** Reads and validates the S3 settings from AppConfig; reaches nothing outside the database. */
+export async function readS3Config(prisma: PrismaClient): Promise<S3StorageConfig> {
   const [endpoint, port, useSSL, accessKey, secretKey, region, publicBaseUrl, presignedPutTtl, presignedGetTtl] =
     await Promise.all([
       getConfigOrDefault(prisma, 'storage.s3.endpoint'),
@@ -104,13 +122,13 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
   // credential instead of saying so. `getSmtpConfig` refuses an incomplete SMTP config for the
   // same reason; there is no argument for the two credential-bearing integrations to differ.
   if (!accessKey || !secretKey) {
-    throw new Error(
-      "S3 credentials not configured: 'storage.s3.accessKey' and 'storage.s3.secretKey' are " +
-        "required when 'storage.type' is 's3'.",
-    );
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Credenziali S3 non configurate: inserisci access key e secret key e salva.',
+    });
   }
 
-  const config = s3StorageConfigSchema.parse({
+  return s3StorageConfigSchema.parse({
     endpoint,
     port,
     useSSL,
@@ -121,10 +139,6 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
     presignedPutTtl,
     presignedGetTtl,
   });
-
-  const provider = new S3Provider(config);
-  await provider.init();
-  return provider;
 }
 
 /**

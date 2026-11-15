@@ -132,16 +132,10 @@ export default function GoogleWorkspacePage() {
   });
 
   const testMutation = trpc.integrations.google.testConnection.useMutation({
-    onSuccess: (data) => {
-      if (data.ok) {
-        setTestStatus('success');
-        setTestMessage('Connessione Google riuscita.');
-        toast.success('Test riuscito');
-      } else {
-        setTestStatus('error');
-        setTestMessage(data.error ?? 'Connessione fallita');
-        toast.error('Test fallito');
-      }
+    onSuccess: () => {
+      setTestStatus('success');
+      setTestMessage('Connessione Google riuscita.');
+      toast.success('Test riuscito');
     },
     onError: (error) => {
       setTestStatus('error');

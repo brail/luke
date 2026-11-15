@@ -1,15 +1,20 @@
 /**
  * A settings test, or the NAV preview, that the external system refuses answers PRECONDITION_FAILED
- * with a fixed Italian text the admin can act on (#193). The system's own error text never reaches
- * the answer — production masks a 5xx, but a 4xx keeps its message — only the log.
+ * with a fixed Italian text the admin can act on (#193, #255 for storage and Google). The system's
+ * own error text never reaches the answer — production masks a 5xx, but a 4xx keeps its message —
+ * only the log.
  */
 
+import { S3Client } from '@aws-sdk/client-s3';
 import { Client, InvalidCredentialsError } from 'ldapts';
 import nodemailer from 'nodemailer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as calendar from '@luke/calendar';
 import type { PrismaClient } from '@luke/db';
 import * as nav from '@luke/nav';
+
+import { saveConfigs } from '../src/lib/configManager';
 
 import { createCallerAs, setupTestDb } from './helpers';
 
@@ -164,5 +169,108 @@ describe('NAV settings', () => {
 
     expect(error).toMatchObject({ code: 'PRECONDITION_FAILED', message: 'Query NAV non riuscita: verifica connessione e company' });
     expect(serialised).not.toContain(DRIVER_TEXT);
+  });
+});
+
+describe('storage settings test', () => {
+  /** An S3 reply as AWS SDK v3 throws it: a named error carrying `$metadata`. */
+  const s3Error = (name: string) => Object.assign(new Error(DRIVER_TEXT), { name, $metadata: { httpStatusCode: 403 } });
+  /** A Node network or TLS error: its `code` says what failed. */
+  const networkError = (code: string) => Object.assign(new Error(`${code} ${DRIVER_TEXT}`), { code });
+
+  beforeEach(async () => {
+    await caller.storage.saveConfig({
+      type: 's3', endpoint: 'minio.example.com', port: 9000, useSSL: true, accessKey: 'ak', secretKey: 'sk',
+      region: 'us-east-1', presignedPutTtl: 3600, presignedGetTtl: 3600,
+    });
+  });
+
+  it.each([
+    ['an unreachable endpoint', networkError('ECONNREFUSED'), 'Server S3 non raggiungibile: verifica endpoint e porta'],
+    ['SSL on a plain port', networkError('ERR_SSL_WRONG_VERSION_NUMBER'), 'Connessione TLS al server S3 non riuscita: verifica SSL, porta e certificato'],
+    ['a refused certificate', networkError('DEPTH_ZERO_SELF_SIGNED_CERT'), 'Connessione TLS al server S3 non riuscita: verifica SSL, porta e certificato'],
+    ['a refused access key', s3Error('InvalidAccessKeyId'), 'Accesso S3 rifiutato: verifica access key e secret key'],
+    ['a refused secret', s3Error('SignatureDoesNotMatch'), 'Accesso S3 rifiutato: verifica access key e secret key'],
+    ['a refused bucket create', s3Error('AccessDenied'), 'Accesso S3 negato: verifica i permessi delle credenziali sui bucket'],
+    ['any other failure', new Error(DRIVER_TEXT), 'Test S3 fallito: verifica endpoint, credenziali e bucket'],
+  ])('answers %s with a fixed text', async (_case, failure, message) => {
+    vi.spyOn(S3Client.prototype, 'send').mockRejectedValue(failure);
+
+    const { error, serialised } = await refusal(caller.storage.testS3Connection());
+
+    expect(error).toMatchObject({ code: 'PRECONDITION_FAILED', message });
+    expect(serialised).not.toContain(DRIVER_TEXT);
+  });
+
+  it('answers missing credentials with a fixed text, before reaching S3', async () => {
+    const send = vi.spyOn(S3Client.prototype, 'send');
+    await prisma.appConfig.deleteMany({ where: { key: 'storage.s3.secretKey' } });
+
+    await expect(caller.storage.testS3Connection()).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Credenziali S3 non configurate: inserisci access key e secret key e salva.',
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps a database failure reading the S3 settings a server error, not an S3 refusal', async () => {
+    const send = vi.spyOn(S3Client.prototype, 'send');
+    const findUnique = prisma.appConfig.findUnique.bind(prisma.appConfig);
+    // Typed as the lookup by key the settings readers make; every other lookup passes through as it came.
+    vi.spyOn(prisma.appConfig, 'findUnique').mockImplementation(((args: { where: { key: string } }) =>
+      args.where.key.startsWith('storage.s3.') ? Promise.reject(new Error('database unreachable')) : findUnique(args as never)
+    ) as never);
+
+    await expect(caller.storage.testS3Connection()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('Google settings test', () => {
+  /** A refused token request as googleapis throws it: the OAuth error code in the reply body. */
+  const oauthRefusal = (error: unknown) => Object.assign(new Error(DRIVER_TEXT), { response: { data: { error, error_description: DRIVER_TEXT } } });
+
+  /** Google's `failure` reaches the admin as `message` alone. */
+  const expectRefusedWith = async (failure: Error, message: string) => {
+    vi.spyOn(calendar, 'testGoogleConnection').mockRejectedValue(failure);
+    const { error, serialised } = await refusal(caller.integrations.google.testConnection());
+    expect(error).toMatchObject({ code: 'PRECONDITION_FAILED', message });
+    expect(serialised).not.toContain(DRIVER_TEXT);
+  };
+
+  describe('service account', () => {
+    beforeEach(async () => {
+      await caller.integrations.google.saveConfig({
+        authMode: 'service_account', domain: 'example.com', calendarSyncEnabled: false,
+        serviceEmail: 'luke@project.iam.gserviceaccount.com', serviceKey: 'service-key', impersonateEmail: '',
+      });
+    });
+
+    it.each([
+      ['a refused key', oauthRefusal('invalid_grant'), 'Chiave del service account rifiutata: verifica chiave e utente da impersonare'],
+      ['a missing domain-wide delegation', oauthRefusal('unauthorized_client'), 'Delega a livello di dominio mancante: autorizza il service account nella console Admin'],
+      ['a Calendar API error', oauthRefusal({ code: 403, message: DRIVER_TEXT }), 'Test Google non riuscito: verifica dominio e credenziali'],
+      ['a network failure', new Error(`getaddrinfo ENOTFOUND ${DRIVER_TEXT}`), 'Test Google non riuscito: verifica dominio e credenziali'],
+    ])('answers %s with a fixed text', async (_case, failure, message) => {
+      await expectRefusedWith(failure, message);
+    });
+  });
+
+  describe('OAuth', () => {
+    beforeEach(async () => {
+      await caller.integrations.google.saveConfig({
+        authMode: 'oauth_user', domain: 'example.com', calendarSyncEnabled: false,
+        oauthClientId: 'client-id', oauthClientSecret: 'client-secret',
+      });
+      await saveConfigs(prisma, [{ key: 'integrations.google.oauth.refreshToken', value: 'refresh-token', encrypt: true }]);
+    });
+
+    it.each([
+      ['a refused client', oauthRefusal('invalid_client'), 'Client OAuth rifiutato: verifica Client ID e Client Secret'],
+      ['an expired or revoked grant', oauthRefusal('invalid_grant'), "Autorizzazione Google scaduta o revocata: connetti di nuovo l'account"],
+      ['a client not allowed this grant', oauthRefusal('unauthorized_client'), 'Client OAuth non autorizzato a questo accesso: verifica il client nella console Google Cloud'],
+    ])('answers %s with a fixed text', async (_case, failure, message) => {
+      await expectRefusedWith(failure, message);
+    });
   });
 });

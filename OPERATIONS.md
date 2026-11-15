@@ -233,12 +233,18 @@ never on the message text:
 | Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
-| A settings test (LDAP, mail, NAV) or the NAV preview that the external system refused | `PRECONDITION_FAILED` | 412 |
+| A settings test (LDAP, mail, NAV, storage, Google) or the NAV preview that the external system refused | `PRECONDITION_FAILED` | 412 |
+| A verification email the mail server did not accept | `PRECONDITION_FAILED` | 412 |
 
 A refused settings test answers a fixed text the admin can act on; the external
 system's own error is never in the answer, only in a warning log line of its own
 (for example `LDAP connection test: bind failed`, `SMTP test failed`, `NAV preview
-failed`, `NAV connection test failed` with its `step` and `detail`).
+failed`, `NAV connection test failed` with its `step` and `detail`, `S3 test failed`,
+`Google Workspace test connection failed`). A failed verification email answers one
+fixed text that says nothing about the account; the mail server's error is in the
+`EMAIL_VERIFICATION_SENT` failure audit row and the `Verification email send failed`
+log line. A database failure while reading the storage settings stays a server
+error.
 
 A `BAD_REQUEST` from a failed input parse also carries `error.data.zodIssues` —
 every issue as `{ path, message }`, the path in full (`data.retailMultiplier`),

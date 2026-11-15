@@ -62,7 +62,11 @@ describe('auth.requestEmailVerification', () => {
   it('says so when the mail could not be sent, and leaves the failure in the audit trail', async () => {
     const { user, auth } = await unverifiedUser();
 
-    await expect(auth.requestEmailVerification()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    // A fixed text in every environment; the mailer's error stays in the audit row and the log (#255).
+    await expect(auth.requestEmailVerification()).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Invio della mail di verifica non riuscito: riprova più tardi o contatta un amministratore.',
+    });
     const audit = await prisma.auditLog.findFirst({ where: { action: 'EMAIL_VERIFICATION_SENT', targetId: user.id } });
     // Inside a session the row names who acted, not an anonymous system.
     expect(audit).toMatchObject({ result: 'FAILURE', actorId: user.id });

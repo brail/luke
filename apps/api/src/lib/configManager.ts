@@ -269,6 +269,7 @@ function configNotFoundError(key: string): TRPCError {
 function assertValidConfigValue(key: AppConfigKey, value: string): void {
   const validation = validateConfigValue(key, value);
   if (!validation.success) {
+    // nosemgrep: luke-provider-text-to-client -- the registry schema's own validation text, written by the app
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `Valore non valido per '${key}': ${validation.message}`,

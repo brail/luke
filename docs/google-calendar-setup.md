@@ -85,10 +85,12 @@ private key is stored encrypted in AppConfig.
 
 Click `Test Connessione` on the settings page (`integrations.google.testConnection`,
 which requires `config:read`). It uses the stored credentials to list one
-calendar, and reports either success or what is missing: the domain, the
-service-account credentials, or the OAuth connection. The test and the sync
-authenticate the same way, impersonation included: a test that fails with
-`unauthorized_client` means the sync fails too.
+calendar, and reports either success or a fixed text: what is missing (the
+domain, the service-account credentials, or the OAuth connection), or why Google
+refused the connection. Google's own reply is never shown; it is in the API's
+`Google Workspace test connection failed` log line. The test and the sync
+authenticate the same way, impersonation included: a test that reports a missing
+domain-wide delegation (Google's `unauthorized_client`) means the sync fails too.
 
 Once a sync has run, the `Stato sincronizzazione` block on the same page shows,
 for each operation (`Sincronizzazione eventi`, `Lettori dei calendari`,

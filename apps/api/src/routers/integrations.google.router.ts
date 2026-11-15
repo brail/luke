@@ -14,12 +14,41 @@ import { type AppConfigKey, googleWorkspaceConfigSchema, httpUrl } from '@luke/c
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, saveConfigs } from '../lib/configManager';
+import { externalCheckFailed } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getGoogleSyncStatus, toGoogleCalendarConfig } from '../services/googleCalendarSync.service';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+/** A setting the Google test needs and does not have: the same answer as a refused connection. */
+function missingSetting(message: string): TRPCError {
+  return new TRPCError({ code: 'PRECONDITION_FAILED', message });
+}
+
+/**
+ * The fixed text of a failed Google test (#255), told apart by the OAuth error a refused token
+ * request carries (RFC 6749 §5.2, in the reply body); a Calendar API error has an object there.
+ */
+function googleTestFailureMessage(err: unknown, authMode: string | null): string {
+  // Only the OAuth error code of Google's reply is read.
+  const oauthError = (err as { response?: { data?: { error?: unknown } } } | null)?.response?.data?.error;
+  switch (oauthError) {
+    case 'invalid_client':
+      return 'Client OAuth rifiutato: verifica Client ID e Client Secret';
+    case 'invalid_grant':
+      return authMode === 'oauth_user'
+        ? "Autorizzazione Google scaduta o revocata: connetti di nuovo l'account"
+        : 'Chiave del service account rifiutata: verifica chiave e utente da impersonare';
+    case 'unauthorized_client':
+      return authMode === 'oauth_user'
+        ? 'Client OAuth non autorizzato a questo accesso: verifica il client nella console Google Cloud'
+        : 'Delega a livello di dominio mancante: autorizza il service account nella console Admin';
+    default:
+      return 'Test Google non riuscito: verifica dominio e credenziali';
+  }
+}
 
 /**
  * The pending OAuth flow of each user: the `state` its authorization URL carries. A code is
@@ -277,7 +306,9 @@ export const googleRouter = router({
    *
    * @auth {config:read}
    * @input {none}
-   * @output {{ ok: true } | { ok: false, error: string }}
+   * @output {{ ok: true }}
+   * @throws {TRPCError} PRECONDITION_FAILED with a fixed text for a missing setting, an unreadable
+   *   token, or a connection Google refuses.
    */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
@@ -286,7 +317,7 @@ export const googleRouter = router({
 
       const authMode = await read('integrations.google.authMode');
       const domain = await read('integrations.google.domain');
-      if (!domain) return { ok: false as const, error: 'Workspace domain non configurato' };
+      if (!domain) throw missingSetting('Workspace domain non configurato');
 
       let config: CalendarConfig | null;
       if (authMode === 'oauth_user') {
@@ -297,10 +328,10 @@ export const googleRouter = router({
         ]);
         // No field to enter it again in: connecting the account is what writes it.
         if (refreshToken.unreadable) {
-          return { ok: false as const, error: "Il token salvato non è leggibile: connetti di nuovo l'account." };
+          throw missingSetting("Il token salvato non è leggibile: connetti di nuovo l'account.");
         }
         config = toGoogleCalendarConfig(domain, { authMode: 'oauth_user', clientId, clientSecret, refreshToken: refreshToken.value });
-        if (!config) return { ok: false as const, error: 'Account OAuth non connesso' };
+        if (!config) throw missingSetting('Account OAuth non connesso');
       } else {
         const [serviceEmail, serviceKey, impersonateEmail] = await Promise.all([
           read('integrations.google.serviceEmail'),
@@ -308,14 +339,17 @@ export const googleRouter = router({
           read('integrations.google.impersonateEmail'),
         ]);
         config = toGoogleCalendarConfig(domain, { authMode: 'service_account', serviceEmail, serviceKey, impersonateEmail });
-        if (!config) return { ok: false as const, error: 'Credenziali service account non configurate' };
+        if (!config) throw missingSetting('Credenziali service account non configurate');
       }
 
-      const result = await testGoogleConnection(config);
-      if (!result.ok) {
-        ctx.logger.warn({ error: result.error }, 'Google Workspace test connection failed');
+      try {
+        await testGoogleConnection(config);
+      } catch (err: unknown) {
+        // The client sees a fixed text; Google's reply goes to this log only (#255).
+        ctx.logger.warn({ err }, 'Google Workspace test connection failed');
+        throw externalCheckFailed(googleTestFailureMessage(err, authMode));
       }
-      return result;
+      return { ok: true as const };
     }),
 
   /**

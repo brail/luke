@@ -19,7 +19,7 @@ import {
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
-import { isUniqueViolation, toErrorMessage } from '../lib/error';
+import { isUniqueViolation } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -29,7 +29,6 @@ import {
   protectedProcedure,
   publicProcedure,
   selfProcedure,
-  type Context,
 } from '../lib/trpc';
 import {
   authenticateUser,
@@ -38,27 +37,6 @@ import {
   confirmEmailVerification,
   verifyCredentials,
 } from '../services/auth.service';
-
-/**
- * Sends a verification link through the shared helper. Its refusals — an unknown or inactive user
- * (NOT_FOUND), a synthetic LDAP address (BAD_REQUEST) — reach the caller as they are, not as a
- * masked 500; a failed send becomes an INTERNAL_SERVER_ERROR carrying its cause.
- */
-async function sendVerificationLink(
-  ctx: Context,
-  options: Parameters<typeof sendVerificationEmail>[1]
-) {
-  try {
-    return await sendVerificationEmail(ctx.prisma, options, ctx);
-  } catch (error) {
-    if (error instanceof TRPCError) throw error;
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: toErrorMessage(error),
-      cause: error,
-    });
-  }
-}
 
 /**
  * Login schema
@@ -211,14 +189,14 @@ export const authRouter = router({
    * @input {none}
    * @output {Result from sendVerificationEmail().}
    * @throws {TRPCError} BAD_REQUEST for an LDAP account still on its synthetic address, which
-   *   reaches nobody; INTERNAL_SERVER_ERROR if the email cannot be sent.
+   *   reaches nobody; PRECONDITION_FAILED with a fixed text if the email cannot be sent.
    */
   requestEmailVerification: selfProcedure
     // Per user: every caller is signed in, and a shared office IP must not throttle colleagues.
     .use(withRateLimit('userMutations'))
     .mutation(async ({ ctx }) => {
       const userId = ctx.session.user.id;
-      return sendVerificationLink(ctx, { userId, reason: 'user_requested', actorId: userId });
+      return sendVerificationEmail(ctx.prisma, { userId, reason: 'user_requested', actorId: userId }, ctx);
     }),
 
   /**
@@ -231,7 +209,7 @@ export const authRouter = router({
    * @input {LoginSchema} — username and password.
    * @output {Result from sendVerificationEmail().}
    * @throws {TRPCError} UNAUTHORIZED for wrong credentials; PRECONDITION_FAILED for an address
-   *   already verified; whatever `verifyCredentials` and `sendVerificationLink` throw.
+   *   already verified; whatever `verifyCredentials` and `sendVerificationEmail` throw.
    */
   resendVerification: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -242,7 +220,7 @@ export const authRouter = router({
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Email già verificata: puoi accedere.' });
       }
       // Pre-session: no actor; the helper's audit row carries the account as its target.
-      return sendVerificationLink(ctx, { userId: user.id, reason: 'user_requested' });
+      return sendVerificationEmail(ctx.prisma, { userId: user.id, reason: 'user_requested' }, ctx);
     }),
 
   /**
@@ -370,17 +348,17 @@ export const authRouter = router({
    * @input {RequestEmailVerificationAdminSchema} — userId of the target user.
    * @output {Result from sendVerificationEmail().}
    * @throws {TRPCError} NOT_FOUND for an unknown or inactive user, BAD_REQUEST for a synthetic
-   *   LDAP address, INTERNAL_SERVER_ERROR if the email cannot be sent.
+   *   LDAP address, PRECONDITION_FAILED with a fixed text if the email cannot be sent.
    */
   requestEmailVerificationAdmin: protectedProcedure
     .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .input(RequestEmailVerificationAdminSchema)
     .mutation(async ({ input, ctx }) => {
-      return sendVerificationLink(ctx, {
+      return sendVerificationEmail(ctx.prisma, {
         userId: input.userId,
         reason: 'admin_initiated',
         actorId: ctx.session.user.id,
-      });
+      }, ctx);
     }),
 });

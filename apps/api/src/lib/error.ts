@@ -137,7 +137,8 @@ export async function refuseOnInactiveFunction<T>(message: string, write: () => 
 }
 
 /**
- * What a settings test, or a live read, answers when the external system refuses it (#193):
+ * What a settings test, a live read or a send (the verification email, #255) answers when the
+ * external system refuses it (#193):
  * PRECONDITION_FAILED, as for a stored configuration that does not let the operation succeed, with a
  * fixed text the admin can act on. A 4xx keeps its message in production, where a 5xx is masked. The
  * system's own error stays out of it and the caller logs it; a database or internal failure never

@@ -1059,6 +1059,7 @@ function clonedDates(event: EventDates, name: string, days: number, businessZone
     return dates;
   } catch (error) {
     const refusal = error instanceof RangeError ? outOfRange() : error;
+    // nosemgrep: luke-provider-text-to-client -- the app's own date refusal, prefixed with the event's name
     if (refusal instanceof TRPCError) throw new TRPCError({ code: refusal.code, message: `${name}: ${refusal.message}` });
     throw refusal;
   }

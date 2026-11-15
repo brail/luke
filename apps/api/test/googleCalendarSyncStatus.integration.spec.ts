@@ -314,7 +314,7 @@ describe('the connection test and the sync use the same Google identity', () => 
   ])('%s', async (_label, expected, configure) => {
     await configure();
     const built = vi.spyOn(calendar, 'createGoogleCalendarClient');
-    const tested = vi.spyOn(calendar, 'testGoogleConnection').mockResolvedValue({ ok: true });
+    const tested = vi.spyOn(calendar, 'testGoogleConnection').mockResolvedValue(undefined);
 
     await getConfiguredGoogleClient(prisma);
     await (await createCallerAs('admin')).integrations.google.testConnection();

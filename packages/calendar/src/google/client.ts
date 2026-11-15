@@ -1,7 +1,5 @@
 import { google } from 'googleapis';
 
-import { toErrorMessage } from '@luke/core';
-
 import type { calendar_v3 } from 'googleapis';
 
 /**
@@ -142,14 +140,9 @@ export async function exchangeOAuthCode(
  * Validates a Google Calendar configuration by attempting to list calendars.
  * Uses a temporary client so it does not affect the active singleton.
  *
- * @returns `{ ok: true }` on success, or `{ ok: false, error: string }` on failure
+ * @throws Google's or the network's error, unchanged: the caller decides what a user may read of it.
  */
-export async function testGoogleConnection(config: CalendarConfig): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const cal = buildCalendarClientFromConfig(config);
-    await cal.calendarList.list({ maxResults: 1 });
-    return { ok: true };
-  } catch (err: unknown) {
-    return { ok: false, error: toErrorMessage(err) };
-  }
+export async function testGoogleConnection(config: CalendarConfig): Promise<void> {
+  const cal = buildCalendarClientFromConfig(config);
+  await cal.calendarList.list({ maxResults: 1 });
 }

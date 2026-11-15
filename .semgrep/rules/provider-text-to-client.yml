@@ -1,0 +1,21 @@
+rules:
+  - id: luke-provider-text-to-client
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      An error's own text put in a TRPCError message, or in an `error` field returned to the
+      client. An external system's reply (S3, Google, SMTP, LDAP, NAV) must never reach the
+      answer: a 4xx keeps its message in production too, and a 5xx shows it outside production.
+      Answer a fixed, actionable text — `externalCheckFailed` in apps/api/src/lib/error.ts for a
+      refused settings test or send — and log the error whole (`logger.warn({ err }, '…')`, #255).
+      Text the app wrote itself (its own validation, a TRPCError it rethrows) is the exception:
+      say so in a `// nosemgrep: luke-provider-text-to-client` with the reason.
+    pattern-either:
+      - pattern: 'new TRPCError({ ..., message: <... toErrorMessage($X) ...>, ... })'
+      - pattern: 'new TRPCError({ ..., message: <... $E.message ...>, ... })'
+      - pattern: 'return { ..., error: <... toErrorMessage($X) ...>, ... }'
+      - pattern: 'return { ..., error: <... $E.message ...>, ... }'
+    paths:
+      include:
+        - /apps/api/src/**/*.ts
+        - /packages/calendar/src/**/*.ts

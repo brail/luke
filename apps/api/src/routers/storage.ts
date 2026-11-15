@@ -15,13 +15,13 @@ import { z } from 'zod';
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, saveConfigs, unreadableConfigError } from '../lib/configManager';
-import { toErrorMessage } from '../lib/error';
+import { getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, saveConfigs } from '../lib/configManager';
+import { externalCheckFailed } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
+import { resetStorageProvider, getStorageProvider, connectS3Provider, readS3Config } from '../storage';
 import { generateStorageKey } from '../storage/keys';
 import { signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
@@ -40,6 +40,44 @@ const ConfirmUploadSchema = z.object({
   originalName: z.string().min(1).max(255),
   checksumSha256: z.string().optional(),
 });
+
+/** Network errors that mean the S3 endpoint was never reached. */
+const S3_UNREACHABLE_CODES: ReadonlySet<unknown> = new Set([
+  'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
+]);
+
+/** Node's codes for a certificate the client refused. */
+const TLS_CERT_CODES: ReadonlySet<unknown> = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CERT_HAS_EXPIRED',
+]);
+
+/** A TLS failure: SSL on a plain port, or the reverse (`EPROTO`, `ERR_SSL_*`), or a refused certificate. */
+function isTlsFailure(code: unknown): boolean {
+  if (typeof code !== 'string') return false;
+  return code === 'EPROTO' || code.startsWith('ERR_SSL_') || code.startsWith('ERR_TLS_') || TLS_CERT_CODES.has(code);
+}
+
+/**
+ * The fixed text of a failed S3 connection test (#255), from the network error's `code` or the S3
+ * error's `name` (AWS SDK v3). A missing bucket is created by `init`, so it reads as a refused
+ * create, which `AccessDenied` covers.
+ */
+function s3TestFailureMessage(err: unknown): string {
+  // Only the two fields the AWS SDK and Node set on their errors are read.
+  const { name, code } = (err ?? {}) as { name?: unknown; code?: unknown };
+  if (S3_UNREACHABLE_CODES.has(code) || name === 'TimeoutError') {
+    return 'Server S3 non raggiungibile: verifica endpoint e porta';
+  }
+  if (isTlsFailure(code)) return 'Connessione TLS al server S3 non riuscita: verifica SSL, porta e certificato';
+  if (name === 'InvalidAccessKeyId' || name === 'SignatureDoesNotMatch') {
+    return 'Accesso S3 rifiutato: verifica access key e secret key';
+  }
+  if (name === 'AccessDenied' || name === 'Forbidden') {
+    return 'Accesso S3 negato: verifica i permessi delle credenziali sui bucket';
+  }
+  return 'Test S3 fallito: verifica endpoint, credenziali e bucket';
+}
 
 /**
  * The permission each presigned bucket needs: that of the procedure which links its files. Keyed on
@@ -193,27 +231,18 @@ export const storageRouter = router({
         });
       }
 
+      // The settings come from the database: a failure there is a server error, not S3's.
+      const config = await readS3Config(ctx.prisma).catch(rethrowUnreadable);
+
+      // `init` already reaches S3 (it checks every bucket); listing one proves the connection.
       let provider;
       try {
-        provider = await loadS3Provider(ctx.prisma);
-      } catch (err: unknown) {
-        if (err instanceof ConfigDecryptionError) throw unreadableConfigError(err);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Errore caricamento config storage S3: ${toErrorMessage(err)}`,
-          cause: err,
-        });
-      }
-
-      // Verify connectivity by listing a bucket
-      try {
+        provider = await connectS3Provider(config);
         await provider.list({ bucket: 'uploads', limit: 1 });
       } catch (err: unknown) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Connessione allo storage S3 fallita: ${toErrorMessage(err)}`,
-          cause: err,
-        });
+        // The client sees a fixed text; the provider's reply goes to this log only (#255).
+        ctx.logger.warn({ err }, 'S3 test failed');
+        throw externalCheckFailed(s3TestFailureMessage(err));
       }
 
       // Generate a test presigned URL to show the base URL the browser will receive
@@ -229,13 +258,12 @@ export const storageRouter = router({
       // (see S3Provider constructor) — which is normally a Docker-internal hostname
       // the browser can't resolve. Surface that as a known fact, not a guess the
       // frontend has to make by pattern-matching the hostname string.
-      const publicBaseUrl = await getConfig(ctx.prisma, 'storage.s3.publicBaseUrl');
 
       return {
         success: true,
         message: 'Connessione storage S3 riuscita',
         presignedUrlBase,
-        publicBaseUrlConfigured: !!publicBaseUrl,
+        publicBaseUrlConfigured: !!config.publicBaseUrl,
       };
     }),
 

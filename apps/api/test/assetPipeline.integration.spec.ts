@@ -207,7 +207,7 @@ describe('asset pipeline (real storage, no mocks)', () => {
 
       await setStorageType('s3'); // no S3 credentials seeded
       await expect(readFileBuffer(ctx.prisma, 'collection-row-pictures', 'gone.png'))
-        .rejects.toThrow(/S3 credentials not configured/);
+        .rejects.toThrow(/Credenziali S3 non configurate/);
     });
 
     it.each([
