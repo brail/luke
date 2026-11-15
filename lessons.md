@@ -1025,6 +1025,18 @@ only at the call site: during S0t (#255) a review said four backup/restore sites
 answered a 412 with provider text; the grep found the sites, but `preflightError`
 answers 412 only for `RestorePreconditionError`, whose text is the app's own.
 
+### A column of the unit table means one thing (2026-11-15)
+
+**What happened.** luke-dev set the `Private` column of the local unit table to
+`yes` for units that needed a Codex round. The board generator hides a private
+unit's issues, title and SHA by design, so four public 3.1.0 issues showed "no
+unit" on luke-lead's board until the owner noticed.
+
+**Rule.** `Private` marks a confidential unit only: one whose detail must stay
+out of public text until it is in production. A Codex round, or any other
+property, is written in the unit's plan entry, never in a column that already
+means something else.
+
 ---
 
 ## React & UI
