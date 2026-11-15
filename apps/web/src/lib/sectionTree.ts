@@ -51,6 +51,15 @@ export function isSectionLocked(section: Section, disabledSections: readonly Sec
   return switchableLeaves(section, disabledSections).length === 0;
 }
 
+/** Whether switching the section on would turn on anything: a switchable leaf `canEnable` accepts. */
+export function canSwitchOn(
+  section: Section,
+  disabledSections: readonly Section[],
+  canEnable: (leaf: Section) => boolean
+): boolean {
+  return switchableLeaves(section, disabledSections).some(canEnable);
+}
+
 /** Whether a leaf the switch acts on carries an explicit override. */
 export function isSectionOverridden(
   section: Section,
@@ -63,17 +72,20 @@ export function isSectionOverridden(
 /**
  * Switches a section on or off: the section itself, or every switchable leaf under a parent. An
  * override equal to the role default is dropped rather than stored, so the user keeps inheriting
- * future default changes.
+ * future default changes. Switching on skips the leaves `canEnable` refuses — the role lacks their
+ * permission, and the server refuses turning them on (ADR-043); switching off reaches every leaf.
  */
 export function toggleSection(
   overrides: SectionOverrides,
   section: Section,
   checked: boolean,
   roleDefault: (section: Section) => boolean,
-  disabledSections: readonly Section[]
+  disabledSections: readonly Section[],
+  canEnable: (leaf: Section) => boolean
 ): SectionOverrides {
   const next = { ...overrides };
   for (const leaf of switchableLeaves(section, disabledSections)) {
+    if (checked && !canEnable(leaf)) continue;
     if (checked === roleDefault(leaf)) {
       delete next[leaf];
     } else {

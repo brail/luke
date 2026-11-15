@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
+import { TooltipProvider } from '../../../../../../components/ui/tooltip';
 import { UserAccessDialog } from '../UserAccessDialog';
 
 import { defaultsWith, deferred, rows, setCalls } from './sectionAccessTestKit';
@@ -55,7 +56,12 @@ const viewer = {
   isOnline: false,
 };
 
-const dialog = () => <UserAccessDialog user={viewer} open onOpenChange={() => undefined} />;
+// The app mounts TooltipProvider once (components/Providers.tsx); the section switches' PermissionTooltip needs it.
+const dialog = (onOpenChange: (open: boolean) => void = () => undefined) => (
+  <TooltipProvider delayDuration={0}>
+    <UserAccessDialog user={viewer} open onOpenChange={onOpenChange} />
+  </TooltipProvider>
+);
 const sw = (screen: Awaited<ReturnType<typeof render>>, label: string) =>
   screen.getByRole('switch', { name: label, exact: true });
 
@@ -161,7 +167,7 @@ test('a failed reconciliation read disables saving', async () => {
 
 test('nothing is editable, and Escape does not close, while a save is in flight', async () => {
   const onOpenChange = vi.fn();
-  const screen = await render(<UserAccessDialog user={viewer} open onOpenChange={onOpenChange} />);
+  const screen = await render(dialog(onOpenChange));
   await sw(screen, '↳ Stagioni').click();
 
   const inFlight = deferred<null>();
@@ -182,4 +188,39 @@ test('reopening with a cached answer but a failing fresh read shows no switch', 
 
   await expect.element(screen.getByText(/chiudi e riapri/)).toBeInTheDocument();
   expect(screen.getByRole('switch').elements()).toHaveLength(0);
+});
+
+// ADR-043 (#262): a leaf turns on only for a role holding its permission. The viewer here holds
+// `brands:read`/`seasons:read`, not `config:read` (the LDAP settings leaf).
+test('a leaf the role cannot read is off and unavailable, with the permission named', async () => {
+  const screen = await render(dialog());
+
+  await expect.element(sw(screen, '↳ Auth LDAP')).toBeDisabled();
+  await userEvent.hover(sw(screen, '↳ Auth LDAP').element().parentElement!);
+  await expect
+    .element(screen.getByText('Richiede il permesso config:read, che il ruolo viewer non ha').first())
+    .toBeInTheDocument();
+});
+
+test('a stored override the role cannot read is shown as such and can be turned off', async () => {
+  h.byUserQuery.data = rows({ 'settings.ldap': true });
+  h.fetchByUser.mockResolvedValue(rows({ 'settings.ldap': true }));
+  const screen = await render(dialog());
+
+  await expect.element(screen.getByText('(permesso mancante: config:read)')).toBeInTheDocument();
+  await expect.element(sw(screen, '↳ Auth LDAP')).toBeEnabled();
+  await sw(screen, '↳ Auth LDAP').click();
+  await screen.getByRole('button', { name: 'Salva' }).click();
+
+  await expect.poll(() => setCalls(h.setMutate)).toEqual([['settings.ldap', null]]);
+});
+
+test('a refused save says why, with the server message', async () => {
+  const { toast } = await import('sonner');
+  h.setMutate.mockRejectedValueOnce(new Error('La sezione admin.seasons richiede il permesso seasons:read, che il ruolo viewer non ha.'));
+  const screen = await render(dialog());
+  await sw(screen, '↳ Stagioni').click();
+  await screen.getByRole('button', { name: 'Salva' }).click();
+
+  await expect.poll(() => vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toContain('seasons:read');
 });

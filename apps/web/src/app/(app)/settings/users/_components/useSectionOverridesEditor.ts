@@ -12,6 +12,7 @@ import {
   type SectionOverrides,
 } from '../../../../../lib/sectionTree';
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 /**
  * The section-override editor both access dialogs use (ADR-027). It holds the overrides the server
@@ -100,8 +101,11 @@ export function useSectionOverridesEditor({ userId, open }: { userId: string; op
     resetToRoleDefaults: () => {
       if (server && defaults) setEdits(resetEditsToRoleDefaults(server, edits, defaults.disabledSections));
     },
-    /** Sends the edits, then reconciles. Resolves with the number of calls that failed. */
-    save: async (): Promise<number> => {
+    /**
+     * Sends the edits, then reconciles. Resolves with the message of each call that failed (empty when
+     * all went through), so the dialog can say why — e.g. the permission a section needs (ADR-043).
+     */
+    save: async (): Promise<string[]> => {
       const results = await Promise.allSettled(
         toSend.map(([section, enabled]) => setOverride.mutateAsync({ userId, section, enabled }))
       );
@@ -110,7 +114,8 @@ export function useSectionOverridesEditor({ userId, open }: { userId: string; op
         if (results[i]?.status === 'fulfilled') delete pending[section];
       });
       await reconcile(pending);
-      return results.filter(result => result.status === 'rejected').length;
+      // Deduplicated: a parent sends one call per leaf, and a shared failure (rate limit) repeats.
+      return [...new Set(results.flatMap(result => (result.status === 'rejected' ? [getTrpcErrorMessage(result.reason)] : [])))];
     },
     /** Re-reads the server after a failure elsewhere in the dialog's attempt. */
     reconcile: () => reconcile(edits),

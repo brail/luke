@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { childSectionsOf, sectionAccessDefaultsSchema, sectionEnum } from '@luke/core';
+import { childSectionsOf, sectionAccessDefaultsSchema, sectionEnum, sectionPermissionHeld } from '@luke/core';
 import type { Section } from '@luke/core';
 import {
   getRbacConfig,
@@ -28,6 +28,9 @@ import {
   countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
   computeEffectiveForUser,
+  lockUserRole,
+  missingSectionPermissionMessage,
+  refusedRoleDefaults,
 } from '../services/sectionAccess.service';
 
 const sectionSchema = sectionEnum;
@@ -119,6 +122,16 @@ export const sectionAccessRouter = router({
     .input(setRoleDefaultsInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
+      // A default may turn a leaf on only for a role holding its permission (ADR-043); `disabled` and
+      // `auto` always pass. Role permissions are static, so the check needs no lock.
+      const refused = refusedRoleDefaults(input.sectionAccessDefaults);
+      if (refused.length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: refused.map(({ role, section }) => missingSectionPermissionMessage(role, section)).join(' '),
+        });
+      }
+
       await ctx.prisma.$transaction(async tx => {
         // Safety check: prevent a config that removes user administration
         // from ALL admins — unlike `set` (which touches one user at a
@@ -184,6 +197,17 @@ export const sectionAccessRouter = router({
       }
 
       const result = await ctx.prisma.$transaction(async tx => {
+        // Turning a leaf on needs the permission it maps to (ADR-043); turning it off or removing the
+        // override never does. The role is read under a row lock held until commit, so a concurrent
+        // role change cannot land between this check and the write.
+        if (enabled === true) {
+          const role = await lockUserRole(tx, userId);
+          if (role === null) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+          if (!sectionPermissionHeld(role, section)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: missingSectionPermissionMessage(role, section) });
+          }
+        }
+
         // Safety check: prevent removing user administration from the last
         // admin — only if the target is an admin: revoking an override for a
         // viewer/editor doesn't touch the invariant at all. Lock acquired

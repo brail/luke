@@ -32,18 +32,26 @@ describe('sectionTree — switches', () => {
   });
 
   it('turns every child on when a parent is switched on', () => {
-    const next = toggleSection({}, 'admin', true, nothing, []);
+    const next = toggleSection({}, 'admin', true, nothing, [], everything);
     for (const child of childSectionsOf('admin')) expect(next[child]).toBe(true);
     expect('admin' in next).toBe(false);
   });
 
+  it('switching a parent on skips the leaves the role cannot read; switching off reaches them', () => {
+    const held = (leaf: Section) => leaf !== 'admin.brands';
+    const on = toggleSection({}, 'admin', true, nothing, [], held);
+    expect('admin.brands' in on).toBe(false);
+    expect(on['admin.seasons']).toBe(true);
+    expect(toggleSection({ 'admin.brands': true }, 'admin', false, nothing, [], held)['admin.brands']).toBeUndefined();
+  });
+
   it('turns every child off when a parent is switched off', () => {
-    const next = toggleSection({}, 'admin', false, everything, []);
+    const next = toggleSection({}, 'admin', false, everything, [], everything);
     for (const child of childSectionsOf('admin')) expect(next[child]).toBe(false);
   });
 
   it('drops an override that equals the role default instead of storing it', () => {
-    expect(toggleSection({}, 'admin.brands', false, nothing, [])).toEqual({});
+    expect(toggleSection({}, 'admin.brands', false, nothing, [], everything)).toEqual({});
   });
 
   it('locks a section only when the kill switch covers every leaf under it', () => {
@@ -55,9 +63,9 @@ describe('sectionTree — switches', () => {
   it('leaves the override of a killed child alone when its parent is switched', () => {
     const killed: Section[] = ['admin.brands'];
     // Switching the parent on must not plant an override the dialog shows as off and locked.
-    expect(toggleSection({}, 'admin', true, nothing, killed)['admin.brands']).toBeUndefined();
+    expect(toggleSection({}, 'admin', true, nothing, killed, everything)['admin.brands']).toBeUndefined();
     // Nor overwrite one that is already stored.
-    expect(toggleSection({ 'admin.brands': false }, 'admin', true, nothing, killed)['admin.brands']).toBe(false);
+    expect(toggleSection({ 'admin.brands': false }, 'admin', true, nothing, killed, everything)['admin.brands']).toBe(false);
   });
 
   it('leaves the override of a killed child alone when its parent is reset', () => {
@@ -135,7 +143,7 @@ describe('sectionTree — any depth', () => {
     const deep = await import('../sectionTree');
 
     expect(deep.sectionRows()).toEqual(['dashboard', 'admin', 'admin.brands', 'admin.brands.logos']);
-    expect(deep.toggleSection({}, 'admin', true, () => false, [])).toEqual({ 'admin.brands.logos': true });
+    expect(deep.toggleSection({}, 'admin', true, () => false, [], () => true)).toEqual({ 'admin.brands.logos': true });
 
     vi.doUnmock('@luke/core');
     vi.resetModules();

@@ -64,6 +64,7 @@ import { registerHealthRoutes } from './routes/health';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { registerSseRoute } from './routes/sse';
+import { warnSectionAccessViolations } from './services/sectionAccess.service';
 import { getStorageProvider, resolveLocalBasePath } from './storage';
 
 /**
@@ -537,6 +538,10 @@ const start = async () => {
     // The initial access snapshot (#222), once: awaited before the server listens; a failure is
     // logged and retried at the next start.
     fastify.addHook('onReady', () => runInitialAccessSnapshot(prisma, fastify.log));
+
+    // Stored section-access data that turns on a section its role cannot read (#262, ADR-043): listed
+    // at every start, never changed.
+    fastify.addHook('onReady', () => warnSectionAccessViolations(prisma, fastify.log));
 
     // Configure graceful shutdown
     setupGracefulShutdown({

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { TooltipProvider } from '../../../../../../components/ui/tooltip';
 import { ApproveUserDialog } from '../ApproveUserDialog';
 
 import { defaultsWith, deferred, rows, setCalls } from './sectionAccessTestKit';
@@ -76,7 +77,12 @@ async function chooseRole(screen: Screen, label: 'Viewer' | 'Editor' | 'Admin') 
 }
 
 function dialog(onApproved = vi.fn()) {
-  return <ApproveUserDialog user={pendingViewer} open onOpenChange={() => undefined} onApproved={onApproved} />;
+  // The app mounts TooltipProvider once (components/Providers.tsx); the section switches' PermissionTooltip needs it.
+  return (
+    <TooltipProvider delayDuration={0}>
+      <ApproveUserDialog user={pendingViewer} open onOpenChange={() => undefined} onApproved={onApproved} />
+    </TooltipProvider>
+  );
 }
 
 beforeEach(() => {

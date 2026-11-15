@@ -3,14 +3,18 @@
 import {
   childSectionsOf,
   effectiveSectionAccess,
+  SECTION_TO_PERMISSION,
+  sectionPermissionHeld,
   type Section,
   type SectionDefault,
 } from '@luke/core';
 
+import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Button } from '../../../../../components/ui/button';
 import { Label } from '../../../../../components/ui/label';
 import { Switch } from '../../../../../components/ui/switch';
 import {
+  canSwitchOn,
   isSectionLocked,
   isSectionOverridden,
   resetSection,
@@ -71,6 +75,8 @@ export function SectionAccessList({
       disabledSections,
     });
   const roleDefault = (section: Section) => resolve(section, false);
+  // A leaf turns on only for a role holding its permission (ADR-043); the server refuses the rest.
+  const held = (leaf: Section) => sectionPermissionHeld(role, leaf);
 
   return (
     <div className="space-y-2">
@@ -78,13 +84,24 @@ export function SectionAccessList({
         const isParent = childSectionsOf(section).length > 0;
         const locked = isSectionLocked(section, disabledSections);
         const overridden = isSectionOverridden(section, overrides, disabledSections);
+        const checked = resolve(section, true);
+        // Off, and nothing under it the role may turn on: the switch could only be refused.
+        const unavailable = !locked && !checked && !canSwitchOn(section, disabledSections, held);
+        // On without the permission: a stored override or role default from before the rule, or a
+        // role changed since. Shown as such and left switchable, so it can be turned off.
+        const missing = !locked && !isParent && checked && !held(section);
         const status = locked
           ? '(disabilitata globalmente)'
-          : isParent
-            ? '(segue le sottosezioni)'
-            : overridden
-              ? '(override)'
-              : `(default: ${roleDefault(section) ? 'sì' : 'no'})`;
+          : missing
+            ? `(permesso mancante: ${SECTION_TO_PERMISSION[section]})`
+            : isParent
+              ? '(segue le sottosezioni)'
+              : overridden
+                ? '(override)'
+                : `(default: ${roleDefault(section) ? 'sì' : 'no'})`;
+        const unavailableReason = isParent
+          ? `Il ruolo ${role} non ha i permessi delle sue sottosezioni`
+          : `Richiede il permesso ${SECTION_TO_PERMISSION[section]}, che il ruolo ${role} non ha`;
 
         return (
           <div key={section} className="flex items-center justify-between py-1">
@@ -95,14 +112,17 @@ export function SectionAccessList({
               <span className="text-xs text-muted-foreground">{status}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Switch
-                id={`section-${section}`}
-                checked={resolve(section, true)}
-                disabled={locked || disabled}
-                onCheckedChange={checked =>
-                  onChange(toggleSection(overrides, section, checked, roleDefault, disabledSections))
-                }
-              />
+              <PermissionTooltip hasPermission={!unavailable} tooltip={unavailableReason}>
+                <Switch
+                  id={`section-${section}`}
+                  className="disabled:pointer-events-none"
+                  checked={checked}
+                  disabled={locked || disabled || unavailable}
+                  onCheckedChange={next =>
+                    onChange(toggleSection(overrides, section, next, roleDefault, disabledSections, held))
+                  }
+                />
+              </PermissionTooltip>
               {overridden && (
                 <Button
                   variant="ghost"

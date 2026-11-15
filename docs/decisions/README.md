@@ -45,6 +45,7 @@
 | [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
 | [041](041-calendar-visibility-function-and-brand-from-one-team.md) | Calendar Visibility: Function and Brand from One Team | Accepted |
 | [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Accepted |
+| [043](043-section-access-a-leaf-turns-on-only-with-its-permission.md) | Section Access: a Leaf Turns On Only With Its Permission | Accepted |
 
 _Last updated: 2026-10-31_
 <!-- luke-docs:end:adr-index -->

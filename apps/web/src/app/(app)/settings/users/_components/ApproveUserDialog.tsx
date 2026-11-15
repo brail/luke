@@ -138,7 +138,7 @@ export function ApproveUserDialog({
           await updateUserMutation.mutateAsync({ id: user.id, role: roleEdit });
         }
         const failures = await editor.save();
-        if (failures > 0) throw new Error(`${failures} sezione/i non aggiornata/e`);
+        if (failures.length > 0) throw new Error(failures.join(' '));
       }
 
       await approveMutation.mutateAsync({ id: user.id, teamId: selectedTeamId });

@@ -3,10 +3,16 @@
  * Handles CRUD and safety checks for UserSectionAccess records.
  */
 
-import { effectiveSectionAccess, sectionEnum } from '@luke/core';
+import {
+  childSectionsOf,
+  effectiveSectionAccess,
+  SECTION_TO_PERMISSION,
+  sectionEnum,
+  sectionPermissionHeld,
+} from '@luke/core';
 import type { Section } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
-import type { Prisma, PrismaClient } from '@luke/db';
+import { Prisma, type PrismaClient } from '@luke/db';
 
 import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
 
@@ -243,4 +249,82 @@ export async function countRecoveryCapableAdminsAfterChange(
   });
 
   return countRecoveryCapable(after, sectionAccessDefaults, disabledSections);
+}
+
+/**
+ * The role of `userId`, read under a row lock held until the transaction commits, or `null` for no
+ * such user. A write that turns a section on checks this role (ADR-043); `FOR SHARE` keeps it the
+ * user's until commit, so a concurrent role change waits instead of slipping in after the check.
+ * Compatible with the key-share lock the override upsert's foreign-key check takes.
+ */
+export async function lockUserRole(tx: Prisma.TransactionClient, userId: string): Promise<string | null> {
+  // FOR SHARE, which the ORM cannot express (CLAUDE.md, "Raw SQL": a row lock inside an interactive
+  // transaction, to keep a checked row unchanged until commit).
+  const [row] = await tx.$queryRaw<{ role: string }[]>(Prisma.sql`
+    SELECT role FROM users WHERE id = ${userId} FOR SHARE
+  `);
+  return row?.role ?? null;
+}
+
+/** The refusal text for turning `section` on for `role`, which lacks its mapped permission. */
+export function missingSectionPermissionMessage(role: string, section: Section): string {
+  return `La sezione ${section} richiede il permesso ${SECTION_TO_PERMISSION[section]}, che il ruolo ${role} non ha.`;
+}
+
+/**
+ * The `(role, leaf)` pairs a role-defaults map sets to `enabled` without the role holding the leaf's
+ * permission (ADR-043). A parent is derived from its children (ADR-027), so only leaves count;
+ * `disabled` and `auto` are always allowed.
+ */
+export function refusedRoleDefaults(defaults: SectionAccessDefaults): { role: string; section: Section }[] {
+  return Object.entries(defaults).flatMap(([role, sections]) =>
+    sectionEnum.options
+      .filter(section => sections?.[section] === 'enabled' && childSectionsOf(section).length === 0)
+      .filter(section => !sectionPermissionHeld(role, section))
+      .map(section => ({ role, section }))
+  );
+}
+
+/** A stored override or role default that turns on a section its role cannot read. */
+type SectionAccessViolation =
+  | { kind: 'user'; userId: string; role: string; section: Section }
+  | { kind: 'role'; role: string; section: Section };
+
+/**
+ * Every stored violation of ADR-043: per-user overrides turned on, and stored role defaults set to
+ * `enabled`, on a leaf the role lacks the permission for. Reported, never changed: such data
+ * predates the rule, or a later role change, a restore or a script brought it in.
+ */
+export async function findSectionAccessViolations(prisma: PrismaClient): Promise<SectionAccessViolation[]> {
+  const [overrides, { sectionAccessDefaults }] = await Promise.all([
+    prisma.userSectionAccess.findMany({
+      where: { enabled: true },
+      select: { userId: true, section: true, user: { select: { role: true } } },
+    }),
+    getRbacConfig(prisma, { bypassCache: true }),
+  ]);
+  const userViolations = overrides.flatMap(({ userId, section, user }) => {
+    const parsed = sectionEnum.safeParse(section);
+    if (!parsed.success || sectionPermissionHeld(user.role, parsed.data)) return [];
+    return [{ kind: 'user' as const, userId, role: user.role, section: parsed.data }];
+  });
+  const roleViolations = refusedRoleDefaults(sectionAccessDefaults).map(v => ({ kind: 'role' as const, ...v }));
+  return [...userViolations, ...roleViolations];
+}
+
+/**
+ * Logs every stored violation once at start-up (#262): one warning each, with ids and section keys
+ * only. A failure is logged and does not stop the server.
+ */
+export async function warnSectionAccessViolations(prisma: PrismaClient, logger: FastifyBaseLogger): Promise<void> {
+  try {
+    for (const violation of await findSectionAccessViolations(prisma)) {
+      logger.warn(
+        { ...violation, permission: SECTION_TO_PERMISSION[violation.section] },
+        'Section access turns on a section without its permission'
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, 'Section access violation check failed');
+  }
 }

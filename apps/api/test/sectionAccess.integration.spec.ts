@@ -17,12 +17,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { SECTION_ACCESS_DEFAULTS, childSectionsOf } from '@luke/core';
 import type { Role, Section } from '@luke/core';
-import { invalidateRbacCache } from '@luke/core/server';
+import { invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
 import { appRouter } from '../src/routers/index';
+import { findSectionAccessViolations, warnSectionAccessViolations } from '../src/services/sectionAccess.service';
 
 import { createCallerWithSession, createTestContext, createTestUser, grantEditor, setupTestDb } from './helpers';
+import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -216,12 +218,12 @@ describe('sectionAccess — getEffectiveForMe applies the four levels', () => {
       await createTestUser('viewer');
 
     expect(
-      (await callerFor(viewerSession).getEffectiveForMe())['settings.users']
+      (await callerFor(viewerSession).getEffectiveForMe())['admin.brands']
     ).toBe(false);
 
     await callerFor(adminSession).set({
       userId: viewer.id,
-      section: 'settings.users',
+      section: 'admin.brands',
       enabled: true,
     });
 
@@ -229,7 +231,7 @@ describe('sectionAccess — getEffectiveForMe applies the four levels', () => {
     // written but nobody would read it — the UI would keep hiding
     // a section that was just granted.
     expect(
-      (await callerFor(viewerSession).getEffectiveForMe())['settings.users']
+      (await callerFor(viewerSession).getEffectiveForMe())['admin.brands']
     ).toBe(true);
   });
 });
@@ -582,5 +584,107 @@ describe('sectionAccess — parent sections are derived from their children (ADR
       const effective = await callerFor(session).getEffectiveForMe();
       expect(effective.sales).toBe(false);
     });
+  });
+});
+
+// ADR-043 (#262): a write turns a leaf on only for a role holding the permission the leaf maps to.
+describe('sectionAccess — a section is turned on only with its permission', () => {
+  it("set refuses turning on a leaf the user's role cannot read, naming the permission", async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: editor } = await createTestUser('editor');
+
+    await expect(
+      callerFor(adminSession).set({ userId: editor.id, section: 'maintenance.audit_log', enabled: true })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('audit:read_all') });
+    expect(await prisma.userSectionAccess.count({ where: { userId: editor.id } })).toBe(0);
+    expect(
+      await prisma.auditLog.count({ where: { action: 'SECTION_ACCESS_UPDATED', targetId: `${editor.id}:maintenance.audit_log` } })
+    ).toBe(0);
+  });
+
+  it('set allows a leaf the role reads, and turning off any leaf', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: viewer } = await createTestUser('viewer');
+    const admin = callerFor(adminSession);
+
+    await expect(admin.set({ userId: viewer.id, section: 'admin.brands', enabled: true })).resolves.toMatchObject({ enabled: true });
+    await expect(admin.set({ userId: viewer.id, section: 'settings.ldap', enabled: false })).resolves.toMatchObject({ enabled: false });
+  });
+
+  it('set answers NOT_FOUND for turning a leaf on for no such user', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+
+    await expect(
+      callerFor(adminSession).set({ userId: randomUUID(), section: 'admin.brands', enabled: true })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('setRoleDefaults refuses enabling a leaf the role cannot read and keeps the stored map', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+
+    await expect(
+      callerFor(adminSession).setRoleDefaults({ sectionAccessDefaults: { viewer: { 'settings.ldap': 'enabled' } } })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('config:read') });
+    expect(await prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } })).toBeNull();
+  });
+
+  it('a role change already writing the user row makes set wait, then refuse on the new role', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: editor } = await createTestUser('editor');
+
+    // The holder holds the user row as a demotion through `users.update` does; `sales.statistics`
+    // needs `sales:read`, which the editor holds and the viewer does not.
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [editor.id]),
+      () => callerFor(adminSession).set({ userId: editor.id, section: 'sales.statistics', enabled: true }),
+      holder => holder.query("UPDATE users SET role = 'viewer' WHERE id = $1", [editor.id]),
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'BAD_REQUEST' } });
+    expect(await prisma.userSectionAccess.count({ where: { userId: editor.id } })).toBe(0);
+  });
+
+  it('a role change waits until a set that already checked the role commits', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: editor } = await createTestUser('editor');
+
+    // The holder takes the lock `set` holds after its check; the real demotion must wait for it.
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT role FROM users WHERE id = $1 FOR SHARE', [editor.id]),
+      () => createCallerWithSession(adminSession).users.update({ id: editor.id, role: 'viewer' }),
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: editor.id } })).role).toBe('viewer');
+  });
+});
+
+describe('sectionAccess — stored violations are listed, never changed', () => {
+  it('lists a stored override and a stored role default that turn on a section without its permission', async () => {
+    const { user: viewer } = await createTestUser('viewer');
+    await prisma.userSectionAccess.createMany({
+      data: [
+        { userId: viewer.id, section: 'settings.ldap', enabled: true },
+        { userId: viewer.id, section: 'admin.brands', enabled: true },
+      ],
+    });
+    await prisma.$transaction(tx => setRbacSectionDefaultsTx(tx, { editor: { 'maintenance.audit_log': 'enabled' } }));
+    invalidateRbacCache();
+
+    const violations = await findSectionAccessViolations(prisma);
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'user', userId: viewer.id, role: 'viewer', section: 'settings.ldap' },
+        { kind: 'role', role: 'editor', section: 'maintenance.audit_log' },
+      ])
+    );
+    expect(violations).toHaveLength(2);
+
+    const warn = vi.fn();
+    await warnSectionAccessViolations(prisma, { warn, error: vi.fn() } as never); // Only what it calls of a logger.
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ permission: 'config:read' }), expect.any(String));
+    expect(await prisma.userSectionAccess.count({ where: { userId: viewer.id, enabled: true } })).toBe(2);
   });
 });

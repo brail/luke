@@ -38,8 +38,8 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
     setIsSaving(true);
     try {
       const failures = await editor.save();
-      if (failures > 0) {
-        toast.error(`${failures} sezione/i non aggiornata/e`);
+      if (failures.length > 0) {
+        toast.error(failures.join(' '));
         return;
       }
       toast.success('Accesso aggiornato');

@@ -91,5 +91,15 @@ function leafSectionAccess({
   if (defaultForSection === 'enabled') return true;
 
   // 3) RBAC role fallback — uses the new Resource:Action system
+  return sectionPermissionHeld(role, section);
+}
+
+/**
+ * Whether `role` holds the permission `section` maps to in `SECTION_TO_PERMISSION`: what an override
+ * or a role default may turn on (ADR-043), and the resolver's own RBAC fallback. One predicate for
+ * the API's writes and the access dialogs, so the two never disagree.
+ */
+export function sectionPermissionHeld(role: string, section: Section): boolean {
+  // `role` comes from the session or the stored user; an unknown one holds nothing (`hasPermission`).
   return hasPermission({ role: role as Role }, SECTION_TO_PERMISSION[section]);
 }

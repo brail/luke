@@ -8,7 +8,7 @@ import {
   sectionEnum,
   type Section,
 } from '../../schemas/rbac.js';
-import { effectiveSectionAccess } from '../effectiveAccess.js';
+import { effectiveSectionAccess, sectionPermissionHeld } from '../effectiveAccess.js';
 import { ancestorSectionsOf, childSectionsOf, parentSectionOf } from '../sectionHierarchy.js';
 
 const SECTIONS: readonly Section[] = sectionEnum.options;
@@ -170,5 +170,21 @@ describe('role grants against default section visibility (ADR-038)', () => {
     for (const leaf of LEAVES.filter(leaf => SECTION_ACCESS_DEFAULTS[role][leaf])) {
       expect(held.has(SECTION_TO_PERMISSION[leaf]), `${role} ${leaf}`).toBe(true);
     }
+  });
+});
+
+// What a write may turn on (ADR-043): the role must hold the leaf's mapped permission.
+describe('sectionPermissionHeld', () => {
+  it('admin holds every section, through *:*', () => {
+    for (const section of SECTIONS) expect(sectionPermissionHeld('admin', section), section).toBe(true);
+  });
+
+  it('a viewer holds a master-data leaf it reads, not a settings leaf', () => {
+    expect(sectionPermissionHeld('viewer', 'admin.brands')).toBe(true);
+    expect(sectionPermissionHeld('viewer', 'settings.ldap')).toBe(false);
+  });
+
+  it('an unknown role holds nothing', () => {
+    expect(sectionPermissionHeld('auditor', 'admin.brands')).toBe(false);
   });
 });
