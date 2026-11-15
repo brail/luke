@@ -33,7 +33,7 @@ import {
   stageBackupArchive,
 } from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfigs } from '../lib/configManager';
-import { toErrorCode, toErrorMessage } from '../lib/error';
+import { toErrorCode } from '../lib/error';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -70,14 +70,26 @@ function serializeRecord<T extends { sizeBytesEncrypted: bigint | null }>(
 }
 
 /**
- * A preflight refusal written for the admin stays a 412; any other failure is a server fault whose
- * text can carry paths, driver errors or pg_restore output, so it goes out as a 500 — masked in
- * production by `trpcErrorFormatter`, logged in full by the tRPC `onError`.
+ * A preflight refusal written for the admin stays a 412 with its own text, after `prefix`. Any other
+ * failure is a server fault whose text can carry paths, driver errors or pg_restore output: it goes
+ * out as a 500 with the fixed `fallback`, and its own text reaches only the tRPC `onError` log,
+ * through `cause` (#255).
  */
-function preflightError(err: unknown, message: string): TRPCError {
-  const code = err instanceof RestorePreconditionError ? 'PRECONDITION_FAILED' : 'INTERNAL_SERVER_ERROR';
-  return new TRPCError({ code, message, cause: err });
+function preflightError(err: unknown, fallback: string, prefix = ''): TRPCError {
+  if (err instanceof RestorePreconditionError) {
+    return new TRPCError({ code: 'PRECONDITION_FAILED', message: `${prefix}${err.message}`, cause: err });
+  }
+  return new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: fallback, cause: err });
 }
+
+/** The end of a fixed answer whose cause is only in the tRPC `onError` log line. */
+const DETAIL_IN_LOG = 'il dettaglio è nel log del server';
+
+/** The fixed answer of a toolchain check (pg_dump, pg_restore, the server's version) that failed for a reason other than a refusal. */
+const TOOLCHAIN_CHECK_FAILED = `Controllo di compatibilità di pg_dump e pg_restore non riuscito: ${DETAIL_IN_LOG}`;
+
+/** The prefix of a staging failure's answer, a refusal's text or the fixed fallback after it. */
+const NOT_RESTORABLE = 'Backup non ripristinabile: ';
 
 export const backupRouter = router({
   /**
@@ -282,7 +294,7 @@ export const backupRouter = router({
       try {
         await assertPgToolchainCompatible(ctx.prisma);
       } catch (err) {
-        throw preflightError(err, toErrorMessage(err));
+        throw preflightError(err, TOOLCHAIN_CHECK_FAILED);
       }
 
       const migrated = await createPendingBackupRecord(ctx.prisma, {
@@ -392,8 +404,17 @@ export const backupRouter = router({
       try {
         await assertPgToolchainCompatible(ctx.prisma);
       } catch (err) {
-        throw preflightError(err, toErrorMessage(err));
+        throw preflightError(err, TOOLCHAIN_CHECK_FAILED);
       }
+
+      /** The audit row of a restore that did not complete: a stable code, never the caught message. */
+      const auditRestoreFailure = (errorCode: string) => logAudit(ctx, {
+        action: 'BACKUP_RESTORE',
+        targetType: 'BackupRecord',
+        targetId: target.id,
+        result: 'FAILURE',
+        metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode },
+      });
 
       // Download, decrypt, unpack and verify the archive before anything else. All of it is
       // non-destructive, and it is where a backup written by an incompatible pg_dump is caught —
@@ -411,16 +432,10 @@ export const backupRouter = router({
           logger: ctx.logger,
         });
       } catch (err) {
-        const error = preflightError(err, `Backup non ripristinabile: ${toErrorMessage(err)}`);
+        const error = preflightError(err, `${NOT_RESTORABLE}${DETAIL_IN_LOG}`, NOT_RESTORABLE);
         // The code the client gets: a refusal or a server fault. The message stays out of the
         // audit trail — it can carry paths or pg_restore output — and reaches the server log.
-        await logAudit(ctx, {
-          action: 'BACKUP_RESTORE',
-          targetType: 'BackupRecord',
-          targetId: target.id,
-          result: 'FAILURE',
-          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode: toErrorCode(error) },
-        });
+        await auditRestoreFailure(toErrorCode(error));
         throw error;
       }
 
@@ -437,12 +452,14 @@ export const backupRouter = router({
         await runBackupJob({ prisma: ctx.prisma, backupId: safety.id, scope: 'DB', logger: ctx.logger });
         const safetyResult = await ctx.prisma.backupRecord.findUnique({
           where: { id: safety.id },
-          select: { status: true, errorMessage: true },
+          select: { status: true },
         });
         if (safetyResult?.status !== 'COMPLETED') {
+          await auditRestoreFailure('INTERNAL_SERVER_ERROR');
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Snapshot di sicurezza pre-restore fallito, restore annullato: ${safetyResult?.errorMessage ?? 'errore sconosciuto'}`,
+            // The snapshot's own error is on its row in the backup list, for the admin (#223, #255).
+            message: 'Snapshot di sicurezza pre-restore fallito, restore annullato: il dettaglio è nella sua riga in elenco',
           });
         }
 
@@ -479,19 +496,8 @@ export const backupRouter = router({
             logger: ctx.logger,
           });
         } catch (err) {
-          const message = toErrorMessage(err);
-          await logAudit(ctx, {
-            action: 'BACKUP_RESTORE',
-            targetType: 'BackupRecord',
-            targetId: target.id,
-            result: 'FAILURE',
-            metadata: {
-              preserveAuditLog: input.preserveAuditLog,
-              restoreFiles: input.restoreFiles,
-              errorCode: toErrorCode(err),
-            },
-          });
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
+          await auditRestoreFailure(toErrorCode(err));
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${DETAIL_IN_LOG}`, cause: err });
         } finally {
           // `pg_restore` overwrote both halves of the lockdown with the snapshot's copy: the
           // maintenance state in `app_configs` (INACTIVE there) and `users.tokenVersion` (rolled

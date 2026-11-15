@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { z } from 'zod';
 
 import {
@@ -28,7 +29,6 @@ import {
   deleteConfig,
   decryptValue,
 } from '../lib/configManager';
-import { toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -179,6 +179,19 @@ const ExportJsonSchema = z.object({
 const ImportJsonSchema = z.object({
   items: z.array(ConfigImportItemSchema),
 });
+
+/**
+ * The per-key error of a batch save or import (#255): a refusal the app wrote for the caller (a
+ * tRPC error below 500, such as a value the registry rejects) keeps its text; any other failure, a
+ * database or encryption one, gets a fixed text and goes to the log with its key.
+ */
+function configItemError(ctx: Context, key: string, error: unknown): string {
+  if (error instanceof TRPCError && getHTTPStatusCodeFromError(error) < 500) {
+    return error.message;
+  }
+  ctx.logger.error({ err: error, key }, 'Configuration item not saved');
+  return 'Salvataggio non riuscito: errore del server';
+}
 
 /**
  * Helper for upserting a configuration
@@ -457,7 +470,7 @@ export const configRouter = router({
           await upsertConfig(ctx, config.key, config.value, config.encrypt);
           results.push({ key: config.key, success: true, message: `Configurazione '${config.key}' salvata con successo` });
         } catch (error) {
-          results.push({ key: config.key, success: false, error: toErrorMessage(error) });
+          results.push({ key: config.key, success: false, error: configItemError(ctx, config.key, error) });
         }
       }
 
@@ -555,7 +568,7 @@ export const configRouter = router({
           results.errorCount++;
           results.errors.push({
             key: item.key,
-            error: toErrorMessage(error),
+            error: configItemError(ctx, item.key, error),
           });
         }
       }

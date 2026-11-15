@@ -246,6 +246,19 @@ fixed text that says nothing about the account; the mail server's error is in th
 log line. A database failure while reading the storage settings stays a server
 error.
 
+A backup restore that fails for any reason other than a refusal written for the
+admin (a `RestorePreconditionError`, a 412 with its own text) answers a 500 with
+a fixed text, masked in production like any 5xx: the dump or restore tool's output, a driver error or a local path
+reaches only the `tRPC error` log line, as the error's cause. A failed safety
+snapshot points to its row in the backup list. A configuration batch save or
+import (`config.setMultiple`, `config.importJson`) keeps the text of a refusal
+the app wrote for one key, and names any other failure with a fixed text, the
+error in the `Configuration item not saved` log line.
+
+Failure text the server stores and shows only to administrators is intended:
+the error of a backup record in the backup list, the NAV and Google sync status,
+and the scheduled-sync failure notifications.
+
 A `BAD_REQUEST` from a failed input parse also carries `error.data.zodIssues` —
 every issue as `{ path, message }`, the path in full (`data.retailMultiplier`),
 where the message keeps only the first; a 5xx never carries it.

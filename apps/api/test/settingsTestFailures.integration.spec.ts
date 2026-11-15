@@ -1,8 +1,9 @@
 /**
  * A settings test, or the NAV preview, that the external system refuses answers PRECONDITION_FAILED
- * with a fixed Italian text the admin can act on (#193, #255 for storage and Google). The system's
- * own error text never reaches the answer — production masks a 5xx, but a 4xx keeps its message —
- * only the log.
+ * with a fixed Italian text the admin can act on (#193, #255 for storage and Google), and a
+ * configuration batch save or import names a key's server failure with a fixed text (#255). The
+ * system's own error text never reaches the answer — production masks a 5xx, but a 4xx keeps its
+ * message — only the log.
  */
 
 import { S3Client } from '@aws-sdk/client-s3';
@@ -272,5 +273,25 @@ describe('Google settings test', () => {
     ])('answers %s with a fixed text', async (_case, failure, message) => {
       await expectRefusedWith(failure, message);
     });
+  });
+});
+
+describe('configuration batch save and import', () => {
+  it.each([
+    ['setMultiple', async () => (await caller.config.setMultiple({ configs: [{ key: 'app.name', value: 'Luke' }] }))[0]],
+    ['importJson', async () => (await caller.config.importJson({ items: [{ key: 'app.name', value: 'Luke' }] })).errors[0]],
+  ] as const)('%s answers a database failure on one key with a fixed text', async (_case, save) => {
+    vi.spyOn(prisma, '$transaction').mockRejectedValue(new Error(DRIVER_TEXT));
+
+    const item = await save();
+
+    expect(item).toMatchObject({ key: 'app.name', error: 'Salvataggio non riuscito: errore del server' });
+    expect(JSON.stringify(item)).not.toContain(DRIVER_TEXT);
+  });
+
+  it('keeps the text of a refusal the app wrote for the caller', async () => {
+    const [item] = await caller.config.setMultiple({ configs: [{ key: 'smtp.port', value: '587' }] });
+
+    expect(item).toMatchObject({ key: 'smtp.port', success: false, error: expect.stringMatching(/^Prefisso non ammesso: smtp\./) });
   });
 });

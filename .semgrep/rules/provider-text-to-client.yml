@@ -1,20 +1,49 @@
 rules:
   - id: luke-provider-text-to-client
+    mode: taint
     languages: [typescript]
     severity: ERROR
     message: >-
-      An error's own text put in a TRPCError message, or in an `error` field returned to the
-      client. An external system's reply (S3, Google, SMTP, LDAP, NAV) must never reach the
-      answer: a 4xx keeps its message in production too, and a 5xx shows it outside production.
-      Answer a fixed, actionable text — `externalCheckFailed` in apps/api/src/lib/error.ts for a
-      refused settings test or send — and log the error whole (`logger.warn({ err }, '…')`, #255).
-      Text the app wrote itself (its own validation, a TRPCError it rethrows) is the exception:
-      say so in a `// nosemgrep: luke-provider-text-to-client` with the reason.
-    pattern-either:
-      - pattern: 'new TRPCError({ ..., message: <... toErrorMessage($X) ...>, ... })'
-      - pattern: 'new TRPCError({ ..., message: <... $E.message ...>, ... })'
-      - pattern: 'return { ..., error: <... toErrorMessage($X) ...>, ... }'
-      - pattern: 'return { ..., error: <... $E.message ...>, ... }'
+      An error's own text reaches a TRPCError message, or an `error` field returned or pushed to the
+      client. An external system's reply (S3, Google, SMTP, LDAP, NAV, pg_dump/pg_restore) must
+      never reach the answer: a 4xx keeps its message in production too, and a 5xx shows it outside
+      production. Answer a fixed, actionable text — `externalCheckFailed` in apps/api/src/lib/error.ts
+      for a refused settings test or send — and keep the error in the log (`logger.warn({ err }, '…')`
+      or a TRPCError's `cause`, #255). A function that maps an error to a fixed text is a
+      sanitizer: name it `…FailureMessage` or list it below. Text the app wrote itself (a TRPCError
+      it rethrows) is the exception: say so in a `// nosemgrep: luke-provider-text-to-client` with
+      the reason. Taint is followed within one function: text read back from the database or passed
+      through a helper's parameter is not seen, and stays a review point.
+    # The caught error itself is the source, so a message read from an alias, a concatenation or a
+    # template is followed too; `.catch` callbacks and a `finally` after the catch included.
+    pattern-sources:
+      - pattern: toErrorMessage(...)
+      - patterns:
+          - pattern-either:
+              - pattern-inside: try { ... } catch ($E) { ... }
+              - pattern-inside: try { ... } catch ($E) { ... } finally { ... }
+              # Matches arrow callbacks as well, parenthesised or not.
+              - pattern-inside: $P.catch(function ($E) { ... })
+          - pattern: $E
+    pattern-sanitizers:
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(\w+FailureMessage|configItemError)$
+    pattern-sinks:
+      - exact: true
+        patterns:
+          - pattern-inside: 'new TRPCError({ ..., message: $M, ... })'
+          - pattern: $M
+      - exact: true
+        patterns:
+          - pattern-inside: 'return { ..., error: $M, ... }'
+          - pattern: $M
+      - exact: true
+        patterns:
+          - pattern-inside: '$ARR.push({ ..., error: $M, ... })'
+          - pattern: $M
     paths:
       include:
         - /apps/api/src/**/*.ts

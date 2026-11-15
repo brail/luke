@@ -4,8 +4,9 @@
  * A `RestorePreconditionError` (toolchain skew, an archive from a newer pg_dump, no dump in the
  * archive) carries text written for the admin and goes out as a 412. Anything else the preflight
  * catches — a driver error, a filesystem error with a local path, a pg_restore that could not
- * start — is a 500, which `trpcErrorFormatter` masks in production. Before this split, every one
- * of them went out as a 412 carrying the caught message verbatim.
+ * start — is a 500 with a fixed text in every environment, the caught error only in its cause
+ * (#255). Before this split, every one of them went out as a 412 carrying the caught message
+ * verbatim.
  */
 
 import { mkdtemp, rm, writeFile } from 'fs/promises';
@@ -16,9 +17,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { BACKUP_RESTORE_CONFIRM_PHRASE } from '@luke/core';
 
+import * as dumpPipeline from '../src/lib/backup/dumpPipeline';
 import { getLatestMigrationName } from '../src/lib/backup/dumpPipeline';
 import * as restorePipeline from '../src/lib/backup/restorePipeline';
 import { assertDumpReadable, RestorePreconditionError } from '../src/lib/backup/restorePipeline';
+import * as maintenanceMode from '../src/lib/maintenanceMode';
 
 import { createCallerAs, createSilentLogger, setupTestDb } from './helpers';
 
@@ -85,12 +88,15 @@ describe('backup.restore preflight', () => {
     });
   });
 
-  it('reports any other toolchain-check failure as a server fault', async () => {
+  it('reports any other toolchain-check failure as a server fault, with a fixed text', async () => {
     toolchainCheck.mockRejectedValue(
       new Error('connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432')
     );
 
-    await expect(restore()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    await expect(restore()).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Controllo di compatibilità di pg_dump e pg_restore non riuscito: il dettaglio è nel log del server',
+    });
   });
 
   it('keeps a staging refusal as a 412', async () => {
@@ -110,10 +116,57 @@ describe('backup.restore preflight', () => {
       new Error("EACCES: permission denied, mkdir '/home/node/.luke/restore-tmp/x'")
     );
 
-    await expect(restore()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    await expect(restore()).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Backup non ripristinabile: il dettaglio è nel log del server',
+    });
     const metadata = await failedRestoreAuditMetadata();
     expect(metadata).toMatchObject({ errorCode: 'INTERNAL_SERVER_ERROR' });
     expect(JSON.stringify(metadata)).not.toContain('/home/node');
+  });
+
+  describe('past the preflight', () => {
+    /** Text only the dump or restore tool's output carries: it must appear in no answer (#255). */
+    const TOOL_TEXT = 'pg-tool-detail-5c1e';
+
+    beforeEach(() => {
+      // A staged archive the rest of the call only passes along: nothing reads it here.
+      staging.mockResolvedValue({ workDir: '/nonexistent', dumpPath: '/nonexistent/db.dump', stagedFiles: [] });
+      vi.spyOn(restorePipeline, 'discardStagedRestore').mockResolvedValue(undefined);
+      // The lockdown a restore takes would set the process's maintenance cache for later tests.
+      vi.spyOn(maintenanceMode, 'writeMaintenanceState').mockImplementation(async (_prisma, next) => next);
+      vi.spyOn(maintenanceMode, 'forceLogoutNonAdmins').mockResolvedValue(undefined);
+    });
+
+    /** The safety snapshot's job, ending its row as `status` with `errorMessage`. */
+    function snapshotEndsAs(status: 'COMPLETED' | 'FAILED', errorMessage: string | null = null) {
+      vi.spyOn(dumpPipeline, 'runBackupJob').mockImplementation(async ({ backupId: id }) => {
+        await prisma.backupRecord.update({ where: { id }, data: { status, errorMessage } });
+      });
+    }
+
+    it('answers a failed safety snapshot with a fixed text; its error stays on its row', async () => {
+      snapshotEndsAs('FAILED', TOOL_TEXT);
+
+      await expect(restore()).rejects.toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Snapshot di sicurezza pre-restore fallito, restore annullato: il dettaglio è nella sua riga in elenco',
+      });
+      expect(await prisma.backupRecord.findFirst({ where: { trigger: 'PRE_RESTORE_SAFETY' } }))
+        .toMatchObject({ status: 'FAILED', errorMessage: TOOL_TEXT });
+      expect(await failedRestoreAuditMetadata()).toMatchObject({ errorCode: 'INTERNAL_SERVER_ERROR' });
+    });
+
+    it('answers a failed restore with a fixed text, the tool output only in its cause', async () => {
+      snapshotEndsAs('COMPLETED');
+      vi.spyOn(restorePipeline, 'applyStagedRestore').mockRejectedValue(new Error(TOOL_TEXT));
+
+      await expect(restore()).rejects.toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Restore fallito: il dettaglio è nel log del server',
+        cause: { message: TOOL_TEXT },
+      });
+    });
   });
 });
 
