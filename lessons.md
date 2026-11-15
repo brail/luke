@@ -1037,6 +1037,17 @@ out of public text until it is in production. A Codex round, or any other
 property, is written in the unit's plan entry, never in a column that already
 means something else.
 
+### A unit code is chosen from the table, not from memory (2026-11-15)
+
+**What happened.** luke-dev placed #259 as `W9` from the rc.4 rows it had in
+view; `W9` was already a unit in rc.5. The placement reached luke-lead and
+PLAN.md before the clash was noticed.
+
+**Rule.** Before naming a unit, list every code of its letter in the whole
+unit table and take the next free one. luke-lead's local board generator also
+refuses a code used twice, but only when the board is regenerated, after the
+code may already be in a plan.
+
 ---
 
 ## React & UI

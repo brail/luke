@@ -221,7 +221,12 @@ packages/
    `entity:create`, etc.; never `update` for a read-only query. An endpoint that works only on the
    caller's own data uses `selfProcedure` (`apps/api/src/lib/trpc.ts`); one whose check
    `requirePermission` cannot express, or that is open to every signed-in user by design, carries a
-   reasoned `// nosemgrep`. Enforced by `.semgrep/rules/procedure-requires-permission.yml`
+   reasoned `// nosemgrep`. `sessionProcedure` requires a valid session only: no maintenance guard,
+   no permission, never writes. Use it only for reads every signed-in user needs during maintenance;
+   each use carries a reasoned `// nosemgrep` and is listed in ADR-042 (a further use is a new ADR
+   that supersedes it). `.semgrep/rules/procedure-requires-permission.yml` checks for permission
+   middleware on both builders unless suppressed; suppression reasons and the `sessionProcedure`
+   contract are reviewed (`luke-audit`)
 6. **Explicit `onDelete` on every Prisma `@relation`** — default `onDelete: Restrict`; `Cascade`
    only if intentional and commented (P13 in `tools/scripts/check-platform-integrity.ts`)
 7. **Never duplicate schema/types** — if it exists in `@luke/core`, import it from there
@@ -343,7 +348,7 @@ Two distinct layers that must stay in sync.
 - Every protected tRPC endpoint: Development Patterns rule 5
 - An admin-only operation on a resource another role holds through `resource:*`, a permanent
   delete, or one that acts on authorization itself (section access management) requires `*:*`
-  (ADR-029, ADR-038)
+  (ADR-029, ADR-038, ADR-042)
 - Exception: permanent removal of pricing parameter sets requires `pricing:delete` (#130).
   Only admin currently holds it, through `*:*`; editor and viewer retain read-only pricing access.
 
@@ -358,7 +363,7 @@ Two distinct layers that must stay in sync.
 - For resources mapped to leaf sections, every role holding a mutating permission must have at
   least one mapped leaf visible in `SECTION_ACCESS_DEFAULTS`; every default-visible leaf must
   have its mapped permission granted. `sectionHierarchy.test.ts` enforces this static invariant;
-  runtime section overrides never grant resource permissions (ADR-038)
+  runtime section overrides never grant resource permissions (ADR-038, ADR-042)
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
 - The kill switch `app.sections.disabled` is saved only by `saveSectionsDisabled` (the last-admin

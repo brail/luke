@@ -77,9 +77,9 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 3. **JWT secret exposure**: `getApiJwtSecret()` or `getNextAuthSecret()` in client-side code or in any logger call
 4. **Token validation gaps**: JWT verification that checks signature but not expiry, issuer, or audience
 5. **Password reset token entropy**: token generation using `Math.random()` or tokens shorter than 32 bytes (64 hex chars) — CRITICAL
-6. **Missing auth on tRPC procedures**: public procedures (no `requirePermission`) returning or modifying non-public data. Check especially: `getById` procedures, anything under `product.*` or `admin.*` routers
+6. **Missing auth on tRPC procedures**: public procedures (no `requirePermission`) returning or modifying non-public data, and `sessionProcedure` reads (ADR-042: session only, no permission, no maintenance guard) returning more than every signed-in user needs. Check especially: `getById` procedures, anything under `product.*` or `admin.*` routers
 7. **Privilege escalation via role assignment**: user update procedures — can non-admin change their own role or another user's role?
-8. **Admin-only endpoints reachable by editor**: every operation ADR-038 lists under "Admin-only operations" (`docs/decisions/038-resource-action-permissions-grants-follow-section-visibility.md`) and ADR-029 under "Admin-only operations" and "Maintenance" (`docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`), plus any procedure called only from a page hidden to editor by default — verify not reachable by editor through any code path
+8. **Admin-only endpoints reachable by editor**: every operation listed under "Admin-only operations" in ADR-038 (`docs/decisions/038-resource-action-permissions-grants-follow-section-visibility.md`), whose decisions ADR-042 carries as the current record, and in ADR-029 under "Admin-only operations" and "Maintenance" (`docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`), plus any procedure called only from a page hidden to editor by default — verify not reachable by editor through any code path
 
 ---
 
