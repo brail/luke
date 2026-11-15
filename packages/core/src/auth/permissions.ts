@@ -119,10 +119,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     '*:*', // Complete wildcard - full access
   ],
   editor: [
-    // Brands, seasons, users: read-only — their sections are admin-only by default
+    // Brands, seasons: read-only — their sections are admin-only by default
     'brands:read',
     'seasons:read',
-    'users:read',
+    // Users: none — no page this role sees by default reads the users list; every-user reads of
+    // user data have their own name-only paths
     // Config: none. `config:update` gates 27 endpoints — SMTP, LDAP, the auth strategy, Google
     // OAuth and S3 credentials, the password policy — and only one of them also checks section
     // access, so the `settings: false` an editor has in SECTION_ACCESS_DEFAULTS only ever hid the
@@ -167,8 +168,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'brands:read',
     // Seasons: read-only
     'seasons:read',
-    // Users: read-only
-    'users:read',
+    // Users: none, same reason as the editor above
     // Config: none, same reason as the editor above — the settings endpoints it gates do not check
     // section access, so the permission reached further than the hidden pages suggested.
     // Audit: read-only

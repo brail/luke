@@ -202,6 +202,11 @@ it('the viewer role holds no sales permission', () => {
   expect(expandRole('viewer').filter(permission => permission.startsWith('sales:'))).toEqual([]);
 });
 
+// Editors and viewers hold no users permission: no page they see by default reads the users list.
+it.each(['editor', 'viewer'] as const)('the %s role holds no users permission', role => {
+  expect(expandRole(role).filter(permission => permission.startsWith('users:'))).toEqual([]);
+});
+
 // `collectionLayout.get` returns each row vendor's `moqPerColor` (`ROW_VENDOR_INCLUDE` in apps/api),
 // so a role that reads collection layouts must also read vendors.
 describe('collection layout payload', () => {
@@ -254,8 +259,8 @@ describe('Role Expansion', () => {
     it('should expand editor role to specific permissions', () => {
       const expanded = expandRole('editor');
 
-      // Master data and users: read-only, their sections are admin-only by default
-      for (const resource of ['brands', 'seasons', 'vendors', 'users'] as const) {
+      // Master data: read-only, their sections are admin-only by default
+      for (const resource of ['brands', 'seasons', 'vendors'] as const) {
         expect(expanded).toContain(`${resource}:read`);
         for (const action of ['create', 'update', 'delete'] as const) {
           expect(expanded).not.toContain(`${resource}:${action}`);
@@ -292,9 +297,6 @@ describe('Role Expansion', () => {
 
       expect(expanded).toContain('seasons:read');
       expect(expanded).not.toContain('seasons:create');
-
-      expect(expanded).toContain('users:read');
-      expect(expanded).not.toContain('users:create');
 
       expect(expanded).not.toContain('config:read');
       expect(expanded).not.toContain('config:update');
@@ -360,7 +362,7 @@ describe('Permission Checking', () => {
     it('should grant editor specific permissions', () => {
       const editorUser = { role: 'editor' as Role };
 
-      // Brands, seasons, vendors, users: read-only
+      // Brands, seasons, vendors: read-only; users: none
       expect(hasPermission(editorUser, 'brands:read')).toBe(true);
       expect(hasPermission(editorUser, 'brands:create')).toBe(false);
       expect(hasPermission(editorUser, 'brands:update')).toBe(false);
@@ -370,7 +372,6 @@ describe('Permission Checking', () => {
       expect(hasPermission(editorUser, 'seasons:update')).toBe(false);
       expect(hasPermission(editorUser, 'vendors:read')).toBe(true);
       expect(hasPermission(editorUser, 'vendors:update')).toBe(false);
-      expect(hasPermission(editorUser, 'users:read')).toBe(true);
       expect(hasPermission(editorUser, 'users:update')).toBe(false);
       expect(hasPermission(editorUser, 'users:create')).toBe(false);
       expect(hasPermission(editorUser, 'users:delete')).toBe(false);
@@ -399,7 +400,6 @@ describe('Permission Checking', () => {
       // All read permissions
       expect(hasPermission(viewerUser, 'brands:read')).toBe(true);
       expect(hasPermission(viewerUser, 'seasons:read')).toBe(true);
-      expect(hasPermission(viewerUser, 'users:read')).toBe(true);
       expect(hasPermission(viewerUser, 'config:read')).toBe(false);
       expect(hasPermission(viewerUser, 'audit:read')).toBe(true);
       expect(hasPermission(viewerUser, 'dashboard:read')).toBe(true);
@@ -433,7 +433,7 @@ describe('Permission Checking', () => {
       const editorUser = { role: 'editor' as Role };
 
       // These should check the specific permission
-      expect(hasPermission(editorUser, 'users:read')).toBe(true);
+      expect(hasPermission(editorUser, 'vendors:read')).toBe(true);
       expect(hasPermission(editorUser, 'users:create')).toBe(false);
     });
   });
@@ -869,17 +869,13 @@ describe('Integration Tests', () => {
 
     // Cannot delete users
     expect(hasPermission(editorUser, 'users:delete')).toBe(false);
-
-    // Can read users
-    expect(hasPermission(editorUser, 'users:read')).toBe(true);
   });
 
   it('should allow viewer to read but not modify', () => {
     const viewerUser = { role: 'viewer' as Role };
 
-    // Can read everything
+    // Can read master data
     expect(hasPermission(viewerUser, 'brands:read')).toBe(true);
-    expect(hasPermission(viewerUser, 'users:read')).toBe(true);
 
     // Cannot modify anything
     expect(hasPermission(viewerUser, 'brands:create')).toBe(false);

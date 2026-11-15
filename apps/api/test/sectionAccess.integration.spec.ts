@@ -74,12 +74,15 @@ beforeEach(async () => {
 });
 
 describe('sectionAccess — procedure permissions', () => {
-  it('the write procedures and getByUser are admin-only', async () => {
-    const { user: target } = await createTestUser('admin');
+  it('the write procedures, getByUser and getDefaults are admin-only', async () => {
+    const { user: target, session: adminSession } = await createTestUser('admin');
+    await expect(callerFor(adminSession).getDefaults()).resolves.toBeDefined();
 
     for (const role of ['editor', 'viewer'] as const) {
       const { session } = await createTestUser(role);
       const caller = callerFor(session);
+
+      await expect(caller.getDefaults()).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       await expect(
         caller.getByUser({ userId: target.id })
@@ -115,7 +118,6 @@ describe('sectionAccess — procedure permissions', () => {
       const { session } = await createTestUser(role);
       const caller = callerFor(session);
 
-      await expect(caller.getDefaults()).resolves.toBeDefined();
       await expect(caller.getForMe()).resolves.toEqual([]);
       await expect(caller.getEffectiveForMe()).resolves.toBeDefined();
     }
@@ -286,8 +288,8 @@ describe('sectionAccess — last-admin guard', () => {
 
     const effective = await callerFor(viewerSession).getEffectiveForMe();
     expect(effective['admin.brands']).toBe(true);
-    // Omitted, so static (`false`) — not the permission fallback, which `users:read` would open.
-    expect(effective['settings.users']).toBe(false);
+    // Omitted, so static (`false`) — not the permission fallback, which `seasons:read` would open.
+    expect(effective['admin.seasons']).toBe(false);
   });
 
   it('setRoleDefaults still refuses a partial map that locks every admin out', async () => {

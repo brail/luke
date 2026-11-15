@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { effectiveSectionAccess, SECTION_ACCESS_DEFAULTS } from '@luke/core';
+import { effectiveSectionAccess, hasPermission, SECTION_ACCESS_DEFAULTS, SECTION_TO_PERMISSION } from '@luke/core';
 
 import { router, publicProcedure } from '../src/lib/trpc';
 
@@ -67,18 +67,19 @@ describe('Section Access Overrides', () => {
     });
 
     it("resolves an explicit 'auto' role default through the RBAC permission fallback", () => {
-      // `settings.users` is the discriminator: the static table denies it to a viewer while
-      // the permission fallback (`users:read`) grants it, so `true` can only have come from
-      // layer 3 — a static answer would be `false`. Asserting the table first means that if
-      // the default ever changes, this test reports a dead discriminator instead of passing
-      // for the wrong reason.
-      expect(SECTION_ACCESS_DEFAULTS.viewer['settings.users']).toBe(false);
+      // `admin.seasons` is the discriminator: the static table denies it to a viewer while
+      // the permission fallback (`seasons:read`) grants it, so `true` can only have come from
+      // layer 3 — a static answer would be `false`. Asserting the table and the grant first
+      // means that if either ever changes, this test reports a dead discriminator instead of
+      // passing for the wrong reason.
+      expect(SECTION_ACCESS_DEFAULTS.viewer['admin.seasons']).toBe(false);
+      expect(hasPermission({ role: 'viewer' }, SECTION_TO_PERMISSION['admin.seasons'])).toBe(true);
 
       const auto = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { 'settings.users': 'auto' } },
+        sectionAccessDefaults: { viewer: { 'admin.seasons': 'auto' } },
         userOverrides: undefined,
-        section: 'settings.users',
+        section: 'admin.seasons',
       });
       expect(auto).toBe(true);
 
@@ -86,9 +87,9 @@ describe('Section Access Overrides', () => {
       // fallback, which is what makes 'auto' the only route to it.
       const disabled = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { 'settings.users': 'disabled' } },
+        sectionAccessDefaults: { viewer: { 'admin.seasons': 'disabled' } },
         userOverrides: undefined,
-        section: 'settings.users',
+        section: 'admin.seasons',
       });
       expect(disabled).toBe(false);
     });

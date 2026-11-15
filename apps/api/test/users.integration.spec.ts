@@ -16,6 +16,7 @@ import type { PrismaClient } from '@luke/db';
 import * as permissions from '../src/lib/permissions';
 
 import {
+  createCallerAs,
   createCallerWithIP,
   createCallerWithSession,
   createTestUser,
@@ -357,5 +358,14 @@ describe('users.list — search', () => {
     expect((await list({ search: lastName.toLowerCase() })).users.map(u => u.id)).toContain(user.id);
     // A pasted name often carries a space at the end.
     expect((await list({ search: `${lastName} ` })).users.map(u => u.id)).toContain(user.id);
+  });
+});
+
+describe('the users list is admin-only', () => {
+  it.each(['editor', 'viewer'] as const)('%s → FORBIDDEN on users.list and users.listPending', async role => {
+    const { users } = await createCallerAs(role);
+
+    await expectUnauthorized(() => users.list());
+    await expectUnauthorized(() => users.listPending());
   });
 });

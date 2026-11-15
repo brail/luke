@@ -64,7 +64,7 @@ describe('hasPermission', () => {
   });
 
   it('should return true for editor with specific permission', () => {
-    expect(hasPermission({ role: 'editor' }, 'users:read')).toBe(true);
+    expect(hasPermission({ role: 'editor' }, 'seasons:read')).toBe(true);
     expect(hasPermission({ role: 'editor' }, 'collection_layout:update')).toBe(true);
   });
 
@@ -77,7 +77,7 @@ describe('hasPermission', () => {
 
   it('should return true for viewer with read permission', () => {
     expect(hasPermission({ role: 'viewer' }, 'brands:read')).toBe(true);
-    expect(hasPermission({ role: 'viewer' }, 'users:read')).toBe(true);
+    expect(hasPermission({ role: 'viewer' }, 'seasons:read')).toBe(true);
   });
 
   it('should return false for viewer without permission', () => {
@@ -114,7 +114,7 @@ describe('expandRole', () => {
     expect(permissions).toContain('brands:read');
     expect(permissions).not.toContain('brands:create');
     expect(permissions).toContain('collection_layout:update');
-    expect(permissions).toContain('users:read');
+    expect(permissions).not.toContain('users:read');
     expect(permissions).not.toContain('users:update');
     expect(permissions).not.toContain('users:delete');
     expect(permissions).not.toContain('maintenance:read');
@@ -123,7 +123,7 @@ describe('expandRole', () => {
   it('should expand viewer role to read-only permissions', () => {
     const permissions = expandRole('viewer');
     expect(permissions).toContain('brands:read');
-    expect(permissions).toContain('users:read');
+    expect(permissions).not.toContain('users:read');
     expect(permissions).not.toContain('brands:create');
     expect(permissions).not.toContain('brands:update');
     expect(permissions).not.toContain('brands:delete');
@@ -285,7 +285,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(editorPermissions).toContain('brands:read');
     expect(editorPermissions).toContain('seasons:read');
     expect(editorPermissions).toContain('vendors:read');
-    expect(editorPermissions).toContain('users:read');
+    expect(editorPermissions).not.toContain('users:read');
     expect(editorPermissions).not.toContain('users:update');
     // No access to config: the endpoints it gates (SMTP, LDAP, auth strategy, storage
     // credentials, password policy) do not check section access, so the permission
@@ -304,7 +304,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     const viewerPermissions = ROLE_PERMISSIONS.viewer;
     expect(viewerPermissions).toContain('brands:read');
     expect(viewerPermissions).toContain('seasons:read');
-    expect(viewerPermissions).toContain('users:read');
+    expect(viewerPermissions).not.toContain('users:read');
     expect(viewerPermissions).not.toContain('config:read');
     expect(viewerPermissions).toContain('audit:read');
     expect(viewerPermissions).toContain('dashboard:read');

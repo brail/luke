@@ -44,7 +44,8 @@ const setInput = z.object({
 
 export const sectionAccessRouter = router({
   /**
-   * Returns sectionAccessDefaults and disabledSections config used for client-side access evaluation.
+   * Returns sectionAccessDefaults and disabledSections, read by the administrators' section-override
+   * editor.
    *
    * @auth {users:read}
    * @input {none}
