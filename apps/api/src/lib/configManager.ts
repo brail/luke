@@ -243,10 +243,18 @@ export async function saveConfig(
 }
 
 /**
- * A key `saveConfig` and `saveConfigs` may write: every registry key but the kill switch, whose
- * guard and audit row run in their own transaction (`saveSectionsDisabled`).
+ * Keys with a dedicated writer that runs a guard of its own, mapped to it: the kill switch (its
+ * last-admin guard and audit row, in one transaction) and the role section defaults (ADR-043 and the
+ * recovery guard of `sectionAccess.setRoleDefaults`). `saveConfig` and `saveConfigs` never write them;
+ * `deleteConfig` still removes them.
  */
-export type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
+const DEDICATED_WRITERS = {
+  'app.sections.disabled': 'saveSectionsDisabled',
+  'rbac.sectionAccessDefaults': 'setRbacSectionDefaultsTx',
+} as const satisfies Partial<Record<AppConfigKey, string>>;
+
+/** A key `saveConfig` and `saveConfigs` may write: every registry key without a dedicated writer. */
+export type BatchConfigKey = Exclude<AppConfigKey, keyof typeof DEDICATED_WRITERS>;
 
 /**
  * One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. An omitted
@@ -317,9 +325,13 @@ export async function saveConfigs(
   prisma: PrismaClient,
   writes: readonly ConfigWrite[]
 ): Promise<boolean[]> {
-  // Excluded by the key type too; refused here as well for a caller that reaches it through a cast.
-  if (writes.some(write => (write.key as AppConfigKey) === 'app.sections.disabled')) {
-    throw new Error('saveConfigs cannot write app.sections.disabled: use saveSectionsDisabled, which runs its guard');
+  // Excluded by the key type too; refused here as well, removal included, for a caller that reaches
+  // one through a cast.
+  for (const { key } of writes) {
+    if (Object.hasOwn(DEDICATED_WRITERS, key)) {
+      const writer = DEDICATED_WRITERS[key as keyof typeof DEDICATED_WRITERS]; // Narrowed by `hasOwn` above.
+      throw new Error(`saveConfigs cannot write ${key}: use ${writer}, which runs its guard`);
+    }
   }
   // Every value first: a bad one opens no transaction and takes no lock.
   for (const write of writes) {

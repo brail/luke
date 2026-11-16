@@ -365,12 +365,43 @@ describe('saveConfigs', () => {
     expect(await getConfig(prisma, 'smtp.pass')).toBe('secret');
   });
 
-  it('invalidates the RBAC cache after committing an rbac key', async () => {
-    await getRbacConfig(prisma); // prime the cache
-    await configManager.saveConfigs(prisma, [
-      { key: 'rbac.sectionAccessDefaults', value: JSON.stringify({ viewer: { 'admin.brands': 'enabled' } }) },
-    ]);
-    expect((await getRbacConfig(prisma)).sectionAccessDefaults.viewer['admin.brands']).toBe('enabled');
+  it('invalidates the RBAC cache after deleting the role section defaults', async () => {
+    const staticDefault = (await getRbacConfig(prisma, { bypassCache: true })).sectionAccessDefaults.viewer['admin.brands'];
+    const stored = staticDefault === 'disabled' ? 'enabled' : 'disabled';
+    // Seeded directly: `saveConfigs` refuses the key, whose writer is `setRbacSectionDefaultsTx`.
+    await prisma.appConfig.create({
+      data: { key: 'rbac.sectionAccessDefaults', value: JSON.stringify({ viewer: { 'admin.brands': stored } }) },
+    });
+    expect((await getRbacConfig(prisma, { bypassCache: true })).sectionAccessDefaults.viewer['admin.brands']).toBe(stored);
+    await getRbacConfig(prisma); // prime the cache with the stored value
+
+    expect(await configManager.deleteConfig({ prisma }, 'rbac.sectionAccessDefaults')).toBe(true);
+
+    expect((await getRbacConfig(prisma)).sectionAccessDefaults.viewer['admin.brands']).toBe(staticDefault);
+  });
+
+  it('cannot write the role section defaults, whose writer checks ADR-043 and its caller the recovery guard', async () => {
+    const value = JSON.stringify({ viewer: { 'admin.brands': 'enabled' } });
+    // @ts-expect-error — `rbac.sectionAccessDefaults` is excluded from the batch key type.
+    const upsert = () => configManager.saveConfigs(prisma, [{ key: 'rbac.sectionAccessDefaults', value }]);
+    // @ts-expect-error — and from removals.
+    const remove = () => configManager.saveConfigs(prisma, [{ key: 'rbac.sectionAccessDefaults', value: null }]);
+    const mixed = () =>
+      configManager.saveConfigs(prisma, [
+        { key: 'smtp.host', value: 'mail.example.com' },
+        // @ts-expect-error — one refused entry in a batch.
+        { key: 'rbac.sectionAccessDefaults', value },
+      ]);
+    // `saveConfig` goes through `saveConfigs`.
+    // @ts-expect-error — the single-key writer takes the same key type.
+    const single = () => saveConfig(prisma, 'rbac.sectionAccessDefaults', value);
+
+    for (const write of [upsert, remove, mixed, single]) {
+      await expect(write()).rejects.toThrow('use setRbacSectionDefaultsTx');
+    }
+    expect(await prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } })).toBeNull();
+    // The refused batch wrote nothing, its valid entry included.
+    expect(await getConfig(prisma, 'smtp.host')).toBeNull();
   });
 
   it('cannot write the kill switch, whose guard runs its own transaction', async () => {

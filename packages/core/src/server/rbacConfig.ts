@@ -3,6 +3,7 @@
  * holds, read with a short cache. Only the API reads it.
  */
 
+import { refusedRoleDefaults, SectionPermissionMissingError } from '../rbac/effectiveAccess.js';
 import { Roles, type Role } from '../rbac.js';
 import {
   SECTION_ACCESS_DEFAULTS,
@@ -278,20 +279,26 @@ export async function getSectionsDisabled(
 }
 
 /**
- * Persists per-role section-access defaults to AppConfig. Write-only —
- * deliberately does NOT invalidate the cache or check any invariant. The
- * only legitimate caller is `sectionAccessRouter.setRoleDefaults`, which
- * wraps this in its own `$transaction` with `acquireLastAdminLock` +
- * `countRecoveryCapableAdmins` before calling it, and invalidates the
- * cache itself after the transaction commits. There is no safe
- * non-transactional variant: an unguarded convenience wrapper existed here
- * before and, being unused, was one accidental call away from silently
- * reintroducing a full admin lockout of Settings.
+ * Persists per-role section-access defaults to AppConfig, the key's only application writer:
+ * `saveConfigs` refuses it (ADR-043). Checks one invariant itself — a default `enabled` only on a
+ * leaf the role holds the permission for — and throws `SectionPermissionMissingError` before writing
+ * anything otherwise. The rest is the caller's: run it inside its own `$transaction` (a contract the
+ * structural client type cannot enforce), take `acquireLastAdminLock` + `countRecoveryCapableAdmins`
+ * before it, and invalidate the cache after the commit, as `sectionAccessRouter.setRoleDefaults`
+ * does. There is no safe
+ * non-transactional variant: an unguarded convenience wrapper existed here before and, being unused,
+ * was one accidental call away from silently reintroducing a full admin lockout of Settings.
+ *
+ * @throws {SectionPermissionMissingError} When a default turns a leaf on for a role without its
+ *   permission.
  */
 export async function setRbacSectionDefaultsTx(
   prisma: IPrismaConfigClientWithWrite,
   sectionAccessDefaults: SectionAccessDefaults
 ): Promise<void> {
+  const refused = refusedRoleDefaults(sectionAccessDefaults);
+  if (refused.length > 0) throw new SectionPermissionMissingError(refused);
+
   await prisma.appConfig.upsert({
     where: { key: 'rbac.sectionAccessDefaults' },
     update: {

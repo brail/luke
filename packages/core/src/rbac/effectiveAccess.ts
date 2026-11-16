@@ -1,5 +1,11 @@
 import { hasPermission } from '../auth/permissions.js';
-import { SECTION_TO_PERMISSION, type Section, type SectionDefault } from '../schemas/rbac.js';
+import {
+  SECTION_TO_PERMISSION,
+  sectionEnum,
+  type Section,
+  type SectionAccessDefaults,
+  type SectionDefault,
+} from '../schemas/rbac.js';
 
 import { ancestorSectionsOf, childSectionsOf } from './sectionHierarchy.js';
 
@@ -102,4 +108,29 @@ function leafSectionAccess({
 export function sectionPermissionHeld(role: string, section: Section): boolean {
   // `role` comes from the session or the stored user; an unknown one holds nothing (`hasPermission`).
   return hasPermission({ role: role as Role }, SECTION_TO_PERMISSION[section]);
+}
+
+/**
+ * The `(role, leaf)` pairs a role-defaults map sets to `enabled` without the role holding the leaf's
+ * permission (ADR-043). A parent is derived from its children (ADR-027), so only leaves count;
+ * `disabled` and `auto` are always allowed.
+ */
+export function refusedRoleDefaults(defaults: SectionAccessDefaults): { role: string; section: Section }[] {
+  return Object.entries(defaults).flatMap(([role, sections]) =>
+    sectionEnum.options
+      .filter(section => sections?.[section] === 'enabled' && childSectionsOf(section).length === 0)
+      .filter(section => !sectionPermissionHeld(role, section))
+      .map(section => ({ role, section }))
+  );
+}
+
+/**
+ * A write of role defaults that would turn a leaf on for a role lacking its permission (ADR-043),
+ * thrown by `setRbacSectionDefaultsTx` before it writes anything. `refused` lists every such pair.
+ */
+export class SectionPermissionMissingError extends Error {
+  constructor(readonly refused: { role: string; section: Section }[]) {
+    super(`Role defaults turn on sections without their permission: ${refused.map(r => `${r.role}/${r.section}`).join(', ')}`);
+    this.name = 'SectionPermissionMissingError';
+  }
 }

@@ -6,7 +6,13 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { childSectionsOf, sectionAccessDefaultsSchema, sectionEnum, sectionPermissionHeld } from '@luke/core';
+import {
+  childSectionsOf,
+  refusedRoleDefaults,
+  sectionAccessDefaultsSchema,
+  sectionEnum,
+  SectionPermissionMissingError,
+} from '@luke/core';
 import type { Section } from '@luke/core';
 import {
   getRbacConfig,
@@ -28,12 +34,18 @@ import {
   countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
   computeEffectiveForUser,
-  lockUserRole,
   missingSectionPermissionMessage,
-  refusedRoleDefaults,
 } from '../services/sectionAccess.service';
 
 const sectionSchema = sectionEnum;
+
+/** The refusal of a role-defaults map that turns leaves on without their permission (ADR-043). */
+function refusedRoleDefaultsError(refused: { role: string; section: Section }[]): TRPCError {
+  return new TRPCError({
+    code: 'BAD_REQUEST',
+    message: refused.map(({ role, section }) => missingSectionPermissionMessage(role, section)).join(' '),
+  });
+}
 
 const setRoleDefaultsInput = z.object({
   sectionAccessDefaults: sectionAccessDefaultsSchema,
@@ -123,14 +135,10 @@ export const sectionAccessRouter = router({
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       // A default may turn a leaf on only for a role holding its permission (ADR-043); `disabled` and
-      // `auto` always pass. Role permissions are static, so the check needs no lock.
+      // `auto` always pass. Checked here first, so a refused map is told so before the recovery guard
+      // below speaks, and again by the writer, which owns the rule. Role permissions are static: no lock.
       const refused = refusedRoleDefaults(input.sectionAccessDefaults);
-      if (refused.length > 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: refused.map(({ role, section }) => missingSectionPermissionMessage(role, section)).join(' '),
-        });
-      }
+      if (refused.length > 0) throw refusedRoleDefaultsError(refused);
 
       await ctx.prisma.$transaction(async tx => {
         // Safety check: prevent a config that removes user administration
@@ -156,7 +164,12 @@ export const sectionAccessRouter = router({
           });
         }
 
-        await setRbacSectionDefaultsTx(tx, input.sectionAccessDefaults);
+        try {
+          await setRbacSectionDefaultsTx(tx, input.sectionAccessDefaults);
+        } catch (err) {
+          if (err instanceof SectionPermissionMissingError) throw refusedRoleDefaultsError(err.refused);
+          throw err;
+        }
         // The map replaces the stored one, so it is the whole new value (#222).
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
@@ -197,17 +210,6 @@ export const sectionAccessRouter = router({
       }
 
       const result = await ctx.prisma.$transaction(async tx => {
-        // Turning a leaf on needs the permission it maps to (ADR-043); turning it off or removing the
-        // override never does. The role is read under a row lock held until commit, so a concurrent
-        // role change cannot land between this check and the write.
-        if (enabled === true) {
-          const role = await lockUserRole(tx, userId);
-          if (role === null) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
-          if (!sectionPermissionHeld(role, section)) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: missingSectionPermissionMessage(role, section) });
-          }
-        }
-
         // Safety check: prevent removing user administration from the last
         // admin — only if the target is an admin: revoking an override for a
         // viewer/editor doesn't touch the invariant at all. Lock acquired
@@ -251,6 +253,7 @@ export const sectionAccessRouter = router({
           }
         }
 
+        // Turning a leaf on is checked by the writer itself (ADR-043), under a lock on the role.
         const override = await setOverride(tx, userId, section, enabled, ctx.logger);
         // Keyed by user and section, not by the override row, which a removal deletes (#222).
         // `enabled: null` is a removal.

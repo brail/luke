@@ -17,7 +17,7 @@ import {
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
-  type AppConfigKey,
+  type ConfigRouterKey,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
@@ -53,7 +53,8 @@ function assertRouterPrefix(key: string): void {
 }
 
 /**
- * Validates the prefix of a key, then narrows it to a registered `AppConfigKey`.
+ * Validates the prefix of a key, then narrows it to a registered key under those prefixes
+ * (`ConfigRouterKey`): what the two gates below prove together.
  *
  * Two independent gates, and the second does not subsume the first. Registry membership says the
  * key exists and names a schema; `CONFIG_ROUTER_PREFIXES` says the *generic* endpoint may reach it
@@ -67,7 +68,7 @@ function assertRouterPrefix(key: string): void {
  * equal one of the registry's literals. The regex still guards the `config.set` input schema, where
  * it reports a bad format before the mutation runs.
  */
-function validateKey(key: string): asserts key is AppConfigKey {
+function validateKey(key: string): asserts key is ConfigRouterKey {
   assertRouterPrefix(key);
 
   if (!isAppConfigKey(key)) {
@@ -204,7 +205,7 @@ async function upsertConfig(
   encrypt: boolean | undefined,
   options: { strictUpdate?: boolean; source?: string } = {}
 ) {
-  // Validates the key and narrows it to an AppConfigKey. The value is validated by `saveConfig`
+  // Validates the key and narrows it to a ConfigRouterKey. The value is validated by `saveConfig`
   // against the registry schema — there is no per-key special case here any more.
   validateKey(key);
 

@@ -8,7 +8,7 @@ import {
   sectionEnum,
   type Section,
 } from '../../schemas/rbac.js';
-import { effectiveSectionAccess, sectionPermissionHeld } from '../effectiveAccess.js';
+import { effectiveSectionAccess, refusedRoleDefaults, sectionPermissionHeld } from '../effectiveAccess.js';
 import { ancestorSectionsOf, childSectionsOf, parentSectionOf } from '../sectionHierarchy.js';
 
 const SECTIONS: readonly Section[] = sectionEnum.options;
@@ -186,5 +186,29 @@ describe('sectionPermissionHeld', () => {
 
   it('an unknown role holds nothing', () => {
     expect(sectionPermissionHeld('auditor', 'admin.brands')).toBe(false);
+  });
+});
+
+describe('refusedRoleDefaults', () => {
+  it('lists every leaf set to enabled for a role without its permission', () => {
+    expect(
+      refusedRoleDefaults({
+        viewer: { 'settings.ldap': 'enabled', 'admin.brands': 'enabled' },
+        editor: { 'maintenance.audit_log': 'enabled' },
+      })
+    ).toEqual([
+      { role: 'viewer', section: 'settings.ldap' },
+      { role: 'editor', section: 'maintenance.audit_log' },
+    ]);
+  });
+
+  it('allows disabled and auto on any leaf, and ignores parents (derived, ADR-027)', () => {
+    expect(
+      refusedRoleDefaults({ viewer: { 'settings.ldap': 'disabled', 'settings.users': 'auto', settings: 'enabled' } })
+    ).toEqual([]);
+  });
+
+  it('refuses nothing for admin', () => {
+    expect(refusedRoleDefaults({ admin: Object.fromEntries(SECTIONS.map(s => [s, 'enabled'])) })).toEqual([]);
   });
 });

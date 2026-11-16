@@ -30,16 +30,7 @@ export async function whileHeld<T>(
     const {
       rows: [self],
     } = await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
-    // `pg_stat_activity` is read once per transaction and cached: without clearing it, a backend
-    // that connects after the first read (a new pool connection) is never seen waiting.
-    const blocked = async () => {
-      await holder.query('SELECT pg_stat_clear_snapshot()');
-      const { rows } = await holder.query<{ pid: number }>(
-        'SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
-        [self!.pid]
-      );
-      return rows;
-    };
+    const blocked = () => blockedOn(holder, self!.pid);
     expect(await blocked()).toEqual([]);
 
     running = other().then(
@@ -47,19 +38,7 @@ export async function whileHeld<T>(
       reason => ({ status: 'rejected', reason }) as const
     );
 
-    const deadline = Date.now() + 5000;
-    for (;;) {
-      const now = await blocked();
-      if (now.length === 1) break;
-      if (now.length > 1) {
-        throw new Error(
-          `more than one backend waits on the held transaction: ${JSON.stringify(now)}`
-        );
-      }
-      if (Date.now() > deadline)
-        throw new Error('nothing waited on the held transaction within 5 s');
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
+    await waitUntilBlockedOn(holder, self!.pid);
 
     await meanwhile(holder);
     await holder.query('COMMIT');
@@ -72,4 +51,35 @@ export async function whileHeld<T>(
     await holder.end();
     if (running) await running;
   }
+}
+
+/**
+ * Resolves once exactly one backend waits on the transaction of backend `holderPid`, read through
+ * `observer` (any connection, the holder's own included). Throws when more than one waits, or when
+ * none has within 5 s. For a holder `whileHeld` cannot be: a Prisma interactive transaction calling
+ * the real writer, whose backend reports its pid with `SELECT pg_backend_pid()`.
+ */
+export async function waitUntilBlockedOn(observer: Client, holderPid: number): Promise<void> {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    const now = await blockedOn(observer, holderPid);
+    if (now.length === 1) return;
+    if (now.length > 1) {
+      throw new Error(`more than one backend waits on the held transaction: ${JSON.stringify(now)}`);
+    }
+    if (Date.now() > deadline) throw new Error('nothing waited on the held transaction within 5 s');
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+
+/** The backends waiting on `holderPid`'s transaction now. */
+async function blockedOn(observer: Client, holderPid: number): Promise<{ pid: number }[]> {
+  // `pg_stat_activity` is read once per transaction and cached: without clearing it, a backend
+  // that connects after the first read (a new pool connection) is never seen waiting.
+  await observer.query('SELECT pg_stat_clear_snapshot()');
+  const { rows } = await observer.query<{ pid: number }>(
+    'SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
+    [holderPid]
+  );
+  return rows;
 }

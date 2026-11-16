@@ -215,6 +215,30 @@ test('a stored override the role cannot read is shown as such and can be turned 
   await expect.poll(() => setCalls(h.setMutate)).toEqual([['settings.ldap', null]]);
 });
 
+// L19 (#265): a reset to auto is never refused, so on a leaf whose stored role default is itself a
+// violation it brings the section back on. The dialog shows that outcome before anything is sent.
+test('a reset onto a violating role default shows the leaf on with its missing permission before Save', async () => {
+  const defaults = defaultsWith();
+  defaults.sectionAccessDefaults.viewer['settings.ldap'] = 'enabled';
+  h.defaults.data = defaults;
+  h.byUserQuery.data = rows({ 'settings.ldap': false });
+  h.fetchByUser.mockResolvedValue(rows({ 'settings.ldap': false }));
+  const screen = await render(dialog());
+
+  await expect.element(sw(screen, '↳ Auth LDAP')).not.toBeChecked();
+  // The leaf's own Reset, next to its switch (the parent row has one too).
+  const leafControls = sw(screen, '↳ Auth LDAP').element().closest('div')!; // Past the tooltip's span.
+  const reset = [...leafControls.querySelectorAll('button')].find(button => button.textContent === 'Reset');
+  expect(reset, "the leaf's own Reset button").toBeDefined();
+  await userEvent.click(reset!);
+
+  await expect.element(sw(screen, '↳ Auth LDAP')).toBeChecked();
+  await expect.element(screen.getByText('(permesso mancante: config:read)')).toBeInTheDocument();
+  expect(h.setMutate).not.toHaveBeenCalled();
+  // Still switchable, so the administrator can turn it off again before saving.
+  await expect.element(sw(screen, '↳ Auth LDAP')).toBeEnabled();
+});
+
 test('a refused save says why, with the server message', async () => {
   const { toast } = await import('sonner');
   h.setMutate.mockRejectedValueOnce(new Error('La sezione admin.seasons richiede il permesso seasons:read, che il ruolo viewer non ha.'));

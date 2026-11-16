@@ -478,6 +478,9 @@ export const CONFIG_ROUTER_PREFIXES = [
 
 export type ConfigRouterPrefix = (typeof CONFIG_ROUTER_PREFIXES)[number];
 
+/** A registered key the generic `config` router writes: one under `CONFIG_ROUTER_PREFIXES`. */
+export type ConfigRouterKey = Extract<AppConfigKey, `${ConfigRouterPrefix}.${string}`>;
+
 const CONFIG_ROUTER_PREFIX_SET = new Set<string>(CONFIG_ROUTER_PREFIXES);
 
 /**

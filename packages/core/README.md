@@ -34,6 +34,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 | `Permission`, `Resource`, `Action` | Typed permission vocabulary derived from the central resource and action declarations |
 | `effectiveSectionAccess` | Resolve section visibility: a leaf through the kill switch, user override, role defaults and permission fallback; a parent from its children (ADR-027) |
 | `sectionPermissionHeld` | Whether a role holds the permission `SECTION_TO_PERMISSION` maps a section to: what an override or a role default may turn on (ADR-043), and the resolver's permission fallback |
+| `refusedRoleDefaults`, `SectionPermissionMissingError` | The `(role, leaf)` pairs a role-defaults map turns on without the leaf's permission (ADR-043), and the error `setRbacSectionDefaultsTx` throws with that list before it writes |
 | `isGloballyDisabled` | Layer 0: whether the kill switch covers a section or any section it is nested under; shared by the resolver and the access dialogs |
 | `sectionAccessDefaultsSchema`, `SectionDefault` | The stored per-role section defaults: partial over roles and sections, `'enabled'`, `'disabled'` or `'auto'` |
 | `parentSectionOf`, `childSectionsOf`, `ancestorSectionsOf` | The section tree, derived from the dot notation of `sectionEnum` |

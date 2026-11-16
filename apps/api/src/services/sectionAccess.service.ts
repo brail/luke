@@ -3,14 +3,16 @@
  * Handles CRUD and safety checks for UserSectionAccess records.
  */
 
+import { TRPCError } from '@trpc/server';
+
 import {
-  childSectionsOf,
   effectiveSectionAccess,
+  refusedRoleDefaults,
   SECTION_TO_PERMISSION,
   sectionEnum,
   sectionPermissionHeld,
 } from '@luke/core';
-import type { Section } from '@luke/core';
+import type { Section, SectionAccessDefaults } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 import { Prisma, type PrismaClient } from '@luke/db';
 
@@ -66,18 +68,32 @@ export async function computeEffectiveForUser(
 }
 
 /**
- * Sets or removes the section access override for a user.
+ * Sets or removes the section access override for a user — the only writer of `userSectionAccess`.
+ * Turning a leaf on needs the permission it maps to (ADR-043); turning it off or removing the
+ * override never does. The role is read under a row lock held until commit, so a concurrent role
+ * change cannot land between the check and the write. Runs inside the caller's `$transaction`, which
+ * owns the recovery guard (`ADMIN_RECOVERY_SECTION`) and the audit row.
  *
  * @param enabled - `true` to allow, `false` to deny, `null` to remove the override entirely.
  * @returns The upserted record, or null when the override was removed.
+ * @throws {TRPCError} `NOT_FOUND` for no such user, `BAD_REQUEST` naming the missing permission —
+ *   both only when turning a leaf on.
  */
 export async function setOverride(
-  prisma: PrismaLike,
+  prisma: Prisma.TransactionClient,
   userId: string,
   section: Section,
   enabled: boolean | null,
   logger?: FastifyBaseLogger
 ) {
+  if (enabled === true) {
+    const role = await lockUserRole(prisma, userId);
+    if (role === null) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+    if (!sectionPermissionHeld(role, section)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: missingSectionPermissionMessage(role, section) });
+    }
+  }
+
   if (enabled === null) {
     // Remove override — a failure here must propagate: the caller
     // (inside $transaction) must be able to roll back instead of committing
@@ -124,11 +140,6 @@ export async function listOverridesForUser(
  * turns `settings.users` off with it (ADR-027).
  */
 export const ADMIN_RECOVERY_SECTION = 'settings.users' satisfies Section;
-
-type SectionAccessDefaults = Record<
-  string,
-  Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>
->;
 
 /**
  * A user's per-section overrides, in the shape `effectiveSectionAccess` accepts. Only the
@@ -257,7 +268,7 @@ export async function countRecoveryCapableAdminsAfterChange(
  * user's until commit, so a concurrent role change waits instead of slipping in after the check.
  * Compatible with the key-share lock the override upsert's foreign-key check takes.
  */
-export async function lockUserRole(tx: Prisma.TransactionClient, userId: string): Promise<string | null> {
+async function lockUserRole(tx: Prisma.TransactionClient, userId: string): Promise<string | null> {
   // FOR SHARE, which the ORM cannot express (CLAUDE.md, "Raw SQL": a row lock inside an interactive
   // transaction, to keep a checked row unchanged until commit).
   const [row] = await tx.$queryRaw<{ role: string }[]>(Prisma.sql`
@@ -269,20 +280,6 @@ export async function lockUserRole(tx: Prisma.TransactionClient, userId: string)
 /** The refusal text for turning `section` on for `role`, which lacks its mapped permission. */
 export function missingSectionPermissionMessage(role: string, section: Section): string {
   return `La sezione ${section} richiede il permesso ${SECTION_TO_PERMISSION[section]}, che il ruolo ${role} non ha.`;
-}
-
-/**
- * The `(role, leaf)` pairs a role-defaults map sets to `enabled` without the role holding the leaf's
- * permission (ADR-043). A parent is derived from its children (ADR-027), so only leaves count;
- * `disabled` and `auto` are always allowed.
- */
-export function refusedRoleDefaults(defaults: SectionAccessDefaults): { role: string; section: Section }[] {
-  return Object.entries(defaults).flatMap(([role, sections]) =>
-    sectionEnum.options
-      .filter(section => sections?.[section] === 'enabled' && childSectionsOf(section).length === 0)
-      .filter(section => !sectionPermissionHeld(role, section))
-      .map(section => ({ role, section }))
-  );
 }
 
 /** A stored override or role default that turns on a section its role cannot read. */

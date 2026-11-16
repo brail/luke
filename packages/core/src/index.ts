@@ -47,7 +47,13 @@ export * from './rbac.js';
 export * from './schemas/rbac.js';
 
 // Re-export effective access with explicit exports to avoid conflicts
-export { effectiveSectionAccess, isGloballyDisabled, sectionPermissionHeld } from './rbac/effectiveAccess.js';
+export {
+  effectiveSectionAccess,
+  isGloballyDisabled,
+  refusedRoleDefaults,
+  SectionPermissionMissingError,
+  sectionPermissionHeld,
+} from './rbac/effectiveAccess.js';
 export {
   ancestorSectionsOf,
   childSectionsOf,

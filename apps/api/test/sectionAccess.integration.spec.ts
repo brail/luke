@@ -13,6 +13,7 @@
 
 import { randomUUID } from 'crypto';
 
+import { Client } from 'pg';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { SECTION_ACCESS_DEFAULTS, childSectionsOf } from '@luke/core';
@@ -21,10 +22,14 @@ import { invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server
 import type { PrismaClient } from '@luke/db';
 
 import { appRouter } from '../src/routers/index';
-import { findSectionAccessViolations, warnSectionAccessViolations } from '../src/services/sectionAccess.service';
+import {
+  findSectionAccessViolations,
+  setOverride,
+  warnSectionAccessViolations,
+} from '../src/services/sectionAccess.service';
 
 import { createCallerWithSession, createTestContext, createTestUser, grantEditor, setupTestDb } from './helpers';
-import { whileHeld } from './helpers/heldTransaction';
+import { waitUntilBlockedOn, whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -644,18 +649,94 @@ describe('sectionAccess — a section is turned on only with its permission', ()
     expect(await prisma.userSectionAccess.count({ where: { userId: editor.id } })).toBe(0);
   });
 
-  it('a role change waits until a set that already checked the role commits', async () => {
-    const { session: adminSession } = await createTestUser('admin');
+  it('a role change waits until a writer that already checked the role commits', async () => {
     const { user: editor } = await createTestUser('editor');
+    const { session: adminSession } = await createTestUser('admin');
 
-    // The holder takes the lock `set` holds after its check; the real demotion must wait for it.
-    const outcome = await whileHeld(
-      holder => holder.query('SELECT role FROM users WHERE id = $1 FOR SHARE', [editor.id]),
-      () => createCallerWithSession(adminSession).users.update({ id: editor.id, role: 'viewer' }),
+    // The real writer, in a transaction held open after its check and write; the real demotion must
+    // wait on the role lock the writer keeps until commit.
+    let release!: () => void;
+    const released = new Promise<void>(resolve => (release = resolve));
+    let holderPid!: number;
+    let checked!: () => void;
+    const writerChecked = new Promise<void>(resolve => (checked = resolve));
+    const writer = prisma.$transaction(
+      async tx => {
+        await setOverride(tx, editor.id, 'sales.statistics', true);
+        [{ pid: holderPid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        checked();
+        await released;
+      },
+      { timeout: 15_000 }
     );
+    await writerChecked;
 
-    expect(outcome.status).toBe('fulfilled');
+    const demotion = createCallerWithSession(adminSession).users.update({ id: editor.id, role: 'viewer' });
+    const observer = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await observer.connect();
+    let outcomes: PromiseSettledResult<unknown>[];
+    try {
+      // Exactly one backend waits on the held writer: the demotion.
+      await waitUntilBlockedOn(observer, holderPid);
+    } finally {
+      release();
+      await observer.end();
+      // Always drained, a failure above included, so nothing settles after the test.
+      outcomes = await Promise.allSettled([writer, demotion]);
+    }
+
+    expect(outcomes.map(outcome => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+    // Both committed, in that order: the override stored under the editor's role, then the demotion,
+    // which leaves it a stored violation for the start-up report (ADR-043).
     expect((await prisma.user.findUniqueOrThrow({ where: { id: editor.id } })).role).toBe('viewer');
+    expect(await prisma.userSectionAccess.findFirst({ where: { userId: editor.id, section: 'sales.statistics' } })).toMatchObject({
+      enabled: true,
+    });
+  });
+});
+
+// #265: the writers themselves hold the rule, whoever calls them.
+describe('sectionAccess — the writers refuse what the rule refuses', () => {
+  it('setOverride refuses a leaf the role cannot read, and allows one it reads or turning off', async () => {
+    const { user: editor } = await createTestUser('editor');
+    const { user: viewer } = await createTestUser('viewer');
+
+    await expect(
+      prisma.$transaction(tx => setOverride(tx, editor.id, 'maintenance.audit_log', true))
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('audit:read_all') });
+    await expect(prisma.$transaction(tx => setOverride(tx, randomUUID(), 'admin.brands', true))).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(await prisma.userSectionAccess.count({ where: { userId: editor.id } })).toBe(0);
+
+    await expect(prisma.$transaction(tx => setOverride(tx, viewer.id, 'admin.brands', true))).resolves.toMatchObject({
+      enabled: true,
+    });
+    await expect(prisma.$transaction(tx => setOverride(tx, editor.id, 'maintenance.audit_log', false))).resolves.toMatchObject({
+      enabled: false,
+    });
+  });
+
+  it('setRbacSectionDefaultsTx refuses a default enabling a leaf the role cannot read, and writes a valid one', async () => {
+    await expect(
+      prisma.$transaction(tx => setRbacSectionDefaultsTx(tx, { viewer: { 'settings.ldap': 'enabled' } }))
+    ).rejects.toMatchObject({ name: 'SectionPermissionMissingError', refused: [{ role: 'viewer', section: 'settings.ldap' }] });
+    expect(await prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } })).toBeNull();
+
+    await prisma.$transaction(tx => setRbacSectionDefaultsTx(tx, { viewer: { 'admin.brands': 'enabled' } }));
+    expect(await prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } })).not.toBeNull();
+  });
+
+  it('setRoleDefaults names the missing permission before the recovery guard, for an input breaking both', async () => {
+    // One recovery-capable admin: the caller. Turning `settings.users` off for every admin breaks the
+    // recovery guard; `settings.ldap` for viewers breaks ADR-043. The permission refusal speaks first.
+    const { session: adminSession } = await createTestUser('admin');
+
+    await expect(
+      callerFor(adminSession).setRoleDefaults({
+        sectionAccessDefaults: { admin: { 'settings.users': 'disabled' }, viewer: { 'settings.ldap': 'enabled' } },
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('config:read') });
   });
 });
 
@@ -668,7 +749,10 @@ describe('sectionAccess — stored violations are listed, never changed', () => 
         { userId: viewer.id, section: 'admin.brands', enabled: true },
       ],
     });
-    await prisma.$transaction(tx => setRbacSectionDefaultsTx(tx, { editor: { 'maintenance.audit_log': 'enabled' } }));
+    // Written directly, as a restore or a script would: the writer refuses it (ADR-043).
+    await prisma.appConfig.create({
+      data: { key: 'rbac.sectionAccessDefaults', value: JSON.stringify({ editor: { 'maintenance.audit_log': 'enabled' } }) },
+    });
     invalidateRbacCache();
 
     const violations = await findSectionAccessViolations(prisma);
