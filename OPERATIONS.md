@@ -498,6 +498,10 @@ earlier release stored in plaintext or an anonymous LDAP bind would work against
 off from everything outside its stack. Its volumes are the RC's own; nothing in the RC stack mounts
 production's.
 
+From 3.1 on, a production backup that holds two user addresses differing only by case, or one
+outside printable ASCII, does not restore: the restore replays migration
+`20261116150000_user_email_normalized`, which refuses on them (`docs/upgrade-3.0-to-3.1.md`, step 2).
+
 **Before.** In Portainer, stack `luke-rc` → environment: `LUKE_RC_EGRESS_OFF=true`, then update the
 stack. The `edge` network, the API's only way out, becomes internal (`docker-compose.rc.yml`). A
 Compose version that keeps an existing network unchanged will not apply it: stop the stack, run

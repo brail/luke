@@ -25,6 +25,11 @@ What 3.1 changes for the operator so far:
   snapshot to the audit log (`Fotografia iniziale degli accessi`), the state the later changes are
   read against: nothing to run. A start where it fails logs `Initial access snapshot failed` and
   serves all the same; the next start writes it.
+- **A user's email is stored in one form.** 3.1 stores every address trimmed, lowercase and
+  printable ASCII, and the database refuses any other. The migration rewrites existing rows and
+  refuses — changing nothing, so the API container does not start — when two users (active,
+  inactive or pending) would share an address once lowercased, or an address is not printable
+  ASCII: step 2 lists them.
 - **Google Calendar sync failures are visible.** The `Google Workspace` settings page shows each
   sync operation's last success and last failure, and a failure notifies the administrators. In
   production, step 5 moves the sync to a dedicated mailbox.
@@ -40,7 +45,7 @@ svc() { docker ps -q --filter "label=com.docker.compose.project=$STACK" --filter
 PG=$(svc postgres); API=$(svc api)
 ```
 
-## 2. Before the update: picture keys and archived calendars (read-only)
+## 2. Before the update: picture keys, archived calendars and email addresses (read-only)
 
 Both queries must return no rows. A row they list keeps its picture on 3.1 only after a decision,
 taken row by row before the update: usually clearing its `pictureKey`, which leaves the row
@@ -72,10 +77,25 @@ SQL
 From the first 3.1 candidate that carries this migration on, the column is gone and the query fails
 with `column c.status does not exist`: nothing is left to check.
 
+These two queries must return no rows, on the RC and on production: the migration refuses on the
+same rows. Fix a row they list by hand before the update — change one of the two addresses, or
+correct the address that is not printable ASCII:
+
+```bash
+docker exec -i "$PG" psql -U luke -d luke <<'SQL'
+-- an address that is not printable ASCII once trimmed
+SELECT id, email FROM users WHERE btrim(email) !~ '^[!-~]+$';
+-- users sharing an address once lowercased, inactive and pending included
+SELECT lower(btrim(email)), array_agg(id) FROM users GROUP BY 1 HAVING count(*) > 1;
+SQL
+```
+
 ## 3. Backup and update
 
-Take a backup and check that it completed (`Manutenzione` › `Backup & Restore`), then update the
-stack as every release does (`README.md`, "Deployment"): its Git reference and `LUKE_VERSION`
+Take a backup and check that it completed (`Manutenzione` › `Backup & Restore`) — after step 2's
+email fixes: a backup taken before 3.1 that still holds two addresses differing only by case, or an
+address outside printable ASCII, cannot be restored on 3.1, because the restore replays the migration
+and the migration refuses. Then update the stack as every release does (`README.md`, "Deployment"): its Git reference and `LUKE_VERSION`
 together, then redeploy.
 
 ## 4. After the update: encrypt the stored credentials

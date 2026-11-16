@@ -3,9 +3,12 @@
  * Manages directory connection, user search, credential verification, and role mapping.
  */
 
+import { randomUUID } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import { Filter, SASL_MECHANISMS } from 'ldapts';
 
+import { EmailSchema } from '@luke/core';
 import type { Role, RoleMapping } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
@@ -326,6 +329,22 @@ function determineUserRole(
 }
 
 /**
+ * The address an LDAP user is stored with, in the one form Luke stores (`EmailSchema`, #228): the
+ * directory's mail when it is a valid address, else the synthetic `<username>@ldap.local`, else — a
+ * username no address can carry, with a space or a non-ASCII letter — a synthetic one of its own. A
+ * blank or malformed mail is never stored.
+ */
+function ldapAddress(username: string, directoryMail: string | undefined): string {
+  const mail = EmailSchema.safeParse(directoryMail ?? '');
+  if (mail.success) return mail.data;
+  if (directoryMail?.trim()) {
+    logger.warn({ username }, 'LDAP mail attribute is not a valid address: using a synthetic one');
+  }
+  const synthetic = EmailSchema.safeParse(`${username}@ldap.local`);
+  return synthetic.success ? synthetic.data : `ldap-${randomUUID()}@ldap.local`;
+}
+
+/**
  * The local user for a directory-verified login: the account that carries this LDAP identity, with
  * its names synced from the directory, or a new pending account when the username is free.
  *
@@ -338,8 +357,7 @@ async function createOrUpdateUser(
   role: Role,
   userAttributes: Record<string, string[]>
 ): Promise<User | null> {
-  // Extract email from LDAP attributes
-  const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
+  const ldapEmail = ldapAddress(username, userAttributes.mail?.[0]);
 
   // Extract firstName and lastName from LDAP attributes
   const firstName =

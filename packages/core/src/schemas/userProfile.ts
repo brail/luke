@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { TimeZoneSchema } from './dates.js';
 import { passwordPrefilterSchema } from './password.js';
+import { EmailSchema } from './user.js';
 
 /**
  * Input schema for updating the authenticated user's profile. No email: it changes only through
@@ -42,11 +43,7 @@ export const UpdateTimezoneSchema = UserProfileSchema.pick({ timezone: true });
  */
 export const ChangeEmailSchema = z.object({
   /** The new address (must be unique). */
-  newEmail: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .pipe(z.email('Email non valida').max(255, 'Email troppo lunga')),
+  newEmail: EmailSchema,
   /** The account's password, proven as a login proves it (LOCAL or LDAP). */
   currentPassword: z
     .string()

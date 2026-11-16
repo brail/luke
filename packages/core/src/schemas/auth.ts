@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { EmailSchema } from './user.js';
+
 /**
  * Absolute lifetime of an API session, in seconds from the login it descends from (`authTime`):
  * no bearer is accepted past it, however often it was refreshed.
@@ -27,12 +29,9 @@ export const SIGN_IN_REFUSED_MESSAGE =
  */
 export const AUTH_UNAVAILABLE_MESSAGE = 'Servizio di autenticazione non disponibile. Riprova più tardi.';
 
-/** Input schema for requesting a password reset email. Email is normalized to lowercase. */
+/** Input schema for requesting a password reset email, in the stored form (`EmailSchema`). */
 export const RequestPasswordResetSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email richiesta')
-    .pipe(z.email('Email non valida').toLowerCase().trim()),
+  email: z.string().min(1, 'Email richiesta').pipe(EmailSchema),
 });
 
 /**
@@ -70,7 +69,7 @@ export const ConfirmEmailVerificationSchema = z.object({
 export const SubmitPendingEmailSchema = z.object({
   username: z.string().min(1, 'Username richiesto'),
   password: z.string().min(1, 'Password richiesta'),
-  email: z.string().trim().toLowerCase().pipe(z.email('Email non valida')),
+  email: EmailSchema,
 });
 
 /** Input schema for an admin to trigger email verification for a user by userId. */

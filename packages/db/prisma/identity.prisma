@@ -24,6 +24,9 @@ enum TokenType {
 /// Platform user. Holds identity, role, and preferences. Relations cover auth, audit, dashboard, calendar, and notifications.
 model User {
   id              String    @id @default(uuid())
+  /// Stored trimmed, lowercase and printable ASCII, the form `EmailSchema` writes: the CHECK
+  /// `users_email_normalized` (migration `20261116150000_user_email_normalized`, #228) refuses any
+  /// other.
   email           String    @unique
   username        String    @unique
   firstName       String    @default("")

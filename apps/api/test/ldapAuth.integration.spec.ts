@@ -113,6 +113,32 @@ describe('authenticateViaLdap', () => {
     ]);
   });
 
+  // #228: the address stored at first login is in the one form `EmailSchema` writes.
+  describe('the address it stores', () => {
+    it.each([
+      ['a directory mail, trimmed and lowercased', ' Alice.Rossi@Directory.EXAMPLE ', 'alice.rossi@directory.example'],
+      ['the synthetic address, lowercased, when the directory has no mail', undefined, 'alice@ldap.local'],
+      ['the synthetic address for a blank mail', '   ', 'alice@ldap.local'],
+      ['the synthetic address for a malformed mail', 'not-an-address', 'alice@ldap.local'],
+    ])('%s', async (_case, mail, stored) => {
+      await configureLdap();
+      search.mockResolvedValue(found({ dn: ALICE_DN, cn: 'Alice Rossi', ...(mail === undefined ? {} : { mail }) }));
+
+      const login = await authenticateViaLdap(prisma, 'Alice', 'her-password');
+
+      expect(login.user).toMatchObject({ email: stored });
+    });
+  });
+
+  it('a synthetic address of its own when the username cannot carry one', async () => {
+    await configureLdap();
+    search.mockResolvedValue(found({ dn: ALICE_DN, cn: 'Józef' }));
+
+    const login = await authenticateViaLdap(prisma, 'józef', 'his-password');
+
+    expect(login.user?.email).toMatch(/^ldap-[0-9a-f-]{36}@ldap\.local$/);
+  });
+
   describe('before the username is sent: it throws', () => {
     it('an incomplete configuration', async () => {
       await configureLdap({ 'auth.ldap.url': null });

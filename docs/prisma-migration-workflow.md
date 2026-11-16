@@ -64,6 +64,8 @@ migration with SQL added by hand:
   (`20260929224334_calendar_dates_in_supported_years`, narrowed and extended to holidays and vendor
   closures by `20261012220000_user_timezone_and_calendar_date_bounds`). A generated migration can
   append one: `planning_groups_default_has_no_name` (`20261101200000_drop_unused_calendar_columns`).
+  `users_email_normalized` (`20261116150000_user_email_normalized`, #228) is added by a one-time
+  rewrite, below.
 - **Trigger functions and triggers.** Like a `CHECK`, Prisma does not model them: `migrate diff`
   cannot see them, so an integration test asserts they exist and are enabled (`pg_trigger`), and
   `///` comments on the fields they guard name them. Name each refusal with a dedicated SQLSTATE the
@@ -75,8 +77,11 @@ migration with SQL added by hand:
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
   so a replay on an older backup does not depend on later code, and state in its header whether
   it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
-  which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171) and
-  `20261112220000_collection_catalog_product_category` (#126), which are.
+  which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171),
+  `20261112220000_collection_catalog_product_category` (#126) and
+  `20261116150000_user_email_normalized` (#228), which are. The last one refuses, changing nothing,
+  on data it cannot rewrite without a choice (an address outside printable ASCII, two addresses
+  equal once lowercased): its header gives the queries that find them.
   Ordinary backfills stay `db:*` scripts in `@luke/api`.
 - **A data step appended to a generated migration**, when the stored data must follow a column
   change — `20261024170000_phase_description_duration_colour` gives every phase the badge colour it

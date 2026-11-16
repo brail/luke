@@ -487,14 +487,12 @@ export async function authenticateUser(
  * Sends a password reset email to the given address. Always returns a generic success
  * response to prevent email enumeration, even if the user does not exist.
  *
- * @param email - Email address to send the reset link to.
+ * @param email - Email address to send the reset link to, in the stored form (`EmailSchema`).
  */
 export async function requestPasswordReset(ctx: Context, email: string) {
-  const normalizedEmail = email.toLowerCase();
-
   const user = await ctx.prisma.user.findFirst({
     where: {
-      email: normalizedEmail,
+      email,
       isActive: true,
     },
     include: {
@@ -532,7 +530,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
   let issued: IssuedUserToken | null = null;
   try {
     issued = await ctx.prisma.$transaction(tx =>
-      issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
+      issueUserToken(tx, user.id, 'RESET', { expectedEmail: email, revokePrevious: false })
     );
     if (issued) {
       const baseUrl = await getConfigOrDefault(ctx.prisma, 'app.baseUrl');

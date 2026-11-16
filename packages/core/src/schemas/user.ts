@@ -5,13 +5,25 @@ import { Roles } from '../rbac.js';
 import { HardDeleteConfirmSchema } from './confirmation.js';
 import { passwordPrefilterSchema } from './password.js';
 
+/**
+ * A user's email address in the one form Luke stores and compares (#228): trimmed, lowercase, and
+ * valid by zod's default pattern, which is ASCII-only — so SQL `lower()` and JavaScript
+ * `toLowerCase()` agree on every address it admits. The database refuses any other form
+ * (`users_email_normalized`), so every writer of `User.email` goes through this schema.
+ */
+export const EmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email('Email non valida').max(255, 'Email troppo lunga'));
+
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
   /** Unique user ID (UUID v4) */
   id: z.uuid(),
 
-  /** User email (validated as an email format) */
-  email: z.email(),
+  /** User email, in the stored form */
+  email: EmailSchema,
 
   /** User username */
   username: z.string(),
@@ -43,7 +55,7 @@ export const UserSchema = z.object({
  * know what an installation chose.
  */
 export const CreateUserInputSchema = z.object({
-  email: z.email('Email non valida'),
+  email: EmailSchema,
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
@@ -54,7 +66,7 @@ export const CreateUserInputSchema = z.object({
 /** Input schema for partially updating a user. All fields are optional except `id`. */
 export const UpdateUserInputSchema = z.object({
   id: z.uuid('ID utente non valido'),
-  email: z.email('Email non valida').optional(),
+  email: EmailSchema.optional(),
   username: z
     .string()
     .min(3, 'Username deve essere di almeno 3 caratteri')
