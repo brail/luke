@@ -78,10 +78,12 @@ migration with SQL added by hand:
   so a replay on an older backup does not depend on later code, and state in its header whether
   it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
   which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171),
-  `20261112220000_collection_catalog_product_category` (#126) and
-  `20261116150000_user_email_normalized` (#228), which are. The last one refuses, changing nothing,
-  on data it cannot rewrite without a choice (an address outside printable ASCII, two addresses
-  equal once lowercased): its header gives the queries that find them.
+  `20261112220000_collection_catalog_product_category` (#126),
+  `20261116150000_user_email_normalized` (#228) and
+  `20261116160000_local_identity_follows_username` (#229), which are. The email migration refuses,
+  changing nothing, on data it cannot rewrite without a choice (an address outside printable ASCII,
+  two addresses equal once lowercased); the identity migration leaves such data as it is. Their
+  headers give the queries that find it.
   Ordinary backfills stay `db:*` scripts in `@luke/api`.
 - **A data step appended to a generated migration**, when the stored data must follow a column
   change — `20261024170000_phase_description_duration_colour` gives every phase the badge colour it

@@ -30,6 +30,10 @@ What 3.1 changes for the operator so far:
   refuses — changing nothing, so the API container does not start — when two users (active,
   inactive or pending) would share an address once lowercased, or an address is not printable
   ASCII: step 2 lists them.
+- **A rename keeps local sign-in.** Before 3.1, renaming a user left its local password filed under
+  the old username, so the user could no longer sign in with it. 3.1 moves it with the rename, and
+  the migration moves the ones left behind where the owner is unambiguous; step 2 lists any it
+  leaves.
 - **Google Calendar sync failures are visible.** The `Google Workspace` settings page shows each
   sync operation's last success and last failure, and a failure notifies the administrators. In
   production, step 5 moves the sync to a dedicated mailbox.
@@ -97,6 +101,22 @@ email fixes: a backup taken before 3.1 that still holds two addresses differing 
 address outside printable ASCII, cannot be restored on 3.1, because the restore replays the migration
 and the migration refuses. Then update the stack as every release does (`README.md`, "Deployment"): its Git reference and `LUKE_VERSION`
 together, then redeploy.
+
+Once the stack runs 3.1, this query lists the local passwords the migration left under another
+username, where the owner was not unambiguous (two local identities for one user, a swap between
+two users). Nothing blocks, but those users cannot sign in locally until each row is resolved:
+
+```bash
+docker exec -i "$PG" psql -U luke -d luke <<'SQL'
+SELECT u.id, u.username, i.id AS identity, i."providerId" FROM identities i JOIN users u ON u.id = i."userId"
+WHERE i.provider = 'LOCAL' AND i."providerId" <> u.username;
+SQL
+```
+
+For each user listed, keep the one local identity whose password the user knows, file it under the
+username (`UPDATE identities SET "providerId" = '<username>' WHERE id = '<identity>'`) and delete the
+others (`DELETE FROM identities WHERE id = '<identity>'`, which removes their password too). A swap
+needs a temporary name for one of the two. Then run the query again: it returns no rows.
 
 ## 4. After the update: encrypt the stored credentials
 

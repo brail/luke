@@ -408,6 +408,10 @@ export const usersCoreRouter = router({
         });
       }
 
+      // An unchanged username (the edit dialog sends the whole record) is not written at all: the save
+      // then takes no rename lock, and cannot revert a rename that commits in the meantime.
+      if (updateData.username === existingUser.username) delete updateData.username;
+
       // If updating email or username, verify they don't already exist
       if (updateData.email || updateData.username) {
         const conflictingUser = await ctx.prisma.user.findFirst({
@@ -466,16 +470,18 @@ export const usersCoreRouter = router({
       let txResult;
       try {
         txResult = await ctx.prisma.$transaction(async tx => {
-          // A role or active-state change is recorded with its "before" (#222): lock so `current` is
-          // the value the write replaces — the last-admin advisory lock first, then the user row,
-          // the order of every path that takes both.
-          if (updateData.role !== undefined || updateData.isActive !== undefined) {
+          // A role or active-state change is recorded with its "before" (#222), and a rename moves
+          // the LOCAL identity filed under the username it replaces (#229): lock so `current` is the
+          // value the write replaces — the last-admin advisory lock first, then the user row, the
+          // order of every path that takes both. A rename takes both too: the break-glass count
+          // reads the LOCAL identity under the current username.
+          if (updateData.role !== undefined || updateData.isActive !== undefined || updateData.username !== undefined) {
             await acquireLastAdminLock(tx);
             await lockUserEmail(tx, id);
           }
           const current = await tx.user.findUnique({
             where: { id },
-            select: { role: true, isActive: true },
+            select: { role: true, isActive: true, username: true },
           });
 
           if (
@@ -551,6 +557,17 @@ export const usersCoreRouter = router({
             },
           });
 
+          // Local sign-in finds the LOCAL identity by the current username, so it follows the rename
+          // (#229): one conditional write, under the row lock above. None moved is fine (an
+          // external-only account). One already filed under the new name belongs to another
+          // account: the unique index refuses it, answered below.
+          if (current && updateData.username !== undefined && updateData.username !== current.username) {
+            await tx.identity.updateMany({
+              where: { userId: id, provider: 'LOCAL', providerId: current.username },
+              data: { providerId: updated.username },
+            });
+          }
+
           // The links mailed to the old address die with it, after the address UPDATE (lock
           // order: the user row, then its links — see `issueUserToken`).
           if (emailChanged) {
@@ -582,6 +599,16 @@ export const usersCoreRouter = router({
         // same email/username can commit between the findFirst and this
         // update. The DB constraint still holds — we translate the P2002
         // into the same CONFLICT as the non-race path.
+        if (isUniqueViolation(err, 'identities_provider_providerId_key')) {
+          // No user holds the name (the pre-check above would have said so): another account's LOCAL
+          // identity does, left there by a rename before 3.1. Logged with the ids to resolve it.
+          ctx.logger.warn({ userId: id, username: updateData.username }, 'users.update: a LOCAL identity already holds the new username');
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: "Un accesso locale di un altro account usa già questo username: va prima liberato dall'amministratore di sistema.",
+            cause: err,
+          });
+        }
         if (isUniqueViolation(err, 'users_email_key', 'users_username_key')) {
           throw new TRPCError({
             code: 'CONFLICT',

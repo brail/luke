@@ -22,7 +22,7 @@ import {
   LocalAccessRefused,
   assertOwnLocalIdentity,
   placeholderPasswordHash,
-  prepareLocalIdentity,
+  prepareLocalIdentityLocked,
 } from '../services/localAccess.service';
 
 export const usersAdminRouter = router({
@@ -336,14 +336,13 @@ export const usersAdminRouter = router({
         const placeholderHash = await placeholderPasswordHash();
         try {
           try {
-            await ctx.prisma.$transaction(tx => prepareLocalIdentity(tx, user, placeholderHash));
+            await ctx.prisma.$transaction(tx => prepareLocalIdentityLocked(tx, user.id, placeholderHash));
           } catch (err) {
-            // `user.identities` was read outside any transaction: a concurrent call for the same
-            // user can race this one, and a unique key decides it — the identity's
-            // `(provider, providerId)` or its credential's `identityId`. The identity that won is
+            // A unique key decided against this write — the identity's `(provider, providerId)`, held
+            // by another account, or its credential's `identityId`. The identity that won is
             // acceptable only if it is this user's, with a credential.
             if (!isUniqueViolation(err, 'identities_provider_providerId_key', 'local_credentials_identityId_key')) throw err;
-            await assertOwnLocalIdentity(ctx.prisma, user);
+            await assertOwnLocalIdentity(ctx.prisma, user.id);
           }
         } catch (err) {
           if (!(err instanceof LocalAccessRefused)) throw err;

@@ -58,12 +58,13 @@ export function placeholderPasswordHash(): Promise<string> {
  * Makes sure `user` has a LOCAL identity under their current username, with a credential, and says
  * whether anything was created.
  *
- * Local sign-in finds the identity by the current username, so one left under an old username
- * (`users.update` renames without moving it) would hold a password nobody can use: refused.
+ * Local sign-in finds the identity by the current username, so one left under an old username (a
+ * rename before 3.1, which did not move it; one the migration of #229 could not move) would hold a
+ * password nobody can use: refused.
  *
  * @throws {LocalAccessRefused} When the LOCAL identity is under another username.
  */
-export async function prepareLocalIdentity(
+async function prepareLocalIdentity(
   db: Db,
   user: { id: string; username: string; identities: Target['identities'] },
   placeholderHash: string
@@ -94,13 +95,30 @@ export async function prepareLocalIdentity(
 }
 
 /**
+ * `prepareLocalIdentity` for the account `userId` as it is under its row lock (`lockUserEmail`), held
+ * until the caller's transaction commits: a rename takes the same lock and moves the LOCAL identity
+ * (#229), so the identity is never filed under a name the account has just left.
+ */
+export async function prepareLocalIdentityLocked(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  placeholderHash: string
+): Promise<boolean> {
+  await lockUserEmail(tx, userId);
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: TARGET_SELECT });
+  return prepareLocalIdentity(tx, user, placeholderHash);
+}
+
+/**
  * After a `(LOCAL, username)` unique-key collision: the identity that won is acceptable only if it
  * is this user's, with a credential. Anything else would send a link for an account whose password
  * lives on someone else's identity.
  *
  * @throws {LocalAccessRefused} When the identity belongs to another user or has no credential.
  */
-export async function assertOwnLocalIdentity(db: Db, user: { id: string; username: string }): Promise<void> {
+export async function assertOwnLocalIdentity(db: Db, userId: string): Promise<void> {
+  // The username as it is now: a rename may have committed since the caller read it.
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, username: true } });
   const identity = await db.identity.findUnique({
     where: { provider_providerId: { provider: 'LOCAL', providerId: user.username } },
     select: { userId: true, localCredential: { select: { id: true } } },
