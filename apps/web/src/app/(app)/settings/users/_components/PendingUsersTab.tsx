@@ -3,6 +3,8 @@
 import { Check, X } from 'lucide-react';
 import React, { useState } from 'react';
 
+import { resolveEffectiveProvider } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -121,7 +123,7 @@ export function PendingUsersTab() {
                 <TableCell>{user.lastName || '-'}</TableCell>
                 <TableCell>
                   <Badge variant="outline">
-                    {user.identities?.[0]?.provider || 'LDAP'}
+                    {resolveEffectiveProvider(user.identities)}
                   </Badge>
                 </TableCell>
                 <TableCell>

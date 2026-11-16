@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE, type Role } from '@luke/core';
+import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE, getLockedFields, resolveEffectiveProvider, type Role } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -257,14 +257,9 @@ export default function UsersPage() {
   const handleEditUser = (user: UserListItem) => {
     setDialogMode('edit');
     setSelectedUser(user);
-    // Determine the synced fields from the identity provider.
-    // External providers (LDAP, OIDC) lock username, firstName, lastName and password
-    // email and role are editable even for external users
-    const synced: SyncedField[] =
-      user?.identities?.[0]?.provider !== 'LOCAL'
-        ? ['username', 'firstName', 'lastName', 'password']
-        : [];
-    setSyncedFields(synced);
+    // The fields the user's provider owns, as the server locks them (#230): the external identity
+    // decides, whatever the row order.
+    setSyncedFields(getLockedFields(resolveEffectiveProvider(user.identities)));
     setDialogOpen(true);
   };
 

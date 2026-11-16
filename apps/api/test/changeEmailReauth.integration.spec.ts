@@ -67,33 +67,18 @@ describe('me.changeEmail asks for the password', () => {
     await expect(emailOf(user.id)).resolves.toBe('moved@example.com');
   });
 
-  describe('for an LDAP account', () => {
-    let ldapUser: User;
+  // An LDAP account is refused before any proof (#230, `ldapProfileSync.integration.spec.ts`). A
+  // password still reaches the directory for an account without that identity, through the
+  // local-first fallback; what the directory answers there is what `signedIn` mode reports.
+  describe('when the password reaches the directory (the local-first fallback)', () => {
+    let dana: User;
     let session: UserSession;
 
     beforeEach(async () => {
-      ldapUser = await prisma.user.create({
+      dana = await prisma.user.create({
         data: { email: 'dana@example.com', username: 'dana', role: 'editor', isActive: true, timezone: 'Europe/Rome' },
       });
-      await prisma.identity.create({ data: { userId: ldapUser.id, provider: 'LDAP', providerId: 'dana' } });
-      session = { user: { id: ldapUser.id, email: ldapUser.email, username: ldapUser.username, role: 'editor', tokenVersion: 0 } };
-      vi.spyOn(ldapAuth, 'authenticateViaLdap').mockImplementation(async (_prisma, username, password) =>
-        username === 'dana' && password === DIRECTORY_PASSWORD
-          ? { user: ldapUser }
-          : { user: null, reason: 'invalid_credentials' }
-      );
-    });
-
-    it('proves the directory password', async () => {
-      await expect(
-        as(session).me.changeEmail({ newEmail: 'dana@new.example.com', currentPassword: WRONG_PASSWORD })
-      ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
-      await expect(emailOf(ldapUser.id)).resolves.toBe('dana@example.com');
-
-      await expect(
-        as(session).me.changeEmail({ newEmail: 'dana@new.example.com', currentPassword: DIRECTORY_PASSWORD })
-      ).resolves.toMatchObject({ success: true });
-      await expect(emailOf(ldapUser.id)).resolves.toBe('dana@new.example.com');
+      session = { user: { id: dana.id, email: dana.email, username: dana.username, role: 'editor', tokenVersion: 0 } };
     });
 
     it('a password that proves another account reads as a wrong one', async () => {
@@ -105,7 +90,7 @@ describe('me.changeEmail asks for the password', () => {
       await expect(
         as(session).me.changeEmail({ newEmail: 'dana@new.example.com', currentPassword: DIRECTORY_PASSWORD })
       ).rejects.toMatchObject({ code: 'UNAUTHORIZED', message: WRONG_CURRENT_PASSWORD });
-      await expect(emailOf(ldapUser.id)).resolves.toBe('dana@example.com');
+      await expect(emailOf(dana.id)).resolves.toBe('dana@example.com');
     });
 
     it.each([

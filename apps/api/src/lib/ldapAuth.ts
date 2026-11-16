@@ -20,8 +20,9 @@ import {
   isLdapEnabled,
   type LdapConfig,
 } from './configManager';
-import { isSyntheticLdapEmail, sendVerificationEmail } from './emailHelpers';
-import { toErrorCode, toErrorMessage } from './error';
+import { revokeUserLinks, sendVerificationEmail } from './emailHelpers';
+import { isUniqueViolation, toErrorCode, toErrorMessage } from './error';
+import { acquireLastAdminLock } from './lastAdminGuard';
 import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
 import { rootLogger } from './logger';
 
@@ -329,24 +330,29 @@ function determineUserRole(
 }
 
 /**
- * The address an LDAP user is stored with, in the one form Luke stores (`EmailSchema`, #228): the
- * directory's mail when it is a valid address, else the synthetic `<username>@ldap.local`, else — a
- * username no address can carry, with a space or a non-ASCII letter — a synthetic one of its own. A
- * blank or malformed mail is never stored.
+ * The directory's mail in the one form Luke stores (`EmailSchema`, #228), or `undefined` when the
+ * entry has none, or a blank or malformed one, which is never stored.
  */
-function ldapAddress(username: string, directoryMail: string | undefined): string {
-  const mail = EmailSchema.safeParse(directoryMail ?? '');
+function directoryMail(username: string, raw: string | undefined): string | undefined {
+  const mail = EmailSchema.safeParse(raw ?? '');
   if (mail.success) return mail.data;
-  if (directoryMail?.trim()) {
-    logger.warn({ username }, 'LDAP mail attribute is not a valid address: using a synthetic one');
-  }
+  if (raw?.trim()) logger.warn({ username }, 'LDAP mail attribute is not a valid address: ignored');
+  return undefined;
+}
+
+/**
+ * The address of a new LDAP user the directory gives no mail: `<username>@ldap.local`, else — a
+ * username no address can carry, with a space or a non-ASCII letter — a synthetic one of its own.
+ */
+function syntheticAddress(username: string): string {
   const synthetic = EmailSchema.safeParse(`${username}@ldap.local`);
   return synthetic.success ? synthetic.data : `ldap-${randomUUID()}@ldap.local`;
 }
 
 /**
  * The local user for a directory-verified login: the account that carries this LDAP identity, with
- * its names synced from the directory, or a new pending account when the username is free.
+ * its names and address synced from the directory (`realignEmail`), or a new pending account when
+ * the username is free.
  *
  * @returns `null` — a refusal — when the username belongs to a deactivated account or to one without
  *   this LDAP identity (#144).
@@ -357,7 +363,7 @@ async function createOrUpdateUser(
   role: Role,
   userAttributes: Record<string, string[]>
 ): Promise<User | null> {
-  const ldapEmail = ldapAddress(username, userAttributes.mail?.[0]);
+  const mail = directoryMail(username, userAttributes.mail?.[0]);
 
   // Extract firstName and lastName from LDAP attributes
   const firstName =
@@ -374,7 +380,7 @@ async function createOrUpdateUser(
 
   logger.info(
     {
-      email: ldapEmail,
+      email: mail,
       firstName,
       lastName,
       availableAttributes: Object.keys(userAttributes),
@@ -417,13 +423,18 @@ async function createOrUpdateUser(
         `Updated firstName/lastName for user`
       );
     }
+
+    // Without a directory mail the stored address, one the user gave included, stays.
+    if (mail !== undefined && user.email !== mail) {
+      user = await realignEmail(prisma, user, mail);
+    }
   } else {
     // Create new user, in the business zone (ADR-035 §New users)
     const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
     user = await prisma.$transaction(async tx => {
       const newUser = await tx.user.create({
         data: {
-          email: ldapEmail,
+          email: mail ?? syntheticAddress(username),
           username,
           firstName,
           lastName,
@@ -461,7 +472,7 @@ async function createOrUpdateUser(
     // Real email already provided by LDAP: send the verification right away,
     // no need to wait for the user to enter it on the login page.
     // Fire-and-forget: don't block the login response on the SMTP send.
-    if (!isSyntheticLdapEmail(ldapEmail)) {
+    if (mail !== undefined) {
       sendVerificationEmail(prisma, {
         userId: user.id,
         reason: 'user_created',
@@ -483,4 +494,60 @@ async function createOrUpdateUser(
   }
 
   return user;
+}
+
+/**
+ * Moves an LDAP user's address to the directory's mail (#230): unverified, the links mailed to the
+ * old address revoked, audited. The last-admin lock comes first: an unverified address can take an
+ * administrator out of the break-glass count a strategy change reads under that lock.
+ */
+async function realignEmail(prisma: PrismaClient, user: User, email: string): Promise<User> {
+  // Read first, so an address another account holds costs one query per sign-in rather than the
+  // lock and a rolled-back write; the unique constraint still decides a race.
+  const holder = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  const realigned = holder !== null && holder.id !== user.id
+    ? 'held'
+    : await prisma.$transaction(async tx => {
+      await acquireLastAdminLock(tx);
+      // Conditional: a concurrent sign-in that moved it already leaves nothing to do.
+      const written = await tx.user.updateMany({
+        where: { id: user.id, email: { not: email } },
+        data: { email, emailVerifiedAt: null },
+      });
+      if (written.count > 0) {
+        const resetTokensRevoked = await revokeUserLinks(tx, user.id);
+        // Pre-session: no actor (CLAUDE.md, rule 4).
+        await logAudit({ prisma, logger }, {
+          action: 'EMAIL_CHANGED',
+          targetType: 'User',
+          targetId: user.id,
+          result: 'SUCCESS',
+          metadata: { reason: 'ldap_sync', resetTokensRevoked },
+        }, { tx });
+      }
+      return { user: await tx.user.findUniqueOrThrow({ where: { id: user.id } }), changed: written.count > 0 };
+    }).catch((error: unknown) => {
+      if (isUniqueViolation(error, 'users_email_key')) return 'held' as const;
+      throw error;
+    });
+
+  if (realigned === 'held') {
+    // Everything is kept and the sign-in goes on.
+    logger.warn({ userId: user.id }, 'LDAP mail belongs to another account: the stored address is kept');
+    await logAudit({ prisma, logger }, {
+      action: 'EMAIL_CHANGED',
+      targetType: 'User',
+      targetId: user.id,
+      result: 'FAILURE',
+      metadata: { reason: 'ldap_sync_email_in_use' },
+    });
+    return user;
+  }
+  // After the commit; a failed send changes nothing and fails no sign-in.
+  if (realigned.changed) {
+    sendVerificationEmail(prisma, { userId: user.id, reason: 'email_changed' }).catch(err => {
+      logger.warn({ userId: user.id, err }, 'Failed to send verification email for a realigned LDAP address');
+    });
+  }
+  return realigned.user;
 }

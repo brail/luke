@@ -31,6 +31,7 @@ import { authenticateViaLdap, LdapUserNotWrittenError } from '../src/lib/ldapAut
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
 
 import { createCallerAs, createTestUser, setupTestDb } from './helpers';
+import { whileHeld } from './helpers/heldTransaction';
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const ALICE_DN = 'uid=alice,ou=people,dc=test';
@@ -433,5 +434,121 @@ describe('the role mapping at first login (#112)', () => {
     const login = await signInWithMapping(JSON.stringify({ [ADMINS_DN]: 'admin', 'cn=others,dc=test': 'admn' }));
 
     expect(login.user).toMatchObject({ role: 'viewer' });
+  });
+});
+
+// #230: the directory owns an LDAP user's address as it owns the names. A sign-in writes a changed
+// directory mail back, unverified, with the links mailed to the old address revoked.
+describe('an existing user signing in takes the directory mail', () => {
+  const OLD = 'alice@old.example';
+
+  /** Alice as an earlier sign-in left her: names as the directory gives them, a verified address, a link of each kind. */
+  async function alice(email = OLD) {
+    const user = await prisma.user.create({
+      data: { email, username: 'alice', firstName: 'Alice', lastName: 'Rossi', role: 'editor', isActive: true, timezone: 'Europe/Rome', emailVerifiedAt: new Date() },
+    });
+    await prisma.identity.create({ data: { userId: user.id, provider: 'LDAP', providerId: 'alice' } });
+    const expiresAt = new Date(Date.now() + 60_000);
+    await prisma.userToken.createMany({
+      data: [
+        { userId: user.id, type: 'RESET', tokenHash: 'reset-hash', expiresAt },
+        { userId: user.id, type: 'VERIFY', tokenHash: 'verify-hash', expiresAt },
+      ],
+    });
+    return user;
+  }
+
+  const stored = (id: string) => prisma.user.findUniqueOrThrow({ where: { id } });
+  const links = (userId: string) => prisma.userToken.count({ where: { userId } });
+  const changes = (targetId: string) => prisma.auditLog.findMany({ where: { action: 'EMAIL_CHANGED', targetId } });
+
+  beforeEach(() => configureLdap());
+
+  it('a changed mail is written unverified, the old links revoked, the change audited and mailed', async () => {
+    const user = await alice();
+
+    const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(login.user).toMatchObject({ id: user.id, email: ALICE.mail, emailVerifiedAt: null });
+    expect(await stored(user.id)).toMatchObject({ email: ALICE.mail, emailVerifiedAt: null });
+    expect(await links(user.id)).toBe(0);
+    const [row, ...more] = await changes(user.id);
+    expect(more).toEqual([]);
+    expect(row).toMatchObject({ actorId: null, result: 'SUCCESS', metadata: { reason: 'ldap_sync', resetTokensRevoked: 1 } });
+    expect(emailHelpers.sendVerificationEmail).toHaveBeenCalledWith(prisma, { userId: user.id, reason: 'email_changed' });
+  });
+
+  it('the same mail, in another case, writes nothing', async () => {
+    const user = await alice(ALICE.mail);
+    search.mockResolvedValue(found({ ...ALICE, mail: ALICE.mail.toUpperCase() }));
+
+    await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(await stored(user.id)).toMatchObject({ email: ALICE.mail, emailVerifiedAt: user.emailVerifiedAt });
+    expect(await links(user.id)).toBe(2);
+    expect(await changes(user.id)).toEqual([]);
+    expect(emailHelpers.sendVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('no directory mail leaves the stored address, one the user gave included', async () => {
+    const user = await alice('alice@given.example');
+    search.mockResolvedValue(found({ dn: ALICE_DN, cn: ALICE.cn }));
+
+    await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(await stored(user.id)).toMatchObject({ email: 'alice@given.example', emailVerifiedAt: user.emailVerifiedAt });
+    expect(await links(user.id)).toBe(2);
+  });
+
+  it.each([
+    ['seen by the read before the write', false],
+    // The holder appears between the read and the write: the unique constraint refuses it.
+    ['refused by the constraint, in a race', true],
+  ])('a mail another account holds keeps everything, audits the refusal and signs in (%s)', async (_case, race) => {
+    const user = await alice();
+    const { user: other } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: other.id }, data: { email: ALICE.mail } });
+    if (race) {
+      const findUnique = prisma.user.findUnique.bind(prisma.user);
+      // The read before the write misses the holder; every other read is the real one. Prisma's
+      // delegate is generic over its arguments, which a stub cannot spell: hence the cast.
+      vi.spyOn(prisma.user, 'findUnique').mockImplementation(
+        (args => (args.where.email === ALICE.mail ? Promise.resolve(null) : findUnique(args))) as typeof findUnique
+      );
+    }
+
+    const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(login.user).toMatchObject({ id: user.id, email: OLD });
+    expect(await stored(user.id)).toMatchObject({ email: OLD, emailVerifiedAt: user.emailVerifiedAt });
+    expect(await links(user.id)).toBe(2);
+    expect(await changes(user.id)).toMatchObject([{ actorId: null, result: 'FAILURE', metadata: { reason: 'ldap_sync_email_in_use' } }]);
+  });
+
+  it('a verification mail that fails keeps the change and the sign-in', async () => {
+    const user = await alice();
+    vi.mocked(emailHelpers.sendVerificationEmail).mockRejectedValue(new Error('SMTP down'));
+
+    const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(login.user).toMatchObject({ email: ALICE.mail });
+    expect(await stored(user.id)).toMatchObject({ email: ALICE.mail });
+  });
+
+  it('a link issued while it waits for the user row does not survive it', async () => {
+    const user = await alice();
+
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [user.id]),
+      () => authenticateViaLdap(prisma, 'alice', 'her-password'),
+      holder => holder.query(
+        `INSERT INTO user_tokens (id, "userId", type, "tokenHash", "expiresAt") VALUES (gen_random_uuid(), $1, 'VERIFY', 'late-hash', now() + interval '1 day')`,
+        [user.id]
+      )
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    expect(await stored(user.id)).toMatchObject({ email: ALICE.mail });
+    expect(await links(user.id)).toBe(0);
   });
 });

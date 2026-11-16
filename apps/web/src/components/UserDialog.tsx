@@ -1,6 +1,6 @@
 'use client';
 
-import type { Role } from '@luke/core';
+import { resolveEffectiveProvider, type Role } from '@luke/core';
 
 import { type SyncedField, type UserSubmitPayload } from '../lib/userFormSchema';
 
@@ -89,7 +89,7 @@ export function UserDialog({
           mode={mode}
           initialData={{
             ...user,
-            provider: user?.identities?.[0]?.provider,
+            provider: resolveEffectiveProvider(user?.identities),
           }}
           onSubmit={onSubmit}
           onCancel={handleCancel}

@@ -1,5 +1,5 @@
 /**
- * `resolveEffectiveProvider` (users.service.ts) — picks the provider used for
+ * `resolveEffectiveProvider` (user.ts) — picks the provider used for
  * lock/display decisions when a user holds more than one `Identity` (e.g. after
  * `forceLocalAccess` grants a LOCAL identity alongside an existing LDAP one).
  *
@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { getLockedFields, resolveEffectiveProvider } from '../src/services/users.service';
+import { getLockedFields, getSelfLockedFields, resolveEffectiveProvider } from '../user.js';
 
 describe('resolveEffectiveProvider', () => {
   it('user with a single LOCAL identity → LOCAL', () => {
@@ -61,5 +61,15 @@ describe('resolveEffectiveProvider → getLockedFields (integration of the two p
   it('LOCAL-only user → no locked field', () => {
     const provider = resolveEffectiveProvider([{ provider: 'LOCAL' }]);
     expect(getLockedFields(provider)).toEqual([]);
+  });
+});
+
+// #230: the directory owns an LDAP account's address on the profile, never on the admin's edit.
+describe('getSelfLockedFields', () => {
+  it('adds the address for LDAP only', () => {
+    expect(getSelfLockedFields('LDAP')).toEqual([...getLockedFields('LDAP'), 'email']);
+    expect(getLockedFields('LDAP')).not.toContain('email');
+    expect(getSelfLockedFields('OIDC')).toEqual(getLockedFields('OIDC'));
+    expect(getSelfLockedFields('LOCAL')).toEqual([]);
   });
 });

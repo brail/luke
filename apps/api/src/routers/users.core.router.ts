@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, Roles, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
+import { CreateUserInputSchema, Roles, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, getLockedFields, hasPermission, privilegedUserUpdateFields, resolveEffectiveProvider } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 import { Prisma } from '@luke/db';
@@ -27,7 +27,7 @@ import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 import { refuseIfLastPersonOnEvents } from '../services/seasonCalendar.service';
-import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
+import { deleteUserHandler } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**
@@ -126,8 +126,8 @@ export const usersCoreRouter = router({
         all.sort((a, b) => {
           // A user may hold more than one identity (e.g. after `forceLocalAccess`) — sort/display
           // by the effective (external-first) provider, not an arbitrary/unordered `[0]`.
-          const providerA = resolveEffectiveProvider(a.identities ?? []);
-          const providerB = resolveEffectiveProvider(b.identities ?? []);
+          const providerA = resolveEffectiveProvider(a.identities);
+          const providerB = resolveEffectiveProvider(b.identities);
           const comparison = providerA.localeCompare(providerB);
           return sortOrder === 'asc' ? comparison : -comparison;
         });

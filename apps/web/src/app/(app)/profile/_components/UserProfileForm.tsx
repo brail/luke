@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { AUTH_UNAVAILABLE_MESSAGE, UserProfileSchema, type UserProfileInput } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, UserProfileSchema, getSelfLockedFields, type UserProfileInput } from '@luke/core';
 
 import { TimeZoneSelect } from '../../../../components/TimeZoneSelect';
 import { Button } from '../../../../components/ui/button';
@@ -39,7 +39,8 @@ interface UserProfileFormProps {
 /**
  * Profile edit form covering display name, timezone, and email change.
  * Fields for first name and last name are read-only when the account is managed
- * by an external provider (LDAP or SSO); a tooltip indicates the sync source.
+ * by an external provider (LDAP or SSO); a tooltip indicates the sync source. An LDAP account
+ * cannot change its email here: the directory owns it.
  * @param user - Current user data; `provider` determines which fields are editable.
  */
 export function UserProfileForm({ user }: UserProfileFormProps) {
@@ -104,9 +105,8 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     updateProfile(data);
   };
 
-  // Whether the fields are read-only because an external provider owns them
-  const isExternalProvider = user.provider !== 'LOCAL';
-  const readonlyFields = isExternalProvider ? ['firstName', 'lastName'] : [];
+  // The fields the provider owns, as the server locks them (#230): an LDAP account's address too.
+  const readonlyFields = getSelfLockedFields(user.provider);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -123,45 +123,53 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="newEmail">Cambia Email</Label>
-        <div className="flex gap-2">
-          <Input
-            id="newEmail"
-            type="email"
-            value={newEmail}
-            onChange={e => setNewEmail(e.target.value)}
-            placeholder="nuova@email.com"
-            disabled={isChangingEmail}
-          />
-          <Input
-            id="emailCurrentPassword"
-            type="password"
-            autoComplete="current-password"
-            aria-label="Password attuale"
-            value={emailPassword}
-            onChange={e => setEmailPassword(e.target.value)}
-            placeholder="Password attuale"
-            disabled={isChangingEmail}
-          />
-          <Button
-            type="button"
-            onClick={() => {
-              if (!newEmail || !emailPassword) return;
-              // The hook has toasted a refusal by the time it re-throws it; nothing else handles it.
-              changeEmail({ newEmail, currentPassword: emailPassword }).catch(() => undefined);
-            }}
-            disabled={isChangingEmail || !newEmail || !emailPassword}
-          >
-            {isChangingEmail ? (
-              <>
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                Aggiorno...
-              </>
-            ) : (
-              'Aggiorna'
-            )}
-          </Button>
-        </div>
+        {readonlyFields.includes('email') ? (
+          <p className="text-sm text-muted-foreground">
+            Email gestita da {user.provider}: non si modifica dal profilo
+          </p>
+        ) : (
+          <>
+            <Label htmlFor="newEmail">Cambia Email</Label>
+            <div className="flex gap-2">
+              <Input
+                id="newEmail"
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="nuova@email.com"
+                disabled={isChangingEmail}
+              />
+              <Input
+                id="emailCurrentPassword"
+                type="password"
+                autoComplete="current-password"
+                aria-label="Password attuale"
+                value={emailPassword}
+                onChange={e => setEmailPassword(e.target.value)}
+                placeholder="Password attuale"
+                disabled={isChangingEmail}
+              />
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!newEmail || !emailPassword) return;
+                  // The hook has toasted a refusal by the time it re-throws it; nothing else handles it.
+                  changeEmail({ newEmail, currentPassword: emailPassword }).catch(() => undefined);
+                }}
+                disabled={isChangingEmail || !newEmail || !emailPassword}
+              >
+                {isChangingEmail ? (
+                  <>
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                    Aggiorno...
+                  </>
+                ) : (
+                  'Aggiorna'
+                )}
+              </Button>
+            </div>
+          </>
+        )}
         {user.emailVerifiedAt === null && (
           <p className="text-xs text-amber-600">
             ⚠️ Email attuale non verificata. Controlla la casella di posta.

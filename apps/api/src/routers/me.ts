@@ -11,7 +11,9 @@ import {
   ChangeEmailSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
+  getSelfLockedFields,
   greetingAt,
+  resolveEffectiveProvider,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
@@ -74,8 +76,8 @@ export const meRouter = router({
       });
     }
 
-    // Determines the main provider (first identity)
-    const provider = user.identities[0]?.provider || 'LOCAL';
+    // The directory's identity first, whatever the row order (#230): a user it syncs stays its.
+    const provider = resolveEffectiveProvider(user.identities);
 
     // The zone the server renders this user's dates in, not the raw column: the web formats with
     // it and the profile form saves it back, which a legacy non-IANA value would fail.
@@ -118,53 +120,22 @@ export const meRouter = router({
   updateProfile: selfProcedure
     .input(UserProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      // Check the user's provider
-      const userWithProvider = await ctx.prisma.user.findUnique({
+      const current = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
-        select: {
-          id: true,
-          identities: {
-            select: {
-              provider: true,
-            },
-          },
-        },
+        select: { firstName: true, lastName: true, identities: { select: { provider: true } } },
       });
-
-      if (!userWithProvider) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Utente non trovato',
-        });
+      if (!current) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Utente non trovato' });
       }
 
-      const provider = userWithProvider.identities[0]?.provider || 'LOCAL';
-
-      // For external providers (LDAP/OIDC), block changes to synced fields
-      if (provider !== 'LOCAL') {
-        // Check whether the user is trying to change synced fields
-        const currentUser = await ctx.prisma.user.findUnique({
-          where: { id: ctx.session.user.id },
-          select: {
-            firstName: true,
-            lastName: true,
-          },
+      // The fields an external provider syncs stay as it wrote them (#230).
+      const locked = getSelfLockedFields(resolveEffectiveProvider(current.identities));
+      if ((['firstName', 'lastName'] as const).some(f => locked.includes(f) && input[f] !== current[f])) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            'Nome e cognome sono sincronizzati dal provider esterno e non possono essere modificati',
         });
-
-        if (!currentUser) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
-        }
-
-        if (
-          input.firstName !== currentUser.firstName ||
-          input.lastName !== currentUser.lastName
-        ) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message:
-              'Nome e cognome sono sincronizzati dal provider esterno e non possono essere modificati',
-          });
-        }
       }
 
       // Update the allowed fields
@@ -212,7 +183,8 @@ export const meRouter = router({
    *   account included), TOO_MANY_REQUESTS when the per-account bucket is full,
    *   SERVICE_UNAVAILABLE when LDAP could not complete the check; TOO_MANY_REQUESTS when the
    *   login's per-IP bucket is full; BAD_REQUEST for the address the account already has (which
-   *   would only unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address —
+   *   would only unverify it) or a synthetic LDAP one; FORBIDDEN, before any proof, for an LDAP
+   *   account, whose address the directory owns; CONFLICT if another account holds the address —
    *   the unique constraint's answer at the write, with no read before it.
    */
   changeEmail: selfProcedure
@@ -230,9 +202,19 @@ export const meRouter = router({
 
       // The username as stored, not the token's claim: an account renamed since sign-in is still
       // checked as itself. The authenticated user must be this session's.
-      const self = await ctx.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+      const self = await ctx.prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true, identities: { select: { provider: true } } },
+      });
       if (!self) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+      }
+      // The directory owns an LDAP account's address and writes it back at every sign-in (#230).
+      if (getSelfLockedFields(resolveEffectiveProvider(self.identities)).includes('email')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: "L'email è sincronizzata da LDAP e non può essere modificata",
+        });
       }
       // Signed in, so the answers say what went wrong (`signedIn` mode).
       const { user: proven } = await verifyCredentials(

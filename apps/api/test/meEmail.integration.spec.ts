@@ -5,10 +5,9 @@
  * another account held hit the unique constraint as a 500. Its form only ever sent the current
  * address back, so the write is gone: the profile schema has no email, and an `email` sent anyway
  * is dropped by the input parser. `me.changeEmail` answers a taken address with CONFLICT from the
- * write itself — the unique constraint is the check, with no read before it to race.
- *
- * Residual: a legacy row stored with capitals is not matched by the lower-cased new address, so
- * the constraint does not see the two as the same.
+ * write itself — the unique constraint is the check, with no read before it to race. Every stored
+ * address is in the normalized form since #228 (migration and CHECK constraint), so the constraint
+ * sees a case-only variant as the same address.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

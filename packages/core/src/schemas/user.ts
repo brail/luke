@@ -168,3 +168,33 @@ export type LockedFields =
   | 'firstName'
   | 'lastName'
   | 'password';
+
+/**
+ * The provider that decides a user's synced fields when the user holds more than one identity
+ * (`forceLocalAccess` grants a LOCAL one beside an LDAP one): an external identity always wins over
+ * LOCAL, since its sync keeps overwriting those fields at every sign-in. `'LOCAL'` only when there is
+ * no external identity. Never read `identities[0]`: the rows come in no guaranteed order.
+ */
+export function resolveEffectiveProvider<P extends string>(identities: readonly { provider: P }[] = []): P | 'LOCAL' {
+  return identities.find(i => i.provider !== 'LOCAL')?.provider ?? 'LOCAL';
+}
+
+/**
+ * The user fields the given provider owns, which nobody edits in Luke: none for LOCAL; username,
+ * names and password for LDAP; names and password for any other external provider (OIDC).
+ */
+export function getLockedFields(provider: string): LockedFields[] {
+  if (provider === 'LOCAL') return [];
+  if (provider === 'LDAP') return ['username', 'firstName', 'lastName', 'password'];
+  return ['firstName', 'lastName', 'password'];
+}
+
+/**
+ * The fields a user cannot change on their own profile: the provider's (`getLockedFields`) and an
+ * LDAP account's address, which the directory writes back at every sign-in (#230). An administrator
+ * may still set it, for a directory without mail.
+ */
+export function getSelfLockedFields(provider: string): LockedFields[] {
+  const locked = getLockedFields(provider);
+  return provider === 'LDAP' ? [...locked, 'email'] : locked;
+}

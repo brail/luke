@@ -5,7 +5,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { hasPermission, UserIdSchema, type LockedFields, type Role } from '@luke/core';
+import { hasPermission, UserIdSchema, type Role } from '@luke/core';
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
@@ -13,35 +13,6 @@ import { acquireLastAdminLock, assertNotLastAdminWithSettingsAccess } from '../l
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
 import type { Context } from '../lib/trpc';
-
-/**
- * Resolves the provider to use for lock/display decisions when a user may hold more than one
- * `Identity` (e.g. after `forceLocalAccess` grants a LOCAL identity alongside an existing LDAP
- * one). An external identity always takes precedence over LOCAL: LDAP sync
- * (`ldapAuth.ts::createOrUpdateUser`) keeps overwriting firstName/lastName on every successful
- * LDAP login regardless of whether a LOCAL identity also exists, so those fields must stay
- * locked. Falls back to `'LOCAL'` only when no external identity is present.
- */
-export function resolveEffectiveProvider(identities: { provider: string }[]): string {
-  return identities.find(i => i.provider !== 'LOCAL')?.provider ?? 'LOCAL';
-}
-
-/**
- * Returns the set of user fields that cannot be edited for the given auth provider.
- * LOCAL users have no locked fields; LDAP users have username, name, and password locked.
- */
-export function getLockedFields(provider: string): LockedFields[] {
-  if (provider === 'LOCAL') {
-    return [];
-  }
-  // For external providers (LDAP, OIDC), lock synchronized fields
-  if (provider === 'LDAP') {
-    // For LDAP: username immutable, firstName/lastName synchronized, password managed by LDAP
-    return ['username', 'firstName', 'lastName', 'password'];
-  }
-  // For other external providers (OIDC), lock only always-synchronized fields
-  return ['firstName', 'lastName', 'password'];
-}
 
 /**
  * Soft-deletes a user by setting `isActive = false`.

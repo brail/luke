@@ -70,7 +70,9 @@ unknown user, a full per-account bucket and an LDAP outage, and the audit row
 records, with its `errorCode`, what it was. Only the last row needs the
 password, so only it is answered `SERVICE_UNAVAILABLE` in public. A signed-in
 user re-proving their own password (`verifyCredentials` in `signedIn` mode) is
-told what went wrong. When nobody was authenticated because of an
+told what went wrong; `me.changeEmail` refuses an LDAP account before the proof,
+so that column applies to an account whose password reaches the directory
+through a strategy's fallback. When nobody was authenticated because of an
 `ldap_unavailable`, the administrators get an in-app notice, at most once per
 six hours (`notifyDeduped`, key `auth.ldap_unavailable`).
 
@@ -280,15 +282,17 @@ with bodies built in code.
   email, with the password just entered (`auth.resendVerification`). The link
   `{app.baseUrl}/auth/verify?token=…` works once, for 24 hours, and issuing one
   deletes the account's earlier verification links. A link is also mailed
-  automatically after `me.changeEmail` and `auth.submitPendingEmail`, and on a
-  first LDAP sign-in whose directory entry carries a real address. An
+  automatically after `me.changeEmail` and `auth.submitPendingEmail`, and on an
+  LDAP sign-in that creates the account or changes its address from a directory
+  entry that carries a real address. An
   administrator creating a user sends nothing.
 - **Tokens** — 32 random bytes, mailed as 64 hex characters; only their SHA-256
   hash is stored (`UserToken`). A used token is deleted; an expired one is
   refused but stays in the table.
 - **Address change** — changing an account's address (`me.changeEmail`, which
-  asks for the current password, `auth.submitPendingEmail`, or an
-  administrator's `users.update`) deletes every pending reset and verification
+  asks for the current password and refuses an LDAP account,
+  `auth.submitPendingEmail`, an administrator's `users.update`, or the LDAP
+  sign-in realignment) deletes every pending reset and verification
   link of the account, in the same transaction. A link is issued for the address
   the account holds when it is written, and a reset requested for an address the
   account no longer holds sends nothing.
@@ -312,13 +316,24 @@ depends on the sending domain's SPF, DKIM and DMARC records, an operator task.
 ## User provisioning and administrator protections
 
 An LDAP login creates the Luke user on first sign-in and, on every later one,
-updates only `firstName` and `lastName` from the directory
-(`src/lib/ldapAuth.ts`); the email and the role are never overwritten after
-creation. It creates the account only when no Luke account holds the username:
+updates `firstName` and `lastName` from the directory (`src/lib/ldapAuth.ts`)
+and moves the stored email to the entry's valid `mail` when it differs
+(`realignEmail`): unverified, the reset and verification links revoked and an
+`EMAIL_CHANGED` row (`actorId` null, reason `ldap_sync`) written in one
+transaction under the last-admin lock, the verification link mailed after the
+commit (a failed send changes nothing). An address another account holds is not
+taken: the stored one stays, a FAILURE row (`ldap_sync_email_in_use`) is
+written and the sign-in goes on. An entry without a valid `mail` leaves the
+stored address alone. The role is never overwritten after creation. It creates the account only when no Luke account holds the username:
 an existing account without that LDAP identity, or a deactivated one, is refused
 (`account_refused`) and never linked. For an LDAP account `users.update` refuses changes to the fields the
 directory owns — username, first and last name, password (`getLockedFields` in
-`src/services/users.service.ts`). There is no separate sync job.
+`@luke/core`, with `resolveEffectiveProvider`: an external identity wins over
+LOCAL whatever the row order). An administrator may still set an LDAP account's
+email, for a directory without mail, which a later sign-in rewrites when the
+directory has one; on the user's own profile it is locked too
+(`getSelfLockedFields`: `me.changeEmail` answers `FORBIDDEN` before any password
+proof). There is no separate sync job.
 
 `users.*` refuses, for the caller's own account: deactivating it (update or
 soft delete), changing its role, setting its password through the admin path

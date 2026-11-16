@@ -2,6 +2,7 @@ import { toast } from 'sonner';
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { TooltipProvider } from '../../../../../components/ui/tooltip';
 import { UserProfileForm } from '../UserProfileForm';
 
 /**
@@ -119,4 +120,18 @@ test('an unreachable directory is told as an unavailable sign-in service, not as
   const [, options] = await refusedEmailChange({ message: 'Internal server error', data: { code: 'SERVICE_UNAVAILABLE' } });
 
   expect(options).toEqual({ description: 'Servizio di autenticazione non disponibile. Riprova più tardi.' });
+});
+
+// #230: the directory owns an LDAP account's address and rewrites it at every sign-in.
+test('an LDAP account has no email change, and is told why', async () => {
+  // Mounted once in the app (`Providers.tsx`): the names' sync tooltips need it.
+  const screen = await render(
+    <TooltipProvider>
+      <UserProfileForm user={{ ...USER, provider: 'LDAP' }} />
+    </TooltipProvider>
+  );
+
+  await expect.element(screen.getByText('Email gestita da LDAP: non si modifica dal profilo')).toBeInTheDocument();
+  await expect.element(screen.getByLabelText('Cambia Email')).not.toBeInTheDocument();
+  await expect.element(screen.getByRole('button', { name: 'Aggiorna' })).not.toBeInTheDocument();
 });

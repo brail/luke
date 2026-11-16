@@ -2,6 +2,8 @@
 
 import React from 'react';
 
+import { resolveEffectiveProvider } from '@luke/core';
+
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
@@ -290,7 +292,7 @@ export function UsersTable({
               <TableCell>{user.lastName || '-'}</TableCell>
               <TableCell>
                 <Badge variant="outline">
-                  {user.identities?.[0]?.provider || 'LOCAL'}
+                  {resolveEffectiveProvider(user.identities)}
                 </Badge>
               </TableCell>
               <TableCell className="text-center">

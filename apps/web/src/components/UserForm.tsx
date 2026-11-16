@@ -147,6 +147,11 @@ export function UserForm({
                   Campo sincronizzato esternamente
                 </p>
               )}
+              {isLdapUser && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Se la directory LDAP ha un indirizzo, lo riscrive al prossimo accesso dell&apos;utente
+                </p>
+              )}
             </div>
 
             {/* Username */}
