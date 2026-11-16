@@ -215,6 +215,25 @@ export async function issueUserToken(
 }
 
 /**
+ * Moves `userId`'s address to `email`, unverified, then deletes its RESET and VERIFY links
+ * (`revokeUserLinks`), in the caller's transaction: the row before its links. `where` narrows the
+ * account it applies to (the address it must not already have, or must still have); nothing is
+ * written when it matches nothing. A taken address is the unique constraint's answer, for the caller.
+ *
+ * @returns How many RESET links were deleted (`resetTokensRevoked` in the audit), or `null` when
+ *   nothing was written.
+ */
+export async function moveUserEmail(
+  tx: Pick<Prisma.TransactionClient, 'user' | 'userToken'>,
+  userId: string,
+  email: string,
+  where: Prisma.UserWhereInput
+): Promise<number | null> {
+  const written = await tx.user.updateMany({ where: { ...where, id: userId }, data: { email, emailVerifiedAt: null } });
+  return written.count === 0 ? null : revokeUserLinks(tx, userId);
+}
+
+/**
  * Deletes every pending RESET and VERIFY link of `userId`. Call it in the transaction that changes
  * the account's address, **after** the address `UPDATE` (lock order: the user row, then its links),
  * so a link issued meanwhile has committed and is seen here.

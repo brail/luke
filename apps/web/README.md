@@ -31,7 +31,7 @@ Authenticated group `(app)/`:
 - `/sales/statistics` — order portfolio statistics and KIMO sales extraction, served from the NAV replica
 - `/settings/users` — user and role management, pending access requests
 - `/settings/mail` — SMTP configuration with test email
-- `/settings/ldap` — LDAP authentication with connection test
+- `/settings/ldap` — LDAP authentication with connection test, and a separate sign-in strategy card
 - `/settings/storage` — storage provider (local filesystem / S3)
 - `/settings/nav` — Microsoft NAV SQL Server connection
 - `/settings/nav-sync` — NAV synchronization scheduling for master data, order portfolio and KIMO, with sync logs
@@ -187,7 +187,7 @@ Configuration pages under `settings/` share the components in
 |---|---|
 | `SettingsFormShell` | Page wrapper: `PageHeader`, then the form behind `SettingsFormGate` |
 | `SettingsFormGate` | Loading, error and retry gate for a form inside a card or tab: renders the form only after its stored values are read |
-| `SettingsActions` | Save button and optional test button, with pending states |
+| `SettingsActions` | Save button (label via `saveLabel`) and optional test button, with pending states |
 | `SensitiveField` | Credential input with a show/hide toggle that never displays the stored value |
 | `UnreadableValueNotice` | Beside a field whose stored value this instance cannot decrypt: enter it again and save, or remove it where the page offers `Rimuovi` |
 | `TestStatusBanner` | Connection-test result (`idle`, `success`, `error`), announced through `role="status"` |

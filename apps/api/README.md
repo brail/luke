@@ -119,13 +119,18 @@ in the directory revokes it. LDAP provisioning creates no LOCAL credential.
 **Setup requirement.** Before choosing `ldap-only`, make sure at least one
 administrator can log in locally: active, approved, with a verified email when
 `auth.requireEmailVerification` is on, and a local password somebody knows. A
-forced local access counts only once its reset link has been used. The LDAP
-settings page refuses `ldap-only` with LDAP disabled, and when no administrator
-is active, approved, verified where required and holds a LOCAL credential under
-their current username. That check sees a credential row, not whether anyone
-knows the password: an unused forced local access passes it. Both are checks at
-the moment of saving, and Maintenance → Config writes the same keys without
-them.
+forced local access counts only once its reset link has been used. The strategy
+save of the LDAP settings page (`integrations.auth.saveStrategy`) refuses
+`ldap-only` with LDAP disabled, and when no administrator is active, approved,
+verified where required and holds a LOCAL credential under their current
+username; the LDAP connection save refuses turning LDAP off under `ldap-only`.
+That check sees a credential row, not whether anyone knows the password: an
+unused forced local access passes it. Both checks run in the save's own
+transaction under the last-admin lock (`saveAuthConfig`), the only application
+writer of `auth.strategy` and `auth.ldap.enabled`: Maintenance → Config refuses
+both keys. A change that can take an administrator out of that count (address,
+verification, local access, role, state, username) waits for the lock and is
+not refused, so the check holds when the strategy is saved, not later.
 
 While LDAP authenticates nobody and no such administrator exists, nobody can get
 in. Changing the `auth.strategy` row in the database (it is read on every login)
@@ -226,6 +231,7 @@ same transaction as the change, so the change is not saved without its row:
 | `SECTION_ACCESS_UPDATED` | `sectionAccess.set`; target `UserSectionAccess` `${userId}:${section}` | `targetUserId`, `section`, `enabled` (`null`: the override was removed) |
 | `CONFIG_UPSERT` on `rbac.sectionAccessDefaults` | `sectionAccess.setRoleDefaults` | `sectionAccessDefaults`: the whole stored map |
 | `CONFIG_UPSERT` on `app.sections.disabled` | `config.set` / `update` / `importJson`, through `saveSectionsDisabled` | `sectionsDisabled`: the whole list |
+| `CONFIG_UPSERT` on `auth.strategy` | `integrations.auth.saveStrategy`; a refused `ldap-only` is a FAILURE row | `key`, `strategy`, `errorCode` on a refusal |
 | `CONFIG_DELETE` | `config.delete`, through `deleteConfig`; target the key | `key` |
 
 These actions are in `CRITICAL_AUDIT_ACTIONS` (`src/lib/auditLog.ts`): the

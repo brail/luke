@@ -306,9 +306,9 @@ and the `AUTH_LOGIN_FAILED` rows say `ldap_unavailable`. In order:
    An administrator whose account bucket is full (`loginByUsername`, ten
    attempts in fifteen minutes) sees the same generic refusal even with the
    right password: wait for the window to pass.
-   That administrator can then switch `auth.strategy` to `local-first` from the
-   LDAP settings page, which saves the whole LDAP form with it, until the
-   directory is back.
+   That administrator can then switch the strategy to `local-first` with
+   `Salva strategia` in the `Strategia di autenticazione` card of the LDAP
+   settings page, until the directory is back.
 2. **No administrator knows a local password.** From a shell in the API
    container, `node dist-scripts/scripts/grant-local-access.js --username
    <administrator>` issues a single-use reset link;

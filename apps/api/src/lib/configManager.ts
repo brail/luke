@@ -245,26 +245,40 @@ export async function saveConfig(
 
 /**
  * Keys with a dedicated writer that runs a guard of its own, mapped to it: the kill switch (its
- * last-admin guard and audit row, in one transaction) and the role section defaults (ADR-043 and the
- * recovery guard of `sectionAccess.setRoleDefaults`). `saveConfig` and `saveConfigs` never write them;
- * `deleteConfig` still removes them.
+ * last-admin guard and audit row, in one transaction), the role section defaults (ADR-043 and the
+ * recovery guard of `sectionAccess.setRoleDefaults`), and the sign-in strategy and LDAP switch (the
+ * `ldap-only` break-glass guard, #246). `saveConfig` and `saveConfigs` never write them;
+ * `deleteConfig` still removes them where the generic router lets it.
  */
 const DEDICATED_WRITERS = {
   'app.sections.disabled': 'saveSectionsDisabled',
   'rbac.sectionAccessDefaults': 'setRbacSectionDefaultsTx',
+  'auth.strategy': 'saveAuthConfig',
+  'auth.ldap.enabled': 'saveAuthConfig',
 } as const satisfies Partial<Record<AppConfigKey, string>>;
 
+/** A key whose writes go through its dedicated writer only (`DEDICATED_WRITERS`). */
+export type DedicatedConfigKey = keyof typeof DEDICATED_WRITERS;
+
+/** Whether `key` has a dedicated writer, so `saveConfig` and `saveConfigs` refuse it. */
+export function hasDedicatedWriter(key: string): key is DedicatedConfigKey {
+  return Object.hasOwn(DEDICATED_WRITERS, key);
+}
+
 /** A key `saveConfig` and `saveConfigs` may write: every registry key without a dedicated writer. */
-export type BatchConfigKey = Exclude<AppConfigKey, keyof typeof DEDICATED_WRITERS>;
+export type BatchConfigKey = Exclude<AppConfigKey, DedicatedConfigKey>;
 
 /**
  * One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. An omitted
  * `encrypt` keeps the stored choice; a key not stored yet is plaintext. `mustExist` refuses a key
  * not stored at that point of the batch.
  */
-export type ConfigWrite =
-  | { key: BatchConfigKey; value: string; encrypt?: boolean; mustExist?: boolean }
-  | { key: BatchConfigKey; value: null };
+export type ConfigWrite = ConfigWriteOf<BatchConfigKey>;
+
+/** A write of `key`, whatever writer stores it. */
+export type ConfigWriteOf<K extends AppConfigKey> =
+  | { key: K; value: string; encrypt?: boolean; mustExist?: boolean }
+  | { key: K; value: null };
 
 /** The refusal of an update to a key that is not stored. */
 function configNotFoundError(key: string): TRPCError {
@@ -295,14 +309,16 @@ export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; valu
   return { key: write.key, value: encrypt ? encryptValue(write.value) : write.value, encrypt };
 }
 
-const APP_CONFIG_WRITE_LOCK_KEY = 'app-config-write';
+/** The AppConfig write lock's key, exported for the tests that hold it. */
+export const APP_CONFIG_WRITE_LOCK_KEY = 'app-config-write';
 
 /**
  * Keeps what a writer read from `app_configs` (the stored `encrypt` choice, whether a key exists) true
  * until it commits. Advisory, because a row lock holds nothing for a key not stored yet; one for
- * every key, because these writes are rare and short. Inside a `$transaction` only.
+ * every key, because these writes are rare and short. Inside a `$transaction` only. A writer that also
+ * takes the last-admin lock takes that one first (`saveSectionsDisabled`, `saveAuthConfig`).
  */
-async function acquireAppConfigWriteLock(tx: Prisma.TransactionClient): Promise<void> {
+export async function acquireAppConfigWriteLock(tx: Prisma.TransactionClient): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${APP_CONFIG_WRITE_LOCK_KEY}))`;
 }
 
@@ -330,48 +346,64 @@ export async function saveConfigs(
   // Excluded by the key type too; refused here as well, removal included, for a caller that reaches
   // one through a cast.
   for (const { key } of writes) {
-    if (Object.hasOwn(DEDICATED_WRITERS, key)) {
-      const writer = DEDICATED_WRITERS[key as keyof typeof DEDICATED_WRITERS]; // Narrowed by `hasOwn` above.
-      throw new Error(`saveConfigs cannot write ${key}: use ${writer}, which runs its guard`);
+    if (hasDedicatedWriter(key)) {
+      throw new Error(`saveConfigs cannot write ${key}: use ${DEDICATED_WRITERS[key]}, which runs its guard`);
     }
   }
-  // Every value first: a bad one opens no transaction and takes no lock.
-  for (const write of writes) {
-    if (write.value !== null) assertValidConfigValue(write.key, write.value);
-  }
+  assertValidConfigValues(writes);
 
   const results = await prisma.$transaction(async tx => {
     await acquireAppConfigWriteLock(tx);
-    const stored = await tx.appConfig.findMany({
-      where: { key: { in: writes.map(write => write.key) } },
-      select: { key: true, isEncrypted: true },
-    });
-    // How each key is stored at this point of the batch: a key may appear more than once.
-    const storedEncrypted = new Map(stored.map(row => [row.key, row.isEncrypted]));
-    const saved: boolean[] = [];
-    for (const write of writes) {
-      if (write.value === null) {
-        await tx.appConfig.deleteMany({ where: { key: write.key } });
-        storedEncrypted.delete(write.key);
-        continue;
-      }
-      if (write.mustExist && !storedEncrypted.has(write.key)) throw configNotFoundError(write.key);
-      const row = prepareConfigWrite({ ...write, encrypt: write.encrypt ?? storedEncrypted.get(write.key) });
-      await tx.appConfig.upsert({
-        where: { key: row.key },
-        update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
-        create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
-      });
-      storedEncrypted.set(row.key, row.encrypt);
-      saved.push(row.encrypt);
-    }
-    return saved;
+    return writeConfigsTx(tx, writes);
   });
 
   if (writes.some(write => RBAC_CACHE_KEYS.test(write.key))) {
     invalidateRbacCache();
   }
   return results;
+}
+
+/** Every value of a batch against its registry schema: a bad one opens no transaction and takes no lock. */
+export function assertValidConfigValues(writes: readonly ConfigWriteOf<AppConfigKey>[]): void {
+  for (const write of writes) {
+    if (write.value !== null) assertValidConfigValue(write.key, write.value);
+  }
+}
+
+/**
+ * The writes of `saveConfigs`, inside a transaction that already holds the AppConfig write lock:
+ * for a dedicated writer that checks its guard under the same locks before writing (`saveAuthConfig`).
+ * Values already validated (`assertValidConfigValues`). It runs no guard and does not invalidate the
+ * RBAC cache: never pass it a key another dedicated writer owns, nor an `rbac.*` key.
+ */
+export async function writeConfigsTx(
+  tx: Prisma.TransactionClient,
+  writes: readonly ConfigWriteOf<AppConfigKey>[]
+): Promise<boolean[]> {
+  const stored = await tx.appConfig.findMany({
+    where: { key: { in: writes.map(write => write.key) } },
+    select: { key: true, isEncrypted: true },
+  });
+  // How each key is stored at this point of the batch: a key may appear more than once.
+  const storedEncrypted = new Map(stored.map(row => [row.key, row.isEncrypted]));
+  const saved: boolean[] = [];
+  for (const write of writes) {
+    if (write.value === null) {
+      await tx.appConfig.deleteMany({ where: { key: write.key } });
+      storedEncrypted.delete(write.key);
+      continue;
+    }
+    if (write.mustExist && !storedEncrypted.has(write.key)) throw configNotFoundError(write.key);
+    const row = prepareConfigWrite({ ...write, encrypt: write.encrypt ?? storedEncrypted.get(write.key) });
+    await tx.appConfig.upsert({
+      where: { key: row.key },
+      update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
+      create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
+    });
+    storedEncrypted.set(row.key, row.encrypt);
+    saved.push(row.encrypt);
+  }
+  return saved;
 }
 
 /**
@@ -385,7 +417,7 @@ export async function saveConfigs(
  * @param key - Configuration key to look up.
  * @returns The plaintext value, or `null` if the key does not exist.
  */
-export async function getConfig(prisma: PrismaClient, key: string): Promise<string | null> {
+export async function getConfig(prisma: Prisma.TransactionClient, key: string): Promise<string | null> {
   const config = await prisma.appConfig.findUnique({
     where: { key },
   });
@@ -528,7 +560,7 @@ export class InvalidStoredConfigError extends UnreadableStoredConfigError {
  * propagates.
  */
 export async function getStoredConfigOrDefault<K extends AppConfigKeyWithDefault>(
-  prisma: PrismaClient,
+  prisma: Prisma.TransactionClient,
   key: K,
 ): Promise<AppConfigValue<K>> {
   const raw = await getConfig(prisma, key);
@@ -790,7 +822,7 @@ export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
  * verified user or an LDAP login, so a bad row can neither switch the gate off nor lock out an
  * administrator who meets it.
  */
-export async function getRequireEmailVerification(prisma: PrismaClient): Promise<boolean> {
+export async function getRequireEmailVerification(prisma: Prisma.TransactionClient): Promise<boolean> {
   try {
     return await getStoredConfigOrDefault(prisma, 'auth.requireEmailVerification');
   } catch (error) {
@@ -952,7 +984,7 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<PasswordP
 }
 
 /** On only for the stored text the registry reads as true: ciphertext, invalid or absent is off. */
-function ldapEnabledFrom(stored: string | undefined): boolean {
+export function ldapEnabledFrom(stored: string | undefined): boolean {
   return AppConfigRegistry['auth.ldap.enabled'].safeParse(stored).data === true;
 }
 

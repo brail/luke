@@ -20,7 +20,7 @@ import {
   isLdapEnabled,
   type LdapConfig,
 } from './configManager';
-import { revokeUserLinks, sendVerificationEmail } from './emailHelpers';
+import { moveUserEmail, sendVerificationEmail } from './emailHelpers';
 import { isUniqueViolation, toErrorCode, toErrorMessage } from './error';
 import { acquireLastAdminLock } from './lastAdminGuard';
 import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
@@ -510,12 +510,8 @@ async function realignEmail(prisma: PrismaClient, user: User, email: string): Pr
     : await prisma.$transaction(async tx => {
       await acquireLastAdminLock(tx);
       // Conditional: a concurrent sign-in that moved it already leaves nothing to do.
-      const written = await tx.user.updateMany({
-        where: { id: user.id, email: { not: email } },
-        data: { email, emailVerifiedAt: null },
-      });
-      if (written.count > 0) {
-        const resetTokensRevoked = await revokeUserLinks(tx, user.id);
+      const resetTokensRevoked = await moveUserEmail(tx, user.id, email, { email: { not: email } });
+      if (resetTokensRevoked !== null) {
         // Pre-session: no actor (CLAUDE.md, rule 4).
         await logAudit({ prisma, logger }, {
           action: 'EMAIL_CHANGED',
@@ -525,7 +521,7 @@ async function realignEmail(prisma: PrismaClient, user: User, email: string): Pr
           metadata: { reason: 'ldap_sync', resetTokensRevoked },
         }, { tx });
       }
-      return { user: await tx.user.findUniqueOrThrow({ where: { id: user.id } }), changed: written.count > 0 };
+      return { user: await tx.user.findUniqueOrThrow({ where: { id: user.id } }), changed: resetTokensRevoked !== null };
     }).catch((error: unknown) => {
       if (isUniqueViolation(error, 'users_email_key')) return 'held' as const;
       throw error;

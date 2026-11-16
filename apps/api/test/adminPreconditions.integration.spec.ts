@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as nav from '@luke/nav';
 
 import { saveConfig } from '../src/lib/configManager';
+import { saveAuthConfig } from '../src/services/authConfig.service';
 
 import { createCallerAs, setupTestDb } from './helpers';
 
@@ -77,7 +78,7 @@ describe('incomplete configuration reaches the admin as a 4xx', () => {
   });
 
   it('LDAP search test', async () => {
-    await saveConfig(prisma, 'auth.ldap.enabled', 'true');
+    await saveAuthConfig(prisma, [{ key: 'auth.ldap.enabled', value: 'true' }]);
     await saveConfig(prisma, 'auth.ldap.url', 'ldap://dc.example.com', true);
     const caller = await createCallerAs('admin');
 

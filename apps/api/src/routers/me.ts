@@ -17,10 +17,11 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
@@ -227,17 +228,13 @@ export const meRouter = router({
       }
 
       // The current address is excluded in the write itself: re-submitting it would only unverify it.
-      // The links mailed to the old address go in the same transaction, after the address UPDATE
-      // (lock order: the user row, then its links — see `issueUserToken`); `null` when nothing was
-      // written, so nothing was deleted either.
+      // The last-admin lock first: an unverified address can take an administrator out of the
+      // break-glass count a strategy change reads under it (#246).
       let resetTokensRevoked: number | null;
       try {
         resetTokensRevoked = await ctx.prisma.$transaction(async tx => {
-          const written = await tx.user.updateMany({
-            where: { id: userId, email: { not: newEmail } },
-            data: { email: newEmail, emailVerifiedAt: null },
-          });
-          return written.count === 0 ? null : revokeUserLinks(tx, userId);
+          await acquireLastAdminLock(tx);
+          return moveUserEmail(tx, userId, newEmail, { email: { not: newEmail } });
         });
       } catch (err) {
         if (isUniqueViolation(err, 'users_email_key')) {

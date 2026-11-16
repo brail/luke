@@ -8,6 +8,8 @@ interface SettingsActionsProps {
   onTest?: () => void;
   isTesting?: boolean;
   disabled?: boolean;
+  /** The save button's text, for a page with more than one save. */
+  saveLabel?: string;
 }
 
 /**
@@ -22,6 +24,7 @@ export function SettingsActions({
   onTest,
   isTesting = false,
   disabled = false,
+  saveLabel = 'Salva Configurazione',
 }: SettingsActionsProps) {
   return (
     <div className="flex justify-end space-x-2 pt-4">
@@ -43,7 +46,7 @@ export function SettingsActions({
           disabled={disabled || isSaving || isTesting}
           aria-busy={isSaving}
         >
-          {isSaving ? 'Salvataggio...' : 'Salva Configurazione'}
+          {isSaving ? 'Salvataggio...' : saveLabel}
         </Button>
       )}
     </div>

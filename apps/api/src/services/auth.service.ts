@@ -80,12 +80,12 @@ export async function authenticateLocal(
  * database shows: active, approved, holding a LOCAL credential under their current username, with a
  * verified email when verification is required — what `authenticateUser` asks of them.
  *
- * A check at a moment, not a guarantee: a later deactivation, demotion, credential change or
- * verification policy change can undo it. And a credential row is not proof that anyone knows the
- * password: forcing local access (`users.forceLocalAccess`) stores a random one until the
- * reset link is used.
+ * True at the commit of a transaction holding the locks `saveAuthConfig` takes (#246), not later:
+ * the changes that can lower it wait for that commit and are not refused. And a credential row is
+ * not proof that anyone knows the password: forcing local access (`users.forceLocalAccess`) stores a
+ * random one until the reset link is used.
  */
-export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<number> {
+export async function countBreakGlassAdmins(prisma: Prisma.TransactionClient): Promise<number> {
   const requireEmailVerification = await getRequireEmailVerification(prisma);
 
   const localIdentity = { provider: 'LOCAL' as const, localCredential: { isNot: null } };

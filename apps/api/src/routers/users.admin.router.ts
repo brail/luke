@@ -13,6 +13,7 @@ import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
 import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
+import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -251,22 +252,15 @@ export const usersAdminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { userId, verified } = input;
 
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true },
+      // Unverifying an administrator can lower the break-glass count a strategy change reads under
+      // the last-admin lock (#246): the two wait for each other. The write is the existence check.
+      const { count } = await ctx.prisma.$transaction(async tx => {
+        await acquireLastAdminLock(tx);
+        return tx.user.updateMany({ where: { id: userId }, data: { emailVerifiedAt: verified ? new Date() : null } });
       });
-
-      if (!user) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente non trovato',
-        });
+      if (count === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
       }
-
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: { emailVerifiedAt: verified ? new Date() : null },
-      });
 
       return {
         success: true,
@@ -421,6 +415,9 @@ export const usersAdminRouter = router({
       // the same user must re-read fresh state, not act on a stale pre-transaction snapshot
       // (mirrors the race-safety already applied to `forceLocalAccess` above).
       const result = await ctx.prisma.$transaction(async tx => {
+        // Revoking an administrator's LOCAL credential can lower the break-glass count a strategy
+        // change checks under this lock (#246): the two wait for each other.
+        await acquireLastAdminLock(tx);
         const user = await tx.user.findUnique({
           where: { id: input.id },
           include: { identities: { select: { id: true, provider: true } } },

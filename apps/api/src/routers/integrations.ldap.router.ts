@@ -6,23 +6,21 @@
 import { TRPCError } from '@trpc/server';
 import { Client, InvalidCredentialsError } from 'ldapts';
 
-import { LDAP_TEST_FIELDS, ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
+import { LDAP_TEST_FIELDS, LdapStrategyInputSchema, ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import {
   ConfigDecryptionError,
   getLdapConfig,
   getLdapConfigForForm,
-  saveConfigs,
   unreadableConfigError,
-  type ConfigWrite,
 } from '../lib/configManager';
 import { externalCheckFailed, toErrorCode, toErrorMessage } from '../lib/error';
 import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { countBreakGlassAdmins } from '../services/auth.service';
+import { saveAuthConfig, type AuthConfigWrite } from '../services/authConfig.service';
 
 /** The fixed text of a bind the directory refused in a settings test (#193); the caller logs why. */
 function bindFailedMessage(err: unknown): string {
@@ -33,10 +31,11 @@ function bindFailedMessage(err: unknown): string {
 
 export const ldapRouter = router({
   /**
-   * Saves the global LDAP configuration; all fields are stored under auth.ldap.* in AppConfig (encrypted where sensitive).
+   * Saves the global LDAP connection settings under auth.ldap.* in AppConfig (encrypted where
+   * sensitive). Never the strategy (`saveStrategy`, #246); turning LDAP off under `ldap-only` is refused.
    *
    * @auth {config:update}
-   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, strategy, enabled.
+   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, enabled.
    * @output {{ success: true, message: string }}
    */
   saveLdapConfig: protectedProcedure
@@ -45,7 +44,7 @@ export const ldapRouter = router({
     .mutation(async ({ input, ctx }) => {
       try {
         // Save each field in AppConfig
-        const configMappings: { key: ConfigWrite['key']; value: string | undefined; encrypt: boolean }[] = [
+        const configMappings: { key: AuthConfigWrite['key']; value: string | undefined; encrypt: boolean }[] = [
           {
             key: 'auth.ldap.enabled',
             value: input.enabled.toString(),
@@ -77,7 +76,6 @@ export const ldapRouter = router({
             value: input.roleMapping,
             encrypt: true,
           },
-          { key: 'auth.strategy', value: input.strategy, encrypt: false },
         ];
 
         // The two write-only credentials. `getLdapConfig` answers only whether each is stored, so
@@ -99,23 +97,11 @@ export const ldapRouter = router({
           ...credentials.filter(({ value }) => value),
         ];
 
-        // `ldap-only` leaves the local administrators as the only way in when LDAP authenticates
-        // nobody. Refused when none could use it — checked now, not guaranteed later.
-        if (input.strategy === 'ldap-only' && (await countBreakGlassAdmins(ctx.prisma)) === 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              "La strategia ldap-only richiede almeno un amministratore attivo e approvato con una password locale, " +
-              "che è l'accesso di emergenza quando LDAP non autentica nessuno. Un accesso locale forzato conta solo " +
-              'dopo che il link per impostare la password è stato usato.',
-          });
-        }
-
-        // One change through `saveConfigs`, like every settings form: each value answers to the
-        // registry on the plaintext before any is written, and the credentials are encrypted as
-        // secrets. An empty optional field is "not configured", which is an absent key, never `''`
-        // (the reader already defaults absent ones).
-        await saveConfigs(
+        // One change, like every settings form: each value answers to the registry on the plaintext
+        // before any is written, and the credentials are encrypted as secrets. An empty optional
+        // field is "not configured", which is an absent key, never `''` (the reader already defaults
+        // absent ones). Through the strategy's writer: LDAP off under `ldap-only` is refused there.
+        await saveAuthConfig(
           ctx.prisma,
           writes.flatMap(({ key, value, encrypt }) =>
             value === undefined ? [] : [value === '' ? { key, value: null } : { key, value, encrypt }]
@@ -123,7 +109,7 @@ export const ldapRouter = router({
         );
 
         ctx.logger.info(
-          { enabled: input.enabled, url: input.url, strategy: input.strategy, hasBindPassword: !!input.bindPassword },
+          { enabled: input.enabled, url: input.url, hasBindPassword: !!input.bindPassword },
           'LDAP configuration saved'
         );
 
@@ -143,10 +129,8 @@ export const ldapRouter = router({
               'auth.ldap.groupSearchBase',
               'auth.ldap.groupSearchFilter',
               'auth.ldap.roleMapping',
-              'auth.strategy',
             ],
             ldapEnabled: input.enabled,
-            strategy: input.strategy,
             hasBindPassword: !!input.bindPassword,
           },
         });
@@ -178,6 +162,35 @@ export const ldapRouter = router({
           cause: error,
         });
       }
+    }),
+
+  /**
+   * Saves the sign-in strategy alone (#246): `ldap-only` needs LDAP on and a break-glass administrator,
+   * checked under the locks the write holds (`saveAuthConfig`).
+   *
+   * @auth {config:update}
+   * @input {LdapStrategyInputSchema} — strategy.
+   * @output {{ success: true, message: string }}
+   * @throws {TRPCError} BAD_REQUEST when `ldap-only` would leave no way in.
+   */
+  saveStrategy: protectedProcedure
+    .use(requirePermission('config:update'))
+    .input(LdapStrategyInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      // A refused switch to `ldap-only` is recorded too, as a refused connection save is.
+      let failure: unknown;
+      await saveAuthConfig(ctx.prisma, [{ key: 'auth.strategy', value: input.strategy }]).catch((error: unknown) => {
+        failure = error;
+      });
+      await logAudit(ctx, {
+        action: 'CONFIG_UPSERT',
+        targetType: 'Config',
+        targetId: 'auth.strategy',
+        result: failure === undefined ? 'SUCCESS' : 'FAILURE',
+        metadata: { key: 'auth.strategy', strategy: input.strategy, errorCode: failure === undefined ? undefined : toErrorCode(failure) },
+      });
+      if (failure !== undefined) throw failure;
+      return { success: true, message: 'Strategia di autenticazione salvata' };
     }),
 
   /**

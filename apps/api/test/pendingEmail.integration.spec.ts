@@ -16,15 +16,15 @@
 import { Client, InvalidCredentialsError } from 'ldapts';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { SIGN_IN_REFUSED_MESSAGE, type AppConfigKey } from '@luke/core';
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { saveConfig, type BatchConfigKey } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import * as ldapAuth from '../src/lib/ldapAuth';
 import { resetLdapBreakers } from '../src/lib/ldapClient';
 import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
+import { saveAuthConfig } from '../src/services/authConfig.service';
 
 import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
 
@@ -44,20 +44,16 @@ let ip = 0;
 let sendVerification: MockInstance<typeof emailHelpers.sendVerificationEmail>;
 
 async function configure(strategy: 'ldap-first' | 'local-first') {
-  const values: Partial<Record<AppConfigKey, string>> = {
-    'auth.strategy': strategy,
-    'auth.ldap.enabled': 'true',
-    'auth.ldap.url': 'ldap://dc.test:389',
-    'auth.ldap.bindDN': SERVICE_DN,
-    'auth.ldap.bindPassword': 'service-password',
-    'auth.ldap.searchBase': 'dc=test',
-    'auth.ldap.searchFilter': '(uid=${username})',
-    'auth.ldap.resilience.maxRetries': '0',
-  };
-  for (const [key, value] of Object.entries(values)) {
-    // `Object.entries` widens the keys to `string`; they are the registry keys listed above.
-    await saveConfig(prisma, key as BatchConfigKey, value);
-  }
+  await saveAuthConfig(prisma, [
+    { key: 'auth.strategy', value: strategy },
+    { key: 'auth.ldap.enabled', value: 'true' },
+    { key: 'auth.ldap.url', value: 'ldap://dc.test:389' },
+    { key: 'auth.ldap.bindDN', value: SERVICE_DN },
+    { key: 'auth.ldap.bindPassword', value: 'service-password' },
+    { key: 'auth.ldap.searchBase', value: 'dc=test' },
+    { key: 'auth.ldap.searchFilter', value: '(uid=${username})' },
+    { key: 'auth.ldap.resilience.maxRetries', value: '0' },
+  ]);
 }
 
 /** Each call from its own IP, so the per-IP buckets never fill across the file. */

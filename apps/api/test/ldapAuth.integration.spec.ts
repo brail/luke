@@ -25,13 +25,14 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { encryptValue, saveConfig, type BatchConfigKey } from '../src/lib/configManager';
+import { encryptValue, saveConfig } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { authenticateViaLdap, LdapUserNotWrittenError } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
+import { saveAuthConfig, type AuthConfigWrite } from '../src/services/authConfig.service';
 
 import { createCallerAs, createTestUser, setupTestDb } from './helpers';
-import { whileHeld } from './helpers/heldTransaction';
+import { holdLastAdminLock, whileHeld } from './helpers/heldTransaction';
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const ALICE_DN = 'uid=alice,ou=people,dc=test';
@@ -76,10 +77,11 @@ async function configureLdap(overrides: Partial<Record<AppConfigKey, string | nu
     'auth.ldap.resilience.maxRetries': '0',
     ...overrides,
   };
-  for (const [key, value] of Object.entries(values)) {
+  await saveAuthConfig(
+    prisma,
     // `Object.entries` widens the keys to `string`; they are the registry keys listed above.
-    if (value !== null) await saveConfig(prisma, key as BatchConfigKey, value);
-  }
+    Object.entries(values).flatMap(([key, value]) => (value === null ? [] : [{ key: key as AuthConfigWrite['key'], value }]))
+  );
 }
 
 beforeEach(async () => {
@@ -196,7 +198,7 @@ describe('authenticateViaLdap', () => {
     });
 
     it('LDAP disabled', async () => {
-      await saveConfig(prisma, 'auth.ldap.enabled', 'false');
+      await saveAuthConfig(prisma, [{ key: 'auth.ldap.enabled', value: 'false' }]);
 
       expect(await authenticateViaLdap(prisma, 'alice', 'pw')).toEqual(REFUSED);
       expect(bind).not.toHaveBeenCalled();
@@ -532,6 +534,16 @@ describe('an existing user signing in takes the directory mail', () => {
     const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
 
     expect(login.user).toMatchObject({ email: ALICE.mail });
+    expect(await stored(user.id)).toMatchObject({ email: ALICE.mail });
+  });
+
+  // #246: an unverified address can lower the break-glass count a strategy change reads under this lock.
+  it('waits for the last-admin lock before it writes', async () => {
+    const user = await alice();
+
+    const outcome = await whileHeld(holdLastAdminLock, () => authenticateViaLdap(prisma, 'alice', 'her-password'));
+
+    expect(outcome.status).toBe('fulfilled');
     expect(await stored(user.id)).toMatchObject({ email: ALICE.mail });
   });
 

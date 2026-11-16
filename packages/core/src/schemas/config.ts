@@ -500,13 +500,15 @@ export const CONFIG_ROUTER_KEY_REGEX = new RegExp(
  * Keys `config.delete` refuses, because deleting one succeeds but breaks something: boot
  * (`CRITICAL_CONFIG_KEYS`), every LDAP login while LDAP is enabled (the three fields `ldapAuth.ts`
  * requires), or, silently, every link in outgoing email (`app.baseUrl` falls back to
- * `http://localhost:3000`). `auth.nextAuthSecret` is a legacy key the seed still writes. Deleting
- * any other key under `CONFIG_ROUTER_PREFIXES` resets it to its default or leaves it
- * unconfigured, which an update can do as well.
+ * `http://localhost:3000`). `auth.ldap.enabled` changes only through the LDAP settings save, which
+ * refuses turning LDAP off under `ldap-only` (#246). `auth.nextAuthSecret` is a legacy key the seed
+ * still writes. Deleting any other key under `CONFIG_ROUTER_PREFIXES` resets it to its default or
+ * leaves it unconfigured, which an update can do as well.
  */
 export const UNDELETABLE_CONFIG_KEYS = [
   ...CRITICAL_CONFIG_KEYS,
   'auth.nextAuthSecret',
+  'auth.ldap.enabled',
   'auth.ldap.url',
   'auth.ldap.searchBase',
   'auth.ldap.searchFilter',

@@ -31,11 +31,10 @@ export const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 export type RoleMapping = z.infer<typeof RoleMappingSchema>;
 
 /**
- * Input schema for saving LDAP configuration.
- * `roleMapping` is the JSON text of a `RoleMappingSchema`; a mistyped role names its group.
- * `ldap-only` with LDAP disabled is refused: only the local administrators could log in. The issue
- * sits on `strategy` so the settings form shows it under that field. A convenience for this form
- * and `saveLdapConfig`; Maintenance → Config writes the same keys without it.
+ * Input schema for saving the LDAP connection settings (`saveLdapConfig`).
+ * `roleMapping` is the JSON text of a `RoleMappingSchema`; a mistyped role names its group. The
+ * strategy has its own save (`LdapStrategyInputSchema`, #246): a connection save never changes how
+ * users sign in, and the server checks `enabled` against the stored strategy.
  */
 export const ldapConfigSchema = z.object({
   enabled: z.boolean(),
@@ -72,16 +71,10 @@ export const ldapConfigSchema = z.object({
           : 'Role Mapping deve associare ogni gruppo LDAP a un ruolo: { "gruppo": "ruolo" }',
       });
     }),
-  strategy: z.enum(LDAP_STRATEGIES),
-}).superRefine((config, ctx) => {
-  if (config.strategy === 'ldap-only' && !config.enabled) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['strategy'],
-      message: 'La strategia ldap-only richiede LDAP abilitato',
-    });
-  }
 });
+
+/** Input of `integrations.auth.saveStrategy`: the sign-in strategy alone (#246). */
+export const LdapStrategyInputSchema = z.object({ strategy: z.enum(LDAP_STRATEGIES) });
 
 /** Input schema for testing LDAP user search by username. */
 export const ldapSearchTestSchema = z.object({

@@ -22,6 +22,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import {
+  hasDedicatedWriter,
   saveConfig,
   saveSectionsDisabled,
   getConfigsMasked,
@@ -224,6 +225,13 @@ async function upsertConfig(
   if (key === 'app.sections.disabled') {
     // Its audit row, with the whole list, is written in the save's own transaction.
     encrypted = await saveSectionsDisabled(ctx, value, { source: options.source, mustExist: options.strictUpdate });
+  } else if (hasDedicatedWriter(key)) {
+    // A key with a guard of its own (`DEDICATED_WRITERS`) — the strategy and the LDAP switch check
+    // `ldap-only` against the break-glass administrators (#246); an import reports this per item.
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `La chiave '${key}' ha un salvataggio dedicato: modificala dalla sua pagina delle impostazioni`,
+    });
   } else {
     // `mustExist` is checked under the write lock: a concurrent delete cannot turn `update` into a create.
     encrypted = await saveConfig(ctx.prisma, key, value, encrypt, { mustExist: options.strictUpdate });

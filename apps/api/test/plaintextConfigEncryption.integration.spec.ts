@@ -11,6 +11,7 @@ import { getRbacConfig, invalidateRbacCache } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
 import { isLdapEnabled } from '../src/lib/configManager';
+import { saveAuthConfig } from '../src/services/authConfig.service';
 
 import { createCallerAs, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
@@ -56,11 +57,12 @@ describe('a plaintext key is stored in plaintext whatever the caller asks', () =
     expect(await row('app.name')).toEqual(appNameBefore);
   });
 
-  it('config.set stores the LDAP switch and strategy in plaintext, and LDAP reads them', async () => {
-    const caller = await createCallerAs('admin');
-
-    await caller.config.set({ key: 'auth.ldap.enabled', value: 'true', encrypt: true });
-    await caller.config.set({ key: 'auth.strategy', value: 'ldap-first', encrypt: true });
+  // Their writer is `saveAuthConfig` since #246; `config.set` refuses both.
+  it('saveAuthConfig stores the LDAP switch and strategy in plaintext, and LDAP reads them', async () => {
+    await saveAuthConfig(prisma, [
+      { key: 'auth.ldap.enabled', value: 'true', encrypt: true },
+      { key: 'auth.strategy', value: 'ldap-first', encrypt: true },
+    ]);
 
     expect(await row('auth.ldap.enabled')).toMatchObject({ value: 'true', isEncrypted: false });
     expect(await row('auth.strategy')).toMatchObject({ value: 'ldap-first', isEncrypted: false });

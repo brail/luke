@@ -18,7 +18,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
@@ -288,24 +288,17 @@ export const authRouter = router({
       // Conditional write (rule 3), which is also the eligibility check: an account that is not
       // active, pending and LDAP — or stopped being one, or got an address from another submit,
       // since the user above was read — matches nothing. The address's uniqueness is the
-      // database's constraint, not a read before the write. The links of the old address go in the
-      // same transaction, after the address UPDATE (lock order: the user row, then its links — see
-      // `issueUserToken`); `null` when nothing was written, so nothing was deleted either.
+      // database's constraint, not a read before the write; `null` when nothing was written.
       let resetTokensRevoked: number | null;
       try {
-        resetTokensRevoked = await ctx.prisma.$transaction(async tx => {
-          const written = await tx.user.updateMany({
-            where: {
-              id: user.id,
-              isActive: true,
-              pendingApproval: true,
-              email: user.email,
-              identities: { some: { provider: 'LDAP' } },
-            },
-            data: { email, emailVerifiedAt: null },
-          });
-          return written.count === 0 ? null : revokeUserLinks(tx, user.id);
-        });
+        resetTokensRevoked = await ctx.prisma.$transaction(tx =>
+          moveUserEmail(tx, user.id, email, {
+            isActive: true,
+            pendingApproval: true,
+            email: user.email,
+            identities: { some: { provider: 'LDAP' } },
+          })
+        );
       } catch (err) {
         if (isUniqueViolation(err, 'users_email_key')) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso da un altro account' });

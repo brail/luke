@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { ldapConfigSchema, ldapSearchTestSchema } from '../ldap.js';
+import { LdapStrategyInputSchema, ldapConfigSchema, ldapSearchTestSchema } from '../ldap.js';
 
 describe('ldapSearchTestSchema', () => {
   it('accepts a username of 256 characters and refuses 257', () => {
@@ -17,27 +17,19 @@ describe('ldapSearchTestSchema', () => {
   });
 });
 
+// #246: the strategy has its own save; the connection settings no longer carry it.
 describe('ldapConfigSchema', () => {
-  const config = {
-    enabled: true,
-    url: 'ldap://dc.example.com',
-    searchBase: 'dc=example,dc=com',
-    searchFilter: '(uid=${username})',
-    strategy: 'ldap-only' as const,
-  };
+  it('drops a strategy sent with the connection settings', () => {
+    const config = { enabled: false, url: 'ldap://dc.example.com', searchBase: 'dc=example,dc=com', searchFilter: '(uid=${username})' };
 
-  it('refuses ldap-only with LDAP disabled, on the strategy field so the form shows it there', () => {
-    const result = ldapConfigSchema.safeParse({ ...config, enabled: false });
-
-    expect(result.success).toBe(false);
-    expect(result.error?.issues.map(issue => issue.path)).toEqual([['strategy']]);
+    expect(ldapConfigSchema.parse({ ...config, strategy: 'ldap-only' })).not.toHaveProperty('strategy');
   });
+});
 
-  it('accepts ldap-only with LDAP enabled, and every other strategy with LDAP disabled', () => {
-    expect(ldapConfigSchema.safeParse(config).success).toBe(true);
-    for (const strategy of ['local-only', 'local-first', 'ldap-first'] as const) {
-      expect(ldapConfigSchema.safeParse({ ...config, strategy, enabled: false }).success).toBe(true);
-    }
+describe('LdapStrategyInputSchema', () => {
+  it('takes one of the four strategies, nothing else', () => {
+    expect(LdapStrategyInputSchema.safeParse({ strategy: 'ldap-only' }).success).toBe(true);
+    expect(LdapStrategyInputSchema.safeParse({ strategy: 'ldap-sometimes' }).success).toBe(false);
   });
 });
 
@@ -47,7 +39,6 @@ describe('the role mapping (#112)', () => {
     url: 'ldap://dc.example.com',
     searchBase: 'dc=example,dc=com',
     searchFilter: '(uid=${username})',
-    strategy: 'local-first' as const,
   };
   const mapping = (value: unknown) => JSON.stringify(value);
 

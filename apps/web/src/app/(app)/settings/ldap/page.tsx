@@ -45,19 +45,14 @@ import {
   FormMessage,
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../components/ui/select';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+
+import { LdapStrategyCard } from './_components/LdapStrategyCard';
 
 const UNREADABLE_SIGN_IN_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo e salva.';
 const UNREADABLE_REMOVABLE_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo o rimuovilo.';
@@ -95,7 +90,6 @@ export default function LdapSettingsPage() {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: '',
-      strategy: 'local-first',
     },
   });
 
@@ -115,6 +109,7 @@ export default function LdapSettingsPage() {
   // Load the existing configuration (admin only)
   const {
     data: existingConfig,
+    dataUpdatedAt: configReadAt,
     isPending: isConfigPending,
     error: configError,
     refetch: refetchConfig,
@@ -146,7 +141,6 @@ export default function LdapSettingsPage() {
         groupSearchBase: existingConfig.groupSearchBase,
         groupSearchFilter: existingConfig.groupSearchFilter,
         roleMapping: existingConfig.roleMapping,
-        strategy: existingConfig.strategy,
       });
       // Names the group with the wrong role at once, not only after a refused save.
       if (existingConfig.roleMappingInvalid) void form.trigger('roleMapping');
@@ -319,45 +313,6 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="strategy"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Strategia Autenticazione</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value}
-                    disabled={!canUpdate}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleziona strategia" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="local-first">
-                        Locale prima, poi LDAP
-                      </SelectItem>
-                      <SelectItem value="ldap-first">
-                        LDAP prima, poi locale
-                      </SelectItem>
-                      <SelectItem value="local-only">
-                        Solo autenticazione locale
-                      </SelectItem>
-                      <SelectItem value="ldap-only">
-                        Solo LDAP (admin locali come accesso di emergenza)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Determina l&apos;ordine di tentativo per
-                    l&apos;autenticazione
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
 
             <KeyValueGrid cols={2}>
               {/* URL LDAP */}
@@ -620,6 +575,8 @@ export default function LdapSettingsPage() {
           </form>
         </Form>
       </SectionCard>
+
+      {existingConfig && <LdapStrategyCard stored={existingConfig.strategy} readAt={configReadAt} />}
 
       {/* Search test dialog */}
       <Dialog

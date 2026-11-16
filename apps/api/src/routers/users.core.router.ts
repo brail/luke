@@ -473,12 +473,11 @@ export const usersCoreRouter = router({
           // A role or active-state change is recorded with its "before" (#222), and a rename moves
           // the LOCAL identity filed under the username it replaces (#229): lock so `current` is the
           // value the write replaces — the last-admin advisory lock first, then the user row, the
-          // order of every path that takes both. A rename takes both too: the break-glass count
-          // reads the LOCAL identity under the current username.
-          if (updateData.role !== undefined || updateData.isActive !== undefined || updateData.username !== undefined) {
-            await acquireLastAdminLock(tx);
-            await lockUserEmail(tx, id);
-          }
+          // order of every path that takes both. Every update takes them, a rare admin write: role,
+          // state, username and address all feed the break-glass count a strategy change reads under
+          // that lock (#246).
+          await acquireLastAdminLock(tx);
+          await lockUserEmail(tx, id);
           const current = await tx.user.findUnique({
             where: { id },
             select: { role: true, isActive: true, username: true },

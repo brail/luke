@@ -97,7 +97,6 @@ describe('every writer stores a secret encrypted', () => {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: '',
-      strategy: 'local-first',
     });
 
     await expectStoredEncrypted('auth.ldap.bindPassword', SENTINEL);

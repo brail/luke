@@ -13,8 +13,9 @@ import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import * as nav from '@luke/nav';
 
-import { ConfigDecryptionError, getLdapConfig, saveConfig, saveConfigs } from '../src/lib/configManager';
+import { ConfigDecryptionError, getLdapConfig, saveConfigs } from '../src/lib/configManager';
 import { checkLdap } from '../src/observability/readiness';
+import { saveAuthConfig } from '../src/services/authConfig.service';
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerAs, setupTestDb } from './helpers';
@@ -58,7 +59,7 @@ describe('LDAP settings', () => {
 
   describe.each([true, false])('LDAP enabled: %s', enabled => {
     beforeEach(async () => {
-      await saveConfig(prisma, 'auth.ldap.enabled', String(enabled));
+      await saveAuthConfig(prisma, [{ key: 'auth.ldap.enabled', value: String(enabled) }]);
     });
 
     it('the page opens with the unreadable credential marked and the rest as stored', async () => {

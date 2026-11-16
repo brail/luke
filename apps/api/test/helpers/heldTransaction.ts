@@ -13,6 +13,9 @@
 import { Client } from 'pg';
 import { expect } from 'vitest';
 
+import { APP_CONFIG_WRITE_LOCK_KEY } from '../../src/lib/configManager';
+import { LAST_ADMIN_LOCK_KEY } from '../../src/lib/lastAdminGuard';
+
 export async function whileHeld<T>(
   hold: (holder: Client) => Promise<unknown>,
   other: () => Promise<T>,
@@ -83,3 +86,11 @@ async function blockedOn(observer: Client, holderPid: number): Promise<{ pid: nu
   );
   return rows;
 }
+
+/** Holds the last-admin advisory lock (`acquireLastAdminLock`), for `whileHeld`. */
+export const holdLastAdminLock = (holder: Client) =>
+  holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [LAST_ADMIN_LOCK_KEY]);
+
+/** Holds the AppConfig write lock (`acquireAppConfigWriteLock`), for `whileHeld`. */
+export const holdAppConfigWriteLock = (holder: Client) =>
+  holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [APP_CONFIG_WRITE_LOCK_KEY]);

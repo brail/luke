@@ -52,7 +52,6 @@ describe('LDAP settings tests', () => {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: '',
-      strategy: 'local-first',
     });
     vi.spyOn(Client.prototype, 'unbind').mockResolvedValue(undefined);
   });

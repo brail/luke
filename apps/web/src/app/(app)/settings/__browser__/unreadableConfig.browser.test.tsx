@@ -72,6 +72,7 @@ const h = vi.hoisted(() => ({
   refetchPassword: vi.fn(),
   refetchLdap: vi.fn(),
   saveLdap: vi.fn(),
+  saveStrategy: vi.fn(),
   testConnection: vi.fn(),
   deleteConfig: vi.fn(),
   saveStorage: vi.fn(),
@@ -135,13 +136,22 @@ vi.mock('../../../../lib/trpc', () => {
         nav: { getPasswordState: passwordState, saveConfig: idle, testConnection: idle },
         auth: {
           getLdapConfig: {
-            useQuery: () => ({ data: h.ldap, isPending: false, error: null, refetch: h.refetchLdap }),
+            useQuery: () => ({ data: h.ldap, dataUpdatedAt: 1, isPending: false, error: null, refetch: h.refetchLdap }),
           },
           saveLdapConfig: {
             useMutation: (options: { onSuccess: () => void }) => ({
               mutate: (payload: unknown) => {
                 h.saveLdap(payload);
                 options.onSuccess();
+              },
+              isPending: false,
+            }),
+          },
+          saveStrategy: {
+            useMutation: (options: { onSuccess: (data: unknown, input: unknown) => void }) => ({
+              mutate: (input: unknown) => {
+                h.saveStrategy(input);
+                options.onSuccess({ success: true }, input);
               },
               isPending: false,
             }),
@@ -275,17 +285,38 @@ test('the stored strategy is the one shown', async () => {
 
   const screen = await render(<LdapSettingsPage />);
 
-  await expect.element(screen.getByRole('combobox')).toHaveTextContent('LDAP prima, poi locale');
+  await expect.element(screen.getByRole('combobox', { name: 'Strategia' })).toHaveTextContent('LDAP prima, poi locale');
 });
 
 test('a save reads the page again, so that the warning goes', async () => {
   const screen = await render(<LdapSettingsPage />);
 
   await screen.getByLabelText(/^URL LDAP/).fill('ldap://dc.test:389');
-  await screen.getByRole('button', { name: /^Salva/ }).click();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
 
   await vi.waitFor(() => expect(h.saveLdap).toHaveBeenCalledTimes(1));
   expect(h.refetchLdap).toHaveBeenCalledTimes(1);
+  // #246: the connection save carries no strategy.
+  expect(h.saveLdap.mock.calls[0]![0]).not.toHaveProperty('strategy');
+});
+
+// #246: the strategy has its own save, and saving it leaves the connection's unsaved edits alone.
+test('the strategy saves on its own and keeps the unsaved connection edits', async () => {
+  h.ldap = { ...LDAP, enabled: true, url: 'ldap://dc.test:389', unreadable: [] };
+  const screen = await render(<LdapSettingsPage />);
+  const url = screen.getByLabelText(/^URL LDAP/);
+
+  await url.fill('ldap://edited.test:389');
+  await screen.getByRole('combobox', { name: 'Strategia' }).click();
+  await screen.getByRole('option', { name: 'LDAP prima, poi locale' }).click();
+  await screen.getByRole('button', { name: 'Salva strategia' }).click();
+
+  await vi.waitFor(() => expect(h.saveStrategy).toHaveBeenCalledWith({ strategy: 'ldap-first' }));
+  expect(h.saveLdap).not.toHaveBeenCalled();
+  expect(h.refetchLdap).not.toHaveBeenCalled();
+  await expect.element(url).toHaveValue('ldap://edited.test:389');
+  await expect.element(screen.getByRole('combobox', { name: 'Strategia' })).toHaveTextContent('LDAP prima, poi locale');
+  await expect.element(screen.getByRole('button', { name: 'Salva strategia' })).toBeDisabled();
 });
 
 test('an unreadable storage secret is marked, and a blank one is not saved', async () => {

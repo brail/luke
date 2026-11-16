@@ -500,7 +500,6 @@ describe('AuditLog Integration', () => {
         groupSearchBase: '',
         groupSearchFilter: '',
         roleMapping: '',
-        strategy: 'local-first',
       });
 
       const auditLogs = await testPrisma.auditLog.findMany({
@@ -565,7 +564,6 @@ describe('AuditLog Integration', () => {
           groupSearchBase: '',
           groupSearchFilter: '',
           roleMapping: '',
-          strategy: 'local-first',
         })
       ).rejects.toThrow();
 
