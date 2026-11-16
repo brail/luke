@@ -295,12 +295,15 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
 - **Never `process.env.*` in application code** — read AppConfig with `getConfig`, `getTypedConfig`,
   `getConfigOrDefault` or `getStoredConfigOrDefault` (`apps/api/src/lib/configManager.ts`) or the
   tRPC config router. Env vars only for bootstrap
-- **Every new config key goes in `AppConfigRegistry`** with its Zod schema, numeric bounds included
-  — `saveConfig` validates against it before writing. Never widen a schema to accommodate a write:
-  "not configured" is an absent key (a `null` entry in a `saveConfigs` batch, or `deleteConfig`),
-  never `''`
-- **A form that writes several keys calls `saveConfigs` once**, so a failure leaves the stored form
-  as it was (`apps/api/test/configFormAtomicity.integration.spec.ts`)
+- **Every new config key goes in `AppConfigRegistry`** with its Zod schema, numeric bounds included.
+  `saveConfig` and `saveConfigs` accept only `BatchConfigKey`: registry keys excluding
+  `DEDICATED_WRITERS` in `apps/api/src/lib/configManager.ts`, refused at runtime too.
+  They validate values before writing. Never widen a schema to accommodate a write:
+  "not configured" is an absent key (`null` in a permitted `saveConfigs` batch, or
+  `deleteConfig`), never `''`.
+- **A form that writes several generic-writer keys calls `saveConfigs` once**, so a failure
+  leaves the stored form as it was (`apps/api/test/configFormAtomicity.integration.spec.ts`).
+  Keys with dedicated writers follow those writers' transaction contracts.
 - Stored values are strings: `integerConfigSchema(Inner)` for integers, with integer and range
   validation in `Inner` — never bare `z.coerce.number()`; `booleanConfigSchema` for booleans;
   `jsonConfigSchema(Inner)` for JSON — never a bare `.transform(s => Inner.parse(JSON.parse(s)))`,
@@ -370,15 +373,20 @@ Two distinct layers that must stay in sync.
   the mapped permission (`sectionPermissionHeld`, `packages/core/src/rbac/effectiveAccess.ts`).
   Disabling or reverting to auto needs no mapped permission; recovery guards still apply.
   Stored violations are logged at every API start, never automatically changed (ADR-043).
+  The writers enforce this: when turning a leaf on, `setOverride` holds a `FOR SHARE` lock on
+  the target user's row until commit; `setRbacSectionDefaultsTx` throws
+  `SectionPermissionMissingError` before writing a refused map.
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
-- The kill switch `app.sections.disabled` is saved only by `saveSectionsDisabled` (the last-admin
-  guard and its critical audit row, in one transaction) and removed only by `deleteConfig`;
-  `saveConfig` and `saveConfigs` refuse it
-- `saveConfigs` (and `saveConfig` through it), `saveSectionsDisabled` and `deleteConfig` invalidate
-  the RBAC cache after the commit when they write an `rbac.*` key or the kill switch; any other
-  write to an `rbac.*` key (`setRbacSectionDefaultsTx`, run by `sectionAccess.setRoleDefaults`)
-  calls `invalidateRbacCache()` after it commits
+- Dedicated RBAC writers: `saveSectionsDisabled` saves `app.sections.disabled` with its
+  last-admin guard and critical audit row in one transaction; `setRbacSectionDefaultsTx`
+  saves `rbac.sectionAccessDefaults` inside the caller's guarded transaction.
+  `saveConfig` and `saveConfigs` refuse both keys, including batch removals;
+  `deleteConfig` can still remove either.
+- `saveSectionsDisabled` invalidates the RBAC cache after commit; `deleteConfig` does so
+  after its transaction for an `rbac.*` key or `app.sections.disabled`.
+  Callers of `setRbacSectionDefaultsTx` must invalidate after their transaction commits,
+  as `sectionAccess.setRoleDefaults` does.
 
 ## LDAP
 

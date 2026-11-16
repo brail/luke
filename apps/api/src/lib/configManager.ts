@@ -201,9 +201,10 @@ export async function saveSectionsDisabled(
 /**
  * Upserts a configuration entry in the database.
  *
- * The key is an `AppConfigKey`, and the value is parsed by that key's registry schema before it is
- * written: reads had a typed variant (`getTypedConfig`) and writes had none, so the registry
- * described what the application expected to find rather than what it was allowed to store. A
+ * The key is a `BatchConfigKey` (a registry key without a dedicated writer, `DEDICATED_WRITERS`),
+ * and the value is parsed by that key's registry schema before it is written: reads had a typed
+ * variant (`getTypedConfig`) and writes had none, so the registry described what the application
+ * expected to find rather than what it was allowed to store. A
  * caller outside the registry now fails `tsc`, and a value the schema rejects fails here instead
  * of at the first read in production.
  *
@@ -211,7 +212,7 @@ export async function saveSectionsDisabled(
  * ciphertext, so validating after would test the hex blob against a rule written for the secret.
  *
  * @param prisma - Prisma client.
- * @param key - Configuration key declared in `AppConfigRegistry`.
+ * @param key - Configuration key declared in `AppConfigRegistry` and outside `DEDICATED_WRITERS`.
  * @param value - Value to store, as the string form the registry schema parses.
  * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage; when
  *   omitted, the stored choice is kept (a new key is plaintext). A key in `SECRET_CONFIG_KEYS` is
@@ -315,7 +316,8 @@ async function acquireAppConfigWriteLock(tx: Prisma.TransactionClient): Promise<
  * `PLAINTEXT_CONFIG_KEYS`, and, when `encrypt` is omitted, as the key is stored at that point of the
  * batch (plaintext for a key not stored). Either every key changes or none does. What it guarantees
  * is one atomic write, not a consistent snapshot for a reader that issues several reads across the
- * commit. The RBAC cache is invalidated only after the commit.
+ * commit. A key the RBAC cache reads would be invalidated only after the commit; today each such key
+ * has a dedicated writer and is refused here.
  *
  * @returns For each value write, in order, whether it was stored encrypted.
  * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema, `NOT_FOUND` for a
@@ -732,9 +734,10 @@ export async function listConfigsPaged(
  *
  * @returns Whether a row was deleted: a concurrent delete may have removed it first.
  *
- * `key` stays a `string` where `saveConfig` takes an `AppConfigKey`: a delete cannot persist a bad
- * value, and requiring registry membership here would leave a row whose key was later dropped from
- * the registry with no way to remove it from the app.
+ * `key` stays a `string` where `saveConfig` takes a `BatchConfigKey`, and a dedicated-writer key is
+ * removable here too: a delete cannot persist a bad value, and requiring registry membership here
+ * would leave a row whose key was later dropped from the registry with no way to remove it from the
+ * app.
  */
 export async function deleteConfig(
   ctx: AuditContext & { prisma: PrismaClient },
