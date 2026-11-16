@@ -148,6 +148,7 @@ const SURFACES: Record<string, Surface> = {
   'packages/core/tsconfig.test.json': 'isomorphic',
   'packages/db/tsconfig.json': 'node',
   'packages/nav/tsconfig.json': 'node',
+  'packages/nav/tsconfig.test.json': 'node',
   'packages/calendar/tsconfig.json': 'node',
   'packages/calendar/tsconfig.test.json': 'node',
   'tools/tsconfig.json': 'node',

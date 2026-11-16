@@ -4,7 +4,4 @@ export default defineConfig({
   test: {
     environment: 'node',
   },
-  resolve: {
-    conditions: ['import', 'module', 'browser', 'default'],
-  },
 });

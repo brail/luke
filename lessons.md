@@ -1222,3 +1222,16 @@ sleep, on AC power only), and the script reports on stderr any sleep
 `pmset -g log` records during the run, and warns at start on battery. A long
 suite runs on AC power with the lid open; a run the script flags is run again,
 its timeouts are not test results.
+
+### A change under `tools/` runs `pnpm test:tools` before the push (2026-11-16)
+
+**What happened.** N1 (#209) classified `packages/nav/tsconfig.test.json` in
+`SURFACES` (`tools/scripts/check-tsconfig-integrity.ts`) to make `check:drift`
+pass, and ran `lint:tools` and `typecheck:tools` only. The pre-push hook then
+failed `pnpm test:tools`: the gate's own tests build a valid repository from
+`tools/scripts/__fixtures__/tsconfig/validRepo.ts`, which has to list every
+classified config too.
+
+**Rule.** Any edit under `tools/` runs `pnpm test:tools` with the other gates,
+before asking to commit. A new entry in `SURFACES` comes with the same entry in
+the `validRepo.ts` fixture.
