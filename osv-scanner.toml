@@ -6,3 +6,8 @@
 id = "GHSA-g3hv-75wg-m249"
 ignoreUntil = 2026-12-03T00:00:00Z
 reason = "minimatch glob pattern amplification, fixed only in 11.0.1, which no consumer admits (re-checked 2026-10-31): 11 removed makeRe, which eslint-plugin-import-x imports, so an override breaks lint. 10.2.6 holds the code: at runtime only @fastify/otel carries it, and loads it only for ignorePaths or OTEL_FASTIFY_IGNORE_PATHS, which Luke does not set and whose pattern comes from the operator, never from a request; the other copies are ESLint devDependencies. 3.1.5 and 5.1.9 (exceljs, ESLint plugins) run in production but have no firstPhasePreProcess. Re-check when eslint-plugin-import-x declares ^11."
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-17T00:00:00Z
+reason = "picomatch ReDoS through single-branch repeated extglobs in an attacker-supplied pattern, no fixed version (all <=4.0.7, checked 2026-11-17). Lockfile copies 2.3.2 and 4.0.7 are devDependencies only (vitest, typescript-eslint, eslint plugins, micromatch); `pnpm why -r picomatch --prod` is empty, so no runtime image carries them. Next's bundled copy (next/dist/compiled/picomatch, outside the lockfile) compiles only images.remotePatterns/localPatterns, which come from next.config.js (none set), never from a request. Re-check when picomatch publishes a fix."
