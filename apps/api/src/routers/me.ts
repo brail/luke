@@ -38,6 +38,20 @@ const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 /** The answer to a password change on an account without a local password. */
 const NO_LOCAL_PASSWORD = 'Cambio password non consentito per provider esterni';
 
+/**
+ * The local password a user can change: the LOCAL identity under the current username, holding a
+ * credential — the one local sign-in uses (`authenticateLocal`). A forced local access whose link is
+ * unused has no credential yet; an identity left under an old username signs nobody in.
+ */
+function changeableLocalIdentity<I extends { provider: string; providerId: string; localCredential: object | null }>(
+  user: { username: string; identities: I[] }
+): (I & { localCredential: NonNullable<I['localCredential']> }) | undefined {
+  return user.identities.find(
+    (identity): identity is I & { localCredential: NonNullable<I['localCredential']> } =>
+      identity.provider === 'LOCAL' && identity.providerId === user.username && identity.localCredential !== null
+  );
+}
+
 export const meRouter = router({
   /**
    * Returns the current user's full profile including provider info and profile completion percentage.
@@ -46,7 +60,8 @@ export const meRouter = router({
    * @input {none}
    * @output {User with provider, profileCompletion, loginCount, lastLoginAt. `timezone` is the zone
    *   the server renders in (`resolveUserTimeZone`): the business zone when the stored value is not
-   *   an IANA name.}
+   *   an IANA name. `canChangePassword`: whether `me.changePassword` accepts this account — a local
+   *   password, whatever the effective provider (#268).}
    */
   get: selfProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
@@ -69,6 +84,8 @@ export const meRouter = router({
         identities: {
           select: {
             provider: true,
+            providerId: true,
+            localCredential: { select: { id: true } },
           },
         },
       },
@@ -107,6 +124,7 @@ export const meRouter = router({
       ...user,
       timezone,
       provider,
+      canChangePassword: changeableLocalIdentity(user) !== undefined,
       profileCompletion,
       dailyGreetingEnabled,
       // Remove identities from output (not needed in frontend)
@@ -277,12 +295,14 @@ export const meRouter = router({
     }),
 
   /**
-   * Changes the current user's password; only available for LOCAL provider users.
+   * Changes the current user's local password (`changeableLocalIdentity`), whatever the effective
+   * provider: an LDAP account with a local password changes that one, never the directory's.
    *
    * @auth {authenticated}
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
-   * @throws {TRPCError} TOO_MANY_REQUESTS when the login's per-IP or the per-account bucket is full.
+   * @throws {TRPCError} TOO_MANY_REQUESTS when the login's per-IP or the per-account bucket is full;
+   *   FORBIDDEN when the account has no local password it can change.
    */
   changePassword: selfProcedure
     // A password is checked here: the login's per-IP bucket (rule 12). `passwordChange` is the
@@ -292,15 +312,16 @@ export const meRouter = router({
     .input(ChangePasswordSchema)
     .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
-      // Check that the user has a LOCAL provider
       const userWithProvider = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
         select: {
           id: true,
+          username: true,
           identities: {
             select: {
               id: true,
               provider: true,
+              providerId: true,
               localCredential: {
                 select: {
                   passwordHash: true,
@@ -318,11 +339,9 @@ export const meRouter = router({
         });
       }
 
-      const localIdentity = userWithProvider.identities.find(
-        identity => identity.provider === 'LOCAL'
-      );
+      const localIdentity = changeableLocalIdentity(userWithProvider);
 
-      if (!localIdentity || !localIdentity.localCredential) {
+      if (!localIdentity) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: NO_LOCAL_PASSWORD,

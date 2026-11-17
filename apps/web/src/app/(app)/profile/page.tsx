@@ -294,7 +294,7 @@ export default function ProfilePage() {
                 <Download className="h-4 w-4 mr-2" />
                 Esporta Profilo
               </Button>
-              {user.provider === 'LOCAL' && (
+              {user.canChangePassword && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -302,7 +302,7 @@ export default function ProfilePage() {
                   onClick={() => setShowChangePasswordModal(true)}
                 >
                   <Shield className="h-4 w-4 mr-2" />
-                  Cambia Password
+                  Cambia password locale di Luke
                 </Button>
               )}
               <Button
@@ -379,11 +379,11 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              Cambia Password
+              Cambia password locale di Luke
             </DialogTitle>
           </DialogHeader>
           <ChangePasswordCard
-            visible={true}
+            alsoLdap={user.provider === 'LDAP'}
             onSuccess={() => setShowChangePasswordModal(false)}
           />
         </DialogContent>

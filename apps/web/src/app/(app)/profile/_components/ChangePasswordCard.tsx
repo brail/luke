@@ -24,8 +24,8 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 
 interface ChangePasswordCardProps {
-  /** Controls whether the card is rendered; when false the component returns null. */
-  visible: boolean;
+  /** The account signs in through LDAP too, whose password this does not change. */
+  alsoLdap: boolean;
   /** Called immediately after a successful password change, before the forced sign-out delay. */
   onSuccess?: () => void;
 }
@@ -34,11 +34,11 @@ interface ChangePasswordCardProps {
  * Password-change card with real-time policy validation indicators.
  * On success it resets the form and triggers `next-auth` sign-out after a short delay
  * to invalidate all active sessions.
- * @param visible - When false the component renders nothing.
+ * @param alsoLdap - Adds that the directory (LDAP) password is not changed.
  * @param onSuccess - Optional callback fired before the automatic sign-out redirect.
  */
 export function ChangePasswordCard({
-  visible,
+  alsoLdap,
   onSuccess,
 }: ChangePasswordCardProps) {
   const [showPasswords, setShowPasswords] = useState({
@@ -121,14 +121,14 @@ export function ChangePasswordCard({
     }));
   };
 
-  if (!visible) {
-    return null;
-  }
-
   return (
     <SectionCard
       title="Sicurezza"
-      description="Cambia la tua password per mantenere l'account sicuro"
+      description={
+        alsoLdap
+          ? 'Cambia solo la password locale di Luke. Non cambia la password della directory aziendale (LDAP), che resta gestita dalla directory.'
+          : 'Cambia solo la password locale di Luke.'
+      }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="space-y-2">

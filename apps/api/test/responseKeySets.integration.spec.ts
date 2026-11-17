@@ -97,7 +97,7 @@ describe('every signed-in user', () => {
     expect(keysOf(await createCallerWithSession(editor.session).me.get())).toEqual(
       sorted(
         'id', 'email', 'username', 'firstName', 'lastName', 'role', 'isActive', 'emailVerifiedAt', 'locale',
-        'timezone', 'provider', 'profileCompletion', 'dailyGreetingEnabled', 'createdAt', 'updatedAt', 'lastLoginAt',
+        'timezone', 'provider', 'canChangePassword', 'profileCompletion', 'dailyGreetingEnabled', 'createdAt', 'updatedAt', 'lastLoginAt',
         'loginCount',
       ),
     );
