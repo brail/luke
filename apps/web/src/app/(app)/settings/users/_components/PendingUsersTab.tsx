@@ -3,11 +3,11 @@
 import { Check, X } from 'lucide-react';
 import React, { useState } from 'react';
 
-import { resolveEffectiveProvider } from '@luke/core';
+import { APPROVAL_NEEDS_EMAIL_MESSAGE, isSyntheticLdapEmail, resolveEffectiveProvider } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
-import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
 import {
   Table,
@@ -110,7 +110,7 @@ export function PendingUsersTab() {
               <TableRow key={user.id}>
                 <TableCell className="font-medium">{user.username}</TableCell>
                 <TableCell>
-                  {user.email.endsWith('@ldap.local') ? (
+                  {isSyntheticLdapEmail(user.email) ? (
                     <span className="text-muted-foreground italic">
                       {user.email}{' '}
                       <span className="text-xs text-orange-600">(non fornita)</span>
@@ -131,39 +131,41 @@ export function PendingUsersTab() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    {canUpdate && (
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          setApproveTarget({
-                            id: user.id,
-                            username: user.username,
-                            firstName: user.firstName || '',
-                            lastName: user.lastName || '',
-                            role: user.role,
-                          })
-                        }
-                      >
-                        <Check className="h-4 w-4 mr-1" />
-                        Approva
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          handleReject({
-                            id: user.id,
-                            username: user.username,
-                            email: user.email,
-                          })
-                        }
-                      >
-                        <X className="h-4 w-4 mr-1" />
-                        Rifiuta
-                      </Button>
-                    )}
+                    {/* No approval on a synthetic address (#266): the dialog would write the role
+                        first, and the server refuses the approval itself. */}
+                    <PermissionButton
+                      hasPermission={canUpdate && !isSyntheticLdapEmail(user.email)}
+                      tooltip={canUpdate ? APPROVAL_NEEDS_EMAIL_MESSAGE : "Non hai i permessi per approvare questo utente"}
+                      size="sm"
+                      onClick={() =>
+                        setApproveTarget({
+                          id: user.id,
+                          username: user.username,
+                          firstName: user.firstName || '',
+                          lastName: user.lastName || '',
+                          role: user.role,
+                        })
+                      }
+                    >
+                      <Check className="h-4 w-4 mr-1" />
+                      Approva
+                    </PermissionButton>
+                    <PermissionButton
+                      hasPermission={canDelete}
+                      tooltip="Non hai i permessi per rifiutare questo utente"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() =>
+                        handleReject({
+                          id: user.id,
+                          username: user.username,
+                          email: user.email,
+                        })
+                      }
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Rifiuta
+                    </PermissionButton>
                   </div>
                 </TableCell>
               </TableRow>

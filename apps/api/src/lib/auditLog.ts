@@ -233,6 +233,8 @@ const SAFE_KEY_LIST = [
 
   // Entity references
   'userId',
+  // The account holding the directory mail of a refused LDAP first sign-in (#266).
+  'emailHolderId',
   'teamId',
   'eventId',
   'groupId',

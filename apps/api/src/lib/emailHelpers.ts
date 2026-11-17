@@ -7,6 +7,7 @@ import { randomBytes, createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
+import { isSyntheticLdapEmail } from '@luke/core';
 import { Prisma, PrismaClient, type TokenType } from '@luke/db';
 
 import { logAudit } from './auditLog';
@@ -18,15 +19,6 @@ import { sendEmailVerificationEmail } from './mailer';
 import type { Context } from './context';
 
 const logger = rootLogger.child({ module: 'email-verification' });
-
-/**
- * True if the email is the synthetic one generated for an LDAP user with no `mail` value set. It
- * reaches nobody. Lives here rather than in `ldapAuth.ts` because `sendVerificationEmail` refuses
- * it, and `ldapAuth.ts` already imports this module.
- */
-export function isSyntheticLdapEmail(email: string): boolean {
-  return email.endsWith('@ldap.local');
-}
 
 /**
  * Options for sending a verification email to a user.

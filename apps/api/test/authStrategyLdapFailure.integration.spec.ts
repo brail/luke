@@ -26,7 +26,14 @@ import type { PrismaClient } from '@luke/db';
 import * as ldapAuth from '../src/lib/ldapAuth';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
+import {
+  TEST_USER_PASSWORD,
+  createCallerWithSession,
+  createTestContext,
+  createTestUser,
+  lastAudit,
+  setupTestDb,
+} from './helpers';
 
 let prisma: PrismaClient;
 let ip = 0;
@@ -39,7 +46,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only') {
+async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only' | 'local-only') {
   await prisma.appConfig.create({ data: { key: 'auth.strategy', value: strategy, isEncrypted: false } });
 }
 
@@ -275,6 +282,61 @@ describe('a directory that verified the password, and a user record that could n
     const { user } = await createTestUser('editor');
 
     await expect(login(user.username).result).resolves.toMatchObject({ user: { id: user.id } });
+  });
+});
+
+// #266: a first sign-in whose directory mail another account holds. The directory proved the
+// password, so the refusal is told as such, in either mode, and it is no outage.
+describe('a directory mail another account holds, at first sign-in', () => {
+  const HOLDER_ID = '00000000-0000-4000-8000-000000000266';
+  const EMAIL_IN_USE = { code: 'FORBIDDEN', message: 'LDAP_EMAIL_IN_USE' };
+
+  function mailHeld() {
+    return vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({ user: null, reason: 'email_in_use', emailHolderId: HOLDER_ID });
+  }
+
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)('%s: FORBIDDEN with its text, audited with the holder, no outage notice', async strategy => {
+    await createTestUser('admin');
+    await useStrategy(strategy);
+    mailHeld();
+
+    await expect(login('newcomer', 'directory-password').result).rejects.toMatchObject(EMAIL_IN_USE);
+    expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'email_in_use', emailHolderId: HOLDER_ID, strategy });
+    expect(await outageNotices()).toBe(0);
+  });
+
+  it('local-only never asks the directory', async () => {
+    await useStrategy('local-only');
+    const ldap = mailHeld();
+
+    await expect(login('newcomer', 'directory-password').result).rejects.toMatchObject(REFUSED);
+    expect(ldap).not.toHaveBeenCalled();
+  });
+
+  it('a local fallback that authenticates still logs in', async () => {
+    await useStrategy('ldap-first');
+    mailHeld();
+    const { user } = await createTestUser('editor');
+
+    await expect(login(user.username).result).resolves.toMatchObject({ user: { id: user.id } });
+  });
+
+  it('ldap-only: an administrator with a local credential still signs in', async () => {
+    await useStrategy('ldap-only');
+    mailHeld();
+    const { user } = await createTestUser('admin');
+
+    await expect(login(user.username).result).resolves.toMatchObject({ user: { id: user.id } });
+  });
+
+  it('a signed-in password check is answered the same', async () => {
+    await useStrategy('ldap-first');
+    const { session } = await createTestUser('editor');
+    mailHeld();
+
+    await expect(
+      createCallerWithSession(session).me.changeEmail({ newEmail: 'moved@example.com', currentPassword: 'Wrong-password-1!' })
+    ).rejects.toMatchObject(EMAIL_IN_USE);
   });
 });
 

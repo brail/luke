@@ -6,14 +6,19 @@ import { createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import { AUTH_UNAVAILABLE_MESSAGE, hasPermission, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+import {
+  AUTH_UNAVAILABLE_MESSAGE,
+  hasPermission,
+  isSyntheticLdapEmail,
+  SIGN_IN_REFUSED_MESSAGE,
+} from '@luke/core';
 import type { Prisma, PrismaClient, User } from '@luke/db';
 
 import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
-import { isSyntheticLdapEmail, issueUserToken, type IssuedUserToken } from '../lib/emailHelpers';
+import { issueUserToken, type IssuedUserToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, LdapUserNotWrittenError, type LdapRefusal } from '../lib/ldapAuth';
 import { sendPasswordResetEmail } from '../lib/mailer';
@@ -162,7 +167,9 @@ export type CredentialsAnswerMode = 'public' | 'signedIn';
  *   failure before the password is proven (a full account bucket included), and SERVICE_UNAVAILABLE
  *   only when the directory verified the password and the user record could not be written. In
  *   `signedIn` mode, UNAUTHORIZED for a wrong password or a refusal, TOO_MANY_REQUESTS for a full
- *   account bucket, SERVICE_UNAVAILABLE when LDAP could not complete the check.
+ *   account bucket, SERVICE_UNAVAILABLE when LDAP could not complete the check. In either mode,
+ *   FORBIDDEN with the marker `LDAP_EMAIL_IN_USE` when the directory verified the password of a
+ *   first sign-in whose mail another account holds (#266).
  */
 export async function verifyCredentials(
   ctx: Context,
@@ -213,7 +220,7 @@ export async function verifyCredentials(
   // Held in an object: `tryLdap` assigns it from inside a closure, which the compiler does not
   // follow when it narrows a plain `let`.
   const ldap: {
-    failure: { afterProof: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
+    failure: { afterProof: boolean; reason: LdapRefusal['reason']; errorCode?: string; emailHolderId?: string } | null;
   } = { failure: null };
   // Set when `ldap-only` meets a correct local password that is not an administrator's.
   let localLoginRefused = false;
@@ -224,7 +231,7 @@ export async function verifyCredentials(
     try {
       const login = await authenticateViaLdap(ctx.prisma, username, password);
       if (login.user) return login.user;
-      ldap.failure = { afterProof: false, reason: login.reason, errorCode: login.errorCode };
+      ldap.failure = { afterProof: false, reason: login.reason, errorCode: login.errorCode, emailHolderId: login.emailHolderId };
     } catch (e) {
       ctx.logger.warn(
         { username, code: e instanceof TRPCError ? e.code : undefined, err: e },
@@ -322,6 +329,7 @@ export async function verifyCredentials(
         reason: localLoginRefused ? 'local_login_not_allowed' : (ldap.failure?.reason ?? 'invalid_credentials'),
         strategy,
         errorCode: ldap.failure?.errorCode,
+        emailHolderId: ldap.failure?.emailHolderId,
       },
     });
 
@@ -330,6 +338,11 @@ export async function verifyCredentials(
     const ldapUnavailable = ldap.failure?.reason === 'ldap_unavailable';
     if (ldapUnavailable) await notifyLdapUnavailable(ctx);
 
+    // Proven, and about this person's own directory entry: told as such in either mode (#266), as a
+    // marker the web turns into its own message, like `ACCOUNT_PENDING_APPROVAL` below.
+    if (ldap.failure?.reason === 'email_in_use' && !localLoginRefused) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'LDAP_EMAIL_IN_USE' });
+    }
     if (ldap.failure?.afterProof || (mode === 'signedIn' && ldapUnavailable)) {
       throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE });
     }

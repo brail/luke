@@ -14,11 +14,12 @@ import {
   ConfirmEmailVerificationSchema,
   RequestEmailVerificationAdminSchema,
   SubmitPendingEmailSchema,
+  isSyntheticLdapEmail,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { isSyntheticLdapEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';

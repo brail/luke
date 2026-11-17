@@ -13,11 +13,12 @@ import {
   UpdateTimezoneSchema,
   getSelfLockedFields,
   greetingAt,
+  isSyntheticLdapEmail,
   resolveEffectiveProvider,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { isSyntheticLdapEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';

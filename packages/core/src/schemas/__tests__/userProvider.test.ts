@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { getLockedFields, getSelfLockedFields, resolveEffectiveProvider } from '../user.js';
+import { getLockedFields, getSelfLockedFields, isSyntheticLdapEmail, resolveEffectiveProvider } from '../user.js';
 
 describe('resolveEffectiveProvider', () => {
   it('user with a single LOCAL identity → LOCAL', () => {
@@ -71,5 +71,17 @@ describe('getSelfLockedFields', () => {
     expect(getLockedFields('LDAP')).not.toContain('email');
     expect(getSelfLockedFields('OIDC')).toEqual(getLockedFields('OIDC'));
     expect(getSelfLockedFields('LOCAL')).toEqual([]);
+  });
+});
+
+describe('isSyntheticLdapEmail', () => {
+  it.each([
+    ['alice@ldap.local', true],
+    ['ldap-4f1c2e0a-0000-4000-8000-000000000000@ldap.local', true],
+    ['alice@example.com', false],
+    ['alice@ldap.local.example.com', false],
+    ['alice@notldap.local', false],
+  ])('%s → %s', (email, expected) => {
+    expect(isSyntheticLdapEmail(email)).toBe(expected);
   });
 });

@@ -180,6 +180,24 @@ export function resolveEffectiveProvider<P extends string>(identities: readonly 
 }
 
 /**
+ * The domain of the address Luke gives a new LDAP user whose directory entry has no mail:
+ * `<username>@ldap.local`, or `ldap-<uuid>@ldap.local`. It is Luke's placeholder, never a person's.
+ */
+export const LDAP_SYNTHETIC_EMAIL_DOMAIN = 'ldap.local';
+
+/** Whether `email` is a synthetic LDAP address (`LDAP_SYNTHETIC_EMAIL_DOMAIN`), which receives no mail. */
+export function isSyntheticLdapEmail(email: string): boolean {
+  return email.endsWith(`@${LDAP_SYNTHETIC_EMAIL_DOMAIN}`);
+}
+
+/**
+ * Why a pending user with a synthetic address cannot be approved yet (owner #69 a): an LDAP user
+ * cannot change their own address once approved, so an approval without one leaves them unreachable.
+ */
+export const APPROVAL_NEEDS_EMAIL_MESSAGE =
+  'Questo utente non ha ancora un indirizzo email: attendi che lo inserisca dalla schermata di attesa, oppure rifiuta la richiesta.';
+
+/**
  * The user fields the given provider owns, which nobody edits in Luke: none for LOCAL; username,
  * names and password for LDAP; names and password for any other external provider (OIDC).
  */

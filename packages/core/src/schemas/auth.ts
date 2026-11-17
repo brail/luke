@@ -29,6 +29,14 @@ export const SIGN_IN_REFUSED_MESSAGE =
  */
 export const AUTH_UNAVAILABLE_MESSAGE = 'Servizio di autenticazione non disponibile. Riprova più tardi.';
 
+/**
+ * The answer to an LDAP first sign-in whose directory mail already belongs to another Luke account
+ * (#266): never linked by address, the administrator resolves it. The API answers the `FORBIDDEN`
+ * marker `LDAP_EMAIL_IN_USE`, only after the directory proved the password; the login page shows this.
+ */
+export const LDAP_EMAIL_IN_USE_MESSAGE =
+  "L'indirizzo email di questo account è già usato da un altro account Luke: contatta l'amministratore.";
+
 /** Input schema for requesting a password reset email, in the stored form (`EmailSchema`). */
 export const RequestPasswordResetSchema = z.object({
   email: z.string().min(1, 'Email richiesta').pipe(EmailSchema),

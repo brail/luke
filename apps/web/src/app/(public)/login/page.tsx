@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
-import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, LDAP_EMAIL_IN_USE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 
 import LogoLockup from '../../../components/LogoLockup';
 import { Button } from '../../../components/ui/button';
@@ -86,6 +86,10 @@ export default function LoginPage() {
         }
         if (result.code === 'unavailable') {
           setError(AUTH_UNAVAILABLE_MESSAGE);
+          return;
+        }
+        if (result.code === 'email_in_use') {
+          setError(LDAP_EMAIL_IN_USE_MESSAGE);
           return;
         }
 

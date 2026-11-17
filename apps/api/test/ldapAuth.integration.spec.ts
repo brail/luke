@@ -11,6 +11,8 @@
  * classes, the filter parser and the SASL mechanism list are the library's own.
  */
 
+import { randomUUID } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import {
   BusyError,
@@ -33,6 +35,7 @@ import { saveAuthConfig, type AuthConfigWrite } from '../src/services/authConfig
 
 import { createCallerAs, createTestUser, setupTestDb } from './helpers';
 import { holdLastAdminLock, whileHeld } from './helpers/heldTransaction';
+import { prismaKnownError } from './helpers/prismaError';
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const ALICE_DN = 'uid=alice,ou=people,dc=test';
@@ -341,9 +344,8 @@ describe('authenticateViaLdap', () => {
 
   it('throws when the user record cannot be written after the directory verified the password', async () => {
     await configureLdap();
-    // The directory's email already belongs to another local account: the insert is refused.
-    const { user: other } = await createTestUser('viewer');
-    await prisma.user.update({ where: { id: other.id }, data: { email: ALICE.mail } });
+    // A write failure that is no unique violation (a held address is a refusal since #266).
+    vi.spyOn(prisma, '$transaction').mockRejectedValue(new Error('connection reset'));
 
     // Its own type: the one LDAP failure the caller may answer as such before a session.
     await expect(authenticateViaLdap(prisma, 'alice', 'her-password')).rejects.toBeInstanceOf(LdapUserNotWrittenError);
@@ -562,5 +564,183 @@ describe('an existing user signing in takes the directory mail', () => {
     expect(outcome.status).toBe('fulfilled');
     expect(await stored(user.id)).toMatchObject({ email: ALICE.mail });
     expect(await links(user.id)).toBe(0);
+  });
+});
+
+// #266: a first sign-in finds the account by its LDAP identity, compared without case, and never
+// lands on, or beside, an account it does not carry the identity of. A unique constraint met on the
+// way is a refusal or the account a race left, never an outage.
+describe('the account an LDAP sign-in lands on', () => {
+  /** An account carrying the LDAP identity `providerId`, as an earlier sign-in left it. */
+  async function ldapAccount(username: string, { providerId = username, isActive = true } = {}) {
+    const user = await prisma.user.create({
+      data: { email: `${randomUUID()}@old.example`, username, firstName: 'Alice', lastName: 'Rossi', role: 'viewer', isActive, timezone: 'Europe/Rome' },
+    });
+    await prisma.identity.create({ data: { userId: user.id, provider: 'LDAP', providerId } });
+    return user;
+  }
+
+  const counts = async () => ({ users: await prisma.user.count(), identities: await prisma.identity.count() });
+
+  beforeEach(() => configureLdap());
+
+  it('a second sign-in in another case reaches the account of the first', async () => {
+    const first = await authenticateViaLdap(prisma, 'Alice', 'her-password');
+    const before = await counts();
+
+    const second = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(second.user?.id).toBe(first.user?.id);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('a non-ASCII username is compared without case too', async () => {
+    const account = await ldapAccount('Àlice');
+
+    expect((await authenticateViaLdap(prisma, 'àlice', 'her-password')).user?.id).toBe(account.id);
+  });
+
+  // Prisma's `equals` + `insensitive` is an unescaped ILIKE (prisma/orm#20318): each of these would
+  // reach the other account through it.
+  it.each([
+    ['an underscore', 'a_b', 'axb'],
+    ['a percent sign', '%', 'alice'],
+    ['a backslash', 'a\\b', 'ab'],
+  ])('a username with %s is compared literally', async (_case, username, other) => {
+    const account = await ldapAccount(other);
+
+    const login = await authenticateViaLdap(prisma, username, 'her-password');
+
+    expect(login.user).toMatchObject({ username });
+    expect(login.user?.id).not.toBe(account.id);
+  });
+
+  describe('accounts left by pre-#228 sign-ins in different cases', () => {
+    it('the exact one wins', async () => {
+      await ldapAccount('Alice');
+      const exact = await ldapAccount('alice');
+
+      expect((await authenticateViaLdap(prisma, 'alice', 'her-password')).user?.id).toBe(exact.id);
+    });
+
+    it('no exact one: refused, nothing created', async () => {
+      await ldapAccount('Alice');
+      await ldapAccount('alice');
+      const before = await counts();
+
+      expect(await authenticateViaLdap(prisma, 'ALICE', 'her-password')).toEqual({ user: null, reason: 'account_refused' });
+      expect(await counts()).toEqual(before);
+    });
+
+    it('the exact one deactivated: refused, never the other', async () => {
+      await ldapAccount('Alice');
+      await ldapAccount('alice', { isActive: false });
+
+      expect(await authenticateViaLdap(prisma, 'alice', 'her-password')).toEqual({ user: null, reason: 'account_refused' });
+    });
+  });
+
+  it('the identity is the link: its account, whatever its username', async () => {
+    const account = await ldapAccount('bob', { providerId: 'alice' });
+
+    expect((await authenticateViaLdap(prisma, 'alice', 'her-password')).user?.id).toBe(account.id);
+  });
+
+  it('an account named like the username in another case, without the identity, is refused and never linked', async () => {
+    const local = await prisma.user.create({
+      data: { email: 'alice@local.example', username: 'Alice', firstName: 'A', lastName: 'R', role: 'viewer', isActive: true, timezone: 'Europe/Rome' },
+    });
+    await prisma.identity.create({ data: { userId: local.id, provider: 'LOCAL', providerId: 'Alice' } });
+    const before = await counts();
+
+    expect(await authenticateViaLdap(prisma, 'alice', 'her-password')).toEqual({ user: null, reason: 'account_refused' });
+    expect(await counts()).toEqual(before);
+  });
+
+  it('a directory mail another account holds refuses the first sign-in, naming the holder, and creates nothing', async () => {
+    const { user: holder } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: holder.id }, data: { email: ALICE.mail } });
+    const before = await counts();
+
+    expect(await authenticateViaLdap(prisma, 'alice', 'her-password')).toEqual({
+      user: null,
+      reason: 'email_in_use',
+      emailHolderId: holder.id,
+    });
+    expect(await counts()).toEqual(before);
+  });
+
+  it('a synthetic address another account holds gives the new one a synthetic address of its own', async () => {
+    const { user: other } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: other.id }, data: { email: 'alice@ldap.local' } });
+    search.mockResolvedValue(found({ dn: ALICE_DN, cn: ALICE.cn }));
+
+    const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(login.user?.email).toMatch(/^ldap-[0-9a-f-]{36}@ldap\.local$/);
+  });
+
+  describe('races', () => {
+    it('a first sign-in in another case that holds the provisioning lock: this one waits, then lands on its account, synced after it commits', async () => {
+      const outcome = await whileHeld(
+        holder => holder.query(`SELECT pg_advisory_xact_lock(hashtext('ldap.provision:' || lower($1)))`, ['Alice']),
+        () => authenticateViaLdap(prisma, 'alice', 'her-password'),
+        async holder => {
+          const { rows: [user] } = await holder.query<{ id: string }>(
+            `INSERT INTO users (id, email, username, "firstName", "lastName", role, "isActive", "pendingApproval", timezone, "updatedAt")
+             VALUES (gen_random_uuid(), 'alice@old.example', 'Alice', 'Old', 'Name', 'viewer', true, true, 'Europe/Rome', now()) RETURNING id`
+          );
+          await holder.query(
+            `INSERT INTO identities (id, "userId", provider, "providerId", "updatedAt") VALUES (gen_random_uuid(), $1, 'LDAP', 'Alice', now())`,
+            [user!.id]
+          );
+        }
+      );
+
+      expect(outcome.status).toBe('fulfilled');
+      const login = outcome.status === 'fulfilled' ? outcome.value : null;
+      // Names and the directory mail synced by the existing-user path, after the provisioning commit.
+      expect(login?.user).toMatchObject({ username: 'Alice', firstName: 'Alice', lastName: 'Rossi', email: ALICE.mail });
+      expect(await prisma.user.count({ where: { username: { in: ['alice'], mode: 'insensitive' } } })).toBe(1);
+    });
+
+    it('a mail another writer takes while this one creates: the constraint refuses it, and the retry answers email_in_use', async () => {
+      const { user: holder } = await createTestUser('viewer');
+
+      const outcome = await whileHeld(
+        held => held.query('UPDATE users SET email = $1 WHERE id = $2', [ALICE.mail, holder.id]),
+        () => authenticateViaLdap(prisma, 'alice', 'her-password')
+      );
+
+      expect(outcome).toEqual({ status: 'fulfilled', value: { user: null, reason: 'email_in_use', emailHolderId: holder.id } });
+      expect(await prisma.user.count({ where: { username: 'alice' } })).toBe(0);
+    });
+
+    describe('a second conflict in a row is classified by a read, never a third write', () => {
+      const conflict = () => prismaKnownError('P2002', 'users_email_key');
+
+      it('the mail now held: email_in_use', async () => {
+        const { user: holder } = await createTestUser('viewer');
+        await prisma.user.update({ where: { id: holder.id }, data: { email: ALICE.mail } });
+        // Both attempts meet a constraint whatever their reads saw.
+        const transaction = vi.spyOn(prisma, '$transaction').mockRejectedValue(conflict());
+
+        expect(await authenticateViaLdap(prisma, 'alice', 'her-password')).toEqual({ user: null, reason: 'email_in_use', emailHolderId: holder.id });
+        expect(transaction).toHaveBeenCalledTimes(2);
+      });
+
+      it('nothing that explains it: account_refused, not an outage', async () => {
+        const transaction = vi.spyOn(prisma, '$transaction').mockRejectedValue(conflict());
+
+        expect(await authenticateViaLdap(prisma, 'alice', 'her-password')).toEqual({ user: null, reason: 'account_refused' });
+        expect(transaction).toHaveBeenCalledTimes(2);
+      });
+
+      it('a unique violation on another constraint is a write failure', async () => {
+        vi.spyOn(prisma, '$transaction').mockRejectedValue(prismaKnownError('P2002', 'brands_code_key'));
+
+        await expect(authenticateViaLdap(prisma, 'alice', 'her-password')).rejects.toBeInstanceOf(LdapUserNotWrittenError);
+      });
+    });
   });
 });

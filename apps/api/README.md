@@ -60,7 +60,8 @@ been sent to the directory yet:
 | From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `invalid_credentials` |
 | From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 | LDAP disabled | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `invalid_credentials` |
-| After the directory verified the password: the username belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `account_refused` |
+| After the directory verified the password: the username, in any case, belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `UNAUTHORIZED` | `account_refused` |
+| After the directory verified the password, at a first sign-in: the entry's `mail` already belongs to another account, never linked by address | returns a refusal (with the holder's id) | `FORBIDDEN`, marker `LDAP_EMAIL_IN_USE` (the login page shows `LDAP_EMAIL_IN_USE_MESSAGE`) | `FORBIDDEN`, marker `LDAP_EMAIL_IN_USE` | `email_in_use`, metadata `emailHolderId` |
 | After the directory verified the password: the user record could not be written | throws `LdapUserNotWrittenError` | `SERVICE_UNAVAILABLE` | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 
 A caller with no session is told nothing about the application's state before
@@ -330,9 +331,19 @@ transaction under the last-admin lock, the verification link mailed after the
 commit (a failed send changes nothing). An address another account holds is not
 taken: the stored one stays, a FAILURE row (`ldap_sync_email_in_use`) is
 written and the sign-in goes on. An entry without a valid `mail` leaves the
-stored address alone. The role is never overwritten after creation. It creates the account only when no Luke account holds the username:
-an existing account without that LDAP identity, or a deactivated one, is refused
-(`account_refused`) and never linked. For an LDAP account `users.update` refuses changes to the fields the
+stored address alone. The role is never overwritten after creation. The account
+is found by its LDAP identity, compared without case (the directory binds `Alice`
+and `alice` as one person, #266); among accounts left differing only in case the
+exact one wins. It creates the account only when no Luke account holds the
+username in any case: an existing account without that LDAP identity, or a
+deactivated one, is refused (`account_refused`) and never linked. First sign-ins
+in different cases serialize on a transaction-scoped advisory lock on
+`lower(username)`. A directory `mail` another account holds is never linked: the
+first sign-in is refused (`email_in_use`, table above); an address Luke makes
+itself (`<username>@ldap.local`) that is already held becomes
+`ldap-<uuid>@ldap.local`. `users.approvePending` refuses a pending user whose
+address is still synthetic (`PRECONDITION_FAILED`): the user gives one from the
+pending screen first, or the request is rejected. For an LDAP account `users.update` refuses changes to the fields the
 directory owns — username, first and last name, password (`getLockedFields` in
 `@luke/core`, with `resolveEffectiveProvider`: an external identity wins over
 LOCAL whatever the row order). An administrator may still set an LDAP account's

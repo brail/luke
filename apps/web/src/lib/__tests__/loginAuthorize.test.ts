@@ -3,7 +3,8 @@
  *
  * Auth.js gives the page one result for every refused login, so some answers have to leave this
  * function by other routes, and each has a way of getting lost. The answers given once the password
- * is proven — pending approval, email unverified, maintenance, unavailable — travel as the `code`
+ * is proven — pending approval, email unverified, maintenance, unavailable, a directory mail
+ * another account holds — travel as the `code`
  * of a thrown `CredentialsSignin` subclass, past two `catch` blocks that turn every other error
  * into a plain refusal. "Throttled" travels as a mark in `loginThrottleContext`.
  */
@@ -12,7 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 
-import { authorizeLogin, LoginEmailUnverified, LoginMaintenance, LoginPending, LoginUnavailable } from '../loginAuthorize';
+import {
+  authorizeLogin,
+  LoginEmailInUse,
+  LoginEmailUnverified,
+  LoginMaintenance,
+  LoginPending,
+  LoginUnavailable,
+} from '../loginAuthorize';
 import { loginThrottleContext } from '../loginThrottleContext';
 
 import type { LoginThrottleState } from '../loginThrottleContext';
@@ -114,6 +122,15 @@ describe('authorizeLogin', () => {
     expect(error.code).toBe('maintenance');
   });
 
+  it('a directory mail another account holds, answered after the password is proven, leaves as code email_in_use', async () => {
+    apiAnswers(403, trpcError('FORBIDDEN', 'LDAP_EMAIL_IN_USE'));
+
+    const error = await authorizeLogin(credentials, request).catch(e => e);
+
+    expect(error).toBeInstanceOf(LoginEmailInUse);
+    expect(error.code).toBe('email_in_use');
+  });
+
   it.each([
     ['a refusal before proof', 401, trpcError('UNAUTHORIZED', SIGN_IN_REFUSED_MESSAGE)],
     ['a maintenance answer on anything but a 403', 401, trpcError('FORBIDDEN', 'MAINTENANCE_ACTIVE')],
@@ -123,6 +140,8 @@ describe('authorizeLogin', () => {
     ['a 403 whose message only starts like an unverified one', 403, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED_X')],
     ['a pending answer on anything but a 403', 401, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL')],
     ['a 403 whose message only starts like a pending one', 403, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL_X')],
+    ['an email-in-use answer on anything but a 403', 401, trpcError('FORBIDDEN', 'LDAP_EMAIL_IN_USE')],
+    ['a 403 whose message only starts like an email-in-use one', 403, trpcError('FORBIDDEN', 'LDAP_EMAIL_IN_USE_X')],
     ['an answer that is not JSON', 502, undefined],
   ])('%s is a plain refusal', async (_name, status, body) => {
     apiAnswers(status, body);

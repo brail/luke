@@ -6,12 +6,12 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { UserIdSchema } from '@luke/core';
+import { APPROVAL_NEEDS_EMAIL_MESSAGE, isSyntheticLdapEmail, LDAP_SYNTHETIC_EMAIL_DOMAIN, UserIdSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
+import { issueUserToken } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
@@ -64,7 +64,8 @@ export const usersAdminRouter = router({
    * Approves a pending LDAP user (clears pendingApproval flag), assigns them to the given team
    * in the same transaction, and sends an account-approved email. A pending user is provisioned
    * without a team (`ldapAuth.ts`) — this is the first point a human decides where they belong,
-   * so the team is mandatory here rather than defaulted.
+   * so the team is mandatory here rather than defaulted. A user still on a synthetic LDAP address
+   * is refused with `PRECONDITION_FAILED` (#266): the address comes first.
    *
    * @auth {users:update}
    * @input {{ id: string (UUID), teamId: string (UUID) }}
@@ -96,9 +97,17 @@ export const usersAdminRouter = router({
         }
 
         // Conditional write (rule 3): of two approvals of the same user, only one finds it pending,
-        // so the user joins one team and the trail records one approval.
-        const { count } = await tx.user.updateMany({ where: { id: input.id, pendingApproval: true }, data: { pendingApproval: false } });
+        // so the user joins one team and the trail records one approval. A synthetic address stays
+        // pending (#266, owner #69 a): once approved, an LDAP user can no longer give one themselves.
+        const { count } = await tx.user.updateMany({
+          where: { id: input.id, pendingApproval: true, NOT: { email: { endsWith: `@${LDAP_SYNTHETIC_EMAIL_DOMAIN}` } } },
+          data: { pendingApproval: false },
+        });
         if (count === 0) {
+          // The read above names the refusal; the write's condition is what holds it.
+          if (isSyntheticLdapEmail(pendingUser.email)) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: APPROVAL_NEEDS_EMAIL_MESSAGE });
+          }
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente in attesa non trovato' });
         }
         const membership = await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
@@ -122,7 +131,7 @@ export const usersAdminRouter = router({
       });
 
       // Send activation notification email (only if the email isn't synthetic)
-      if (!user.email.endsWith('@ldap.local')) {
+      if (!isSyntheticLdapEmail(user.email)) {
         try {
           const baseUrl =
             await getConfigOrDefault(ctx.prisma, 'app.baseUrl');

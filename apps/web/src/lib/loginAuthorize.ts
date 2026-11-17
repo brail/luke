@@ -8,7 +8,7 @@
  * - the `code` of a `CredentialsSignin` subclass thrown from `authorize()`, which `signIn()` returns
  *   to the page — used only for answers the API gives once the password is proven: an account
  *   awaiting approval, an email still to verify, maintenance, a directory that verified the
- *   password and could not complete the login;
+ *   password and could not complete the login, or whose mail another account holds;
  * - a mark left in `loginThrottleContext`, which the route wrapper
  *   (`app/api/auth/[...nextauth]/route.ts`) turns into a real `429`.
  *
@@ -40,6 +40,15 @@ export class LoginMaintenance extends CredentialsSignin {
 }
 
 /**
+ * The directory verified the password of a first sign-in whose mail another Luke account holds
+ * (#266): never linked, the administrator resolves it. Like `LoginPending`, answered only after the
+ * password is proven.
+ */
+export class LoginEmailInUse extends CredentialsSignin {
+  code = 'email_in_use';
+}
+
+/**
  * The password is right and the email is still to verify, under `auth.requireEmailVerification`.
  * Like `LoginPending`, answered only after the password is proven.
  */
@@ -64,7 +73,8 @@ const PENDING_MESSAGES = new Set(['ACCOUNT_PENDING_APPROVAL', 'ACCOUNT_PENDING_A
 /**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data, a
  * `{ pendingApproval, needsEmail }` object for accounts awaiting approval, `{ emailUnverified }`
- * for an email still to verify, `{ maintenance }` for maintenance, or `{ unavailable }` when the
+ * for an email still to verify, `{ maintenance }` for maintenance, `{ emailInUse }` for a directory
+ * mail another account holds, or `{ unavailable }` when the
  * API answers `SERVICE_UNAVAILABLE`. Returns `null` on any other error or non-OK response: every
  * refusal before the password is proven, which the page answers with one message.
  *
@@ -109,6 +119,9 @@ async function callTRPCAuth(
       if (response.status === 403 && code === 'FORBIDDEN' && message === 'MAINTENANCE_ACTIVE') {
         return { maintenance: true };
       }
+      if (response.status === 403 && code === 'FORBIDDEN' && message === 'LDAP_EMAIL_IN_USE') {
+        return { emailInUse: true };
+      }
       // Read from the code, never the message: production replaces the message of every 5xx.
       if (code === 'SERVICE_UNAVAILABLE') {
         return { unavailable: true };
@@ -144,6 +157,7 @@ async function callTRPCAuth(
  * @throws {LoginMaintenance} When the password is right and maintenance is active.
  * @throws {LoginPending} When the password is right and the account awaits approval.
  * @throws {LoginEmailUnverified} When the password is right and the email is still to verify.
+ * @throws {LoginEmailInUse} When the directory verified the password and its mail is another account's.
  */
 export async function authorizeLogin(
   credentials: Partial<Record<'username' | 'password', unknown>> | undefined,
@@ -173,6 +187,9 @@ export async function authorizeLogin(
     }
     if (authResult?.maintenance) {
       throw new LoginMaintenance();
+    }
+    if (authResult?.emailInUse) {
+      throw new LoginEmailInUse();
     }
 
     if (!authResult?.user) {

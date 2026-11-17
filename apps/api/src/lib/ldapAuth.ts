@@ -8,9 +8,9 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { Filter, SASL_MECHANISMS } from 'ldapts';
 
-import { EmailSchema } from '@luke/core';
+import { EmailSchema, LDAP_SYNTHETIC_EMAIL_DOMAIN } from '@luke/core';
 import type { Role, RoleMapping } from '@luke/core';
-import type { PrismaClient, User } from '@luke/db';
+import type { Prisma, PrismaClient, User } from '@luke/db';
 
 import { logAudit } from './auditLog';
 import {
@@ -54,12 +54,16 @@ export function fillLdapFilter(template: string, placeholder: 'username' | 'user
  * directory never judged the credentials — a step got no usable answer, or could not be carried
  * out — and `account_refused` that it verified them for an account Luke refuses (deactivated, or
  * without this LDAP identity). Both are for the audit trail only: the public answer to a refusal is
- * the same either way.
+ * the same either way. `email_in_use` — a first sign-in whose directory mail another account holds
+ * (#266) — is the one refusal answered as such, since it comes after the directory proved the
+ * password.
  */
 export interface LdapRefusal {
   user: null;
-  reason: 'invalid_credentials' | 'ldap_unavailable' | 'account_refused';
+  reason: 'invalid_credentials' | 'ldap_unavailable' | 'account_refused' | 'email_in_use';
   errorCode?: string;
+  /** With `email_in_use`: the account that holds the directory's mail. */
+  emailHolderId?: string;
 }
 
 /** The outcome of an LDAP login: the local user it authenticated, or why it refused. */
@@ -89,7 +93,7 @@ export class LdapUserNotWrittenError extends Error {
  * failure is returned as a refusal, whatever its cause: answering differently there would tell a
  * caller with no password which usernames the directory knows. The one throw past that point needs
  * the password: the user record could not be written after the directory verified it
- * (`LdapUserNotWrittenError`).
+ * (`LdapUserNotWrittenError`). A unique constraint met there is a refusal, never that throw (#266).
  *
  * @returns The local `User`, or a refusal with the reason for the audit trail.
  * @throws {TRPCError} When the login could not complete for a reason independent of the username.
@@ -147,16 +151,16 @@ export async function authenticateViaLdap(
     const role = determineUserRole(userGroups, config.roleMapping);
 
     // Create or update the user in the database; an account it may not sign in is a refusal.
-    let user: User | null;
+    let login: LdapLogin;
     try {
-      user = await createOrUpdateUser(prisma, username, role, verified.attributes);
+      login = await createOrUpdateUser(prisma, username, role, verified.attributes);
     } catch (error) {
       throw new LdapUserNotWrittenError(error);
     }
-    if (!user) return { user: null, reason: 'account_refused' };
+    if (login.user === null) return login;
 
     logger.info({ username, role }, 'LDAP authentication successful');
-    return { user };
+    return login;
   } catch (error) {
     if (error instanceof TRPCError || error instanceof LdapUserNotWrittenError) {
       throw error;
@@ -341,28 +345,198 @@ function directoryMail(username: string, raw: string | undefined): string | unde
 }
 
 /**
- * The address of a new LDAP user the directory gives no mail: `<username>@ldap.local`, else — a
- * username no address can carry, with a space or a non-ASCII letter — a synthetic one of its own.
+ * The local account a directory-verified username signs into, by its LDAP identity — the link
+ * between a directory person and a Luke account — compared without case: the directory binds
+ * `Alice` and `alice` as one person (#266). Interim rule until identities key on the directory's
+ * stable identifier (#234).
+ *
+ * @returns The account; `'refused'` when the identity's account is deactivated, when only accounts
+ *   differing in case from a pre-#228 duplicate exist with no exact match, or when an account with
+ *   this username in any case has no LDAP identity — never linked (#144); `null` when the username
+ *   is free.
  */
-function syntheticAddress(username: string): string {
-  const synthetic = EmailSchema.safeParse(`${username}@ldap.local`);
-  return synthetic.success ? synthetic.data : `ldap-${randomUUID()}@ldap.local`;
+async function findLdapAccount(db: Prisma.TransactionClient, username: string): Promise<User | 'refused' | null> {
+  // `in` with one value, never `equals`: with `mode: 'insensitive'` Prisma turns `equals` into an
+  // unescaped ILIKE, where `_` and `%` in a username match other accounts (prisma/orm#20318). `in`
+  // compares `LOWER(column) IN (LOWER(value))`, literally, with the `lower()` the provisioning lock uses.
+  const sameName: Prisma.StringFilter = { in: [username], mode: 'insensitive' };
+
+  const identities = await db.identity.findMany({
+    where: { provider: 'LDAP', providerId: sameName },
+    select: { providerId: true, user: true },
+  });
+  if (identities.length > 0) {
+    if (identities.length > 1) {
+      logger.warn(
+        { username, userIds: identities.map(identity => identity.user.id) },
+        'LDAP identities differing only in case: an administrator should keep one account'
+      );
+    }
+    // Among pre-#228 duplicates the exact one, which is where this username signed in until now.
+    const match = identities.find(identity => identity.providerId === username)
+      ?? (identities.length === 1 ? identities[0] : undefined);
+    if (!match) return 'refused';
+    if (!match.user.isActive) {
+      logger.warn({ username }, 'LDAP login refused: the account is deactivated');
+      return 'refused';
+    }
+    return match.user;
+  }
+
+  const named = await db.user.findFirst({ where: { username: sameName }, select: { id: true } });
+  if (named) {
+    logger.warn({ username }, 'LDAP login refused: the account with this username has no LDAP identity for it');
+    return 'refused';
+  }
+  return null;
 }
 
 /**
- * The local user for a directory-verified login: the account that carries this LDAP identity, with
- * its names and address synced from the directory (`realignEmail`), or a new pending account when
- * the username is free.
+ * The address of a new LDAP user the directory gives no mail: `<username>@ldap.local`, else — a
+ * username no address can carry, with a space or a non-ASCII letter, or an address another account
+ * already holds — a synthetic one of its own. It is Luke's placeholder, so a clash is never refused.
+ */
+async function syntheticAddress(tx: Prisma.TransactionClient, username: string): Promise<string> {
+  const synthetic = EmailSchema.safeParse(`${username}@${LDAP_SYNTHETIC_EMAIL_DOMAIN}`);
+  if (synthetic.success && !(await tx.user.findUnique({ where: { email: synthetic.data }, select: { id: true } }))) {
+    return synthetic.data;
+  }
+  return `ldap-${randomUUID()}@${LDAP_SYNTHETIC_EMAIL_DOMAIN}`;
+}
+
+/** What a first sign-in is created with. */
+interface NewLdapUser {
+  username: string;
+  role: Role;
+  mail: string | undefined;
+  firstName: string;
+  lastName: string;
+}
+
+/**
+ * The outcome of a first sign-in: the account it created; the account (or refusal) a concurrent
+ * first sign-in in another case left, untouched; or the account holding the directory's mail.
+ */
+type Provisioning = { created: User } | { found: User | 'refused' } | { emailHolderId: string };
+
+/** The unique constraints a first sign-in meets when a writer outside its lock wins a race. */
+const PROVISIONING_CONFLICTS: [string, ...string[]] = [
+  'users_email_key',
+  'users_username_key',
+  'identities_provider_providerId_key',
+];
+
+/**
+ * What already decides a first sign-in, read before any write: the account a sign-in in another case
+ * left (or its refusal), or the account holding the directory's mail — never linked by address,
+ * the classic takeover path. `null` when nothing does and the account may be created.
+ */
+async function decide(db: Prisma.TransactionClient, data: NewLdapUser): Promise<Provisioning | null> {
+  const found = await findLdapAccount(db, data.username);
+  if (found !== null) return { found };
+  if (data.mail !== undefined) {
+    const holder = await db.user.findUnique({ where: { email: data.mail }, select: { id: true } });
+    if (holder) return { emailHolderId: holder.id };
+  }
+  return null;
+}
+
+/**
+ * Creates the account of a first sign-in, or finds why it must not. A writer outside the lock that
+ * wins a race shows as a unique violation: the provisioning runs once more and the state it left
+ * decides. A second one is classified by a read, with no third write, so neither reads as an outage
+ * (#266); what that read cannot explain is still a refusal — the directory proved the password, and
+ * the write did not fail.
+ */
+async function provision(prisma: PrismaClient, data: NewLdapUser): Promise<Provisioning> {
+  try {
+    return await provisionOnce(prisma, data);
+  } catch (error) {
+    if (!isUniqueViolation(error, ...PROVISIONING_CONFLICTS)) throw error;
+    logger.warn({ username: data.username, err: error }, 'LDAP first sign-in lost a race to another writer: deciding again');
+  }
+  try {
+    return await provisionOnce(prisma, data);
+  } catch (error) {
+    if (!isUniqueViolation(error, ...PROVISIONING_CONFLICTS)) throw error;
+    const decided = await decide(prisma, data);
+    if (decided) return decided;
+    logger.warn({ username: data.username, err: error }, 'LDAP first sign-in kept meeting a unique constraint: refused');
+    return { found: 'refused' };
+  }
+}
+
+async function provisionOnce(prisma: PrismaClient, data: NewLdapUser): Promise<Provisioning> {
+  // Create new user, in the business zone (ADR-035 §New users)
+  const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
+  return prisma.$transaction(async tx => {
+    // Transaction-scoped advisory lock (CLAUDE.md "Raw SQL"): first sign-ins of one directory person
+    // in different cases wait on one key, so the second finds the account the first created instead
+    // of creating another (rule 3). `lower()` as in `findLdapAccount`.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('ldap.provision:' || lower(${data.username})))`;
+    // An account found now is returned untouched: its sync, which takes the last-admin lock, runs
+    // after this commit, never while this transaction holds a user row.
+    const decided = await decide(tx, data);
+    if (decided) return decided;
+
+    const newUser = await tx.user.create({
+      data: {
+        email: data.mail ?? await syntheticAddress(tx, data.username),
+        username: data.username,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role,
+        timezone,
+        isActive: true,
+        pendingApproval: true,
+      },
+    });
+
+    await tx.identity.create({
+      data: {
+        userId: newUser.id,
+        provider: 'LDAP',
+        providerId: data.username,
+      },
+    });
+
+    // The access a user starts with (#222), and that it starts with no team: `users.approvePending`
+    // requires one, the first point a human decides where this user belongs. A pending LDAP user has
+    // no brand or function access anyway. A pre-session flow, so no actor.
+    await logAudit({ prisma, logger }, {
+      action: 'USER_ACCESS_CHANGED',
+      targetType: 'User',
+      targetId: newUser.id,
+      result: 'SUCCESS',
+      metadata: { newRole: newUser.role, newIsActive: newUser.isActive, newPendingApproval: newUser.pendingApproval },
+    }, { tx });
+    await logAudit({ prisma, logger }, {
+      action: 'USER_PROVISIONED_WITHOUT_TEAM',
+      targetType: 'User',
+      targetId: newUser.id,
+      result: 'SUCCESS',
+      metadata: { username: newUser.username },
+    }, { tx });
+
+    logger.info({ username: data.username, role: data.role }, 'Created new LDAP user');
+    return { created: newUser };
+  });
+}
+
+/**
+ * The login of a directory-verified user: the account that carries this LDAP identity
+ * (`findLdapAccount`), with its names and address synced from the directory (`realignEmail`), or a
+ * new pending account when the username is free (`provision`).
  *
- * @returns `null` — a refusal — when the username belongs to a deactivated account or to one without
- *   this LDAP identity (#144).
+ * @returns A refusal when the account is refused (`findLdapAccount`), or when the directory's mail
+ *   belongs to another account at first sign-in (`email_in_use`, #266).
  */
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
   role: Role,
   userAttributes: Record<string, string[]>
-): Promise<User | null> {
+): Promise<LdapLogin> {
   const mail = directoryMail(username, userAttributes.mail?.[0]);
 
   // Extract firstName and lastName from LDAP attributes
@@ -388,112 +562,62 @@ async function createOrUpdateUser(
     `LDAP attributes for ${username}`
   );
 
-  // By the unique username, active or not: filtering on `isActive` let a deactivated account fall
-  // through to `create`, whose P2002 then read as "LDAP unavailable".
-  let user = await prisma.user.findUnique({ where: { username } });
+  let account = await findLdapAccount(prisma, username);
 
-  if (user) {
-    if (!user.isActive) {
-      logger.warn({ username }, 'LDAP login refused: the account is deactivated');
-      return null;
-    }
-
-    // Only the account that already carries this directory identity. An entry named like an account
-    // without it — a local one, say — must not become that account, so nothing is linked here.
-    const ldapIdentity = await prisma.identity.findUnique({
-      where: { provider_providerId: { provider: 'LDAP', providerId: username } },
-      select: { userId: true },
-    });
-    if (ldapIdentity?.userId !== user.id) {
-      logger.warn({ username }, 'LDAP login refused: the account with this username has no LDAP identity for it');
-      return null;
-    }
-
-    // Update firstName and lastName if they differ
-    if (user.firstName !== firstName || user.lastName !== lastName) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          firstName,
-          lastName,
-        },
-      });
-      logger.info(
-        { username, firstName, lastName },
-        `Updated firstName/lastName for user`
+  if (account === null) {
+    const provisioned = await provision(prisma, { username, role, mail, firstName, lastName });
+    if ('emailHolderId' in provisioned) {
+      logger.warn(
+        { username, emailHolderId: provisioned.emailHolderId },
+        'LDAP first sign-in refused: the directory mail belongs to another account'
       );
+      return { user: null, reason: 'email_in_use', emailHolderId: provisioned.emailHolderId };
     }
+    if ('created' in provisioned) {
+      const user = provisioned.created;
+      // Real email already provided by LDAP: send the verification right away,
+      // no need to wait for the user to enter it on the login page.
+      // Fire-and-forget: don't block the login response on the SMTP send.
+      if (mail !== undefined) {
+        sendVerificationEmail(prisma, {
+          userId: user.id,
+          reason: 'user_created',
+        }).catch(err => {
+          logger.warn(
+            { username, err },
+            'Failed to send verification email for new LDAP user'
+          );
+        });
+      }
 
-    // Without a directory mail the stored address, one the user gave included, stays.
-    if (mail !== undefined && user.email !== mail) {
-      user = await realignEmail(prisma, user, mail);
+      return { user };
     }
-  } else {
-    // Create new user, in the business zone (ADR-035 §New users)
-    const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
-    user = await prisma.$transaction(async tx => {
-      const newUser = await tx.user.create({
-        data: {
-          email: mail ?? syntheticAddress(username),
-          username,
-          firstName,
-          lastName,
-          role,
-          timezone,
-          isActive: true,
-          pendingApproval: true,
-        },
-      });
-
-      await tx.identity.create({
-        data: {
-          userId: newUser.id,
-          provider: 'LDAP',
-          providerId: username,
-        },
-      });
-
-      // The access a user starts with (#222); a pre-session flow, so no actor.
-      await logAudit({ prisma, logger }, {
-        action: 'USER_ACCESS_CHANGED',
-        targetType: 'User',
-        targetId: newUser.id,
-        result: 'SUCCESS',
-        metadata: { newRole: newUser.role, newIsActive: newUser.isActive, newPendingApproval: newUser.pendingApproval },
-      }, { tx });
-
-      logger.info(
-        { username, role, firstName, lastName },
-        `Created new LDAP user`
-      );
-      return newUser;
-    });
-
-    // Real email already provided by LDAP: send the verification right away,
-    // no need to wait for the user to enter it on the login page.
-    // Fire-and-forget: don't block the login response on the SMTP send.
-    if (mail !== undefined) {
-      sendVerificationEmail(prisma, {
-        userId: user.id,
-        reason: 'user_created',
-      }).catch(err => {
-        logger.warn(
-          { username, err },
-          'Failed to send verification email for new LDAP user'
-        );
-      });
-    }
-
-    // No team assignment here — a pending LDAP user has no brand or function access anyway
-    // (`pendingApproval: true` blocks login), and picking a team without knowing the person
-    // would just be a guess. `users.approvePending` requires an explicit team at approval time,
-    // which is where a human already has to make a decision about this user.
-    await prisma.auditLog.create({
-      data: { actorId: null, action: 'USER_PROVISIONED_WITHOUT_TEAM', targetType: 'User', targetId: user.id, result: 'SUCCESS', metadata: { username: user.username } },
-    }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
+    account = provisioned.found;
   }
 
-  return user;
+  if (account === 'refused') return { user: null, reason: 'account_refused' };
+  let user = account;
+
+  // Update firstName and lastName if they differ
+  if (user.firstName !== firstName || user.lastName !== lastName) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        firstName,
+        lastName,
+      },
+    });
+    logger.info(
+      { username, firstName, lastName },
+      `Updated firstName/lastName for user`
+    );
+  }
+
+  // Without a directory mail the stored address, one the user gave included, stays.
+  if (mail !== undefined && user.email !== mail) {
+    user = await realignEmail(prisma, user, mail);
+  }
+  return { user };
 }
 
 /**

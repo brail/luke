@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import { APPROVAL_NEEDS_EMAIL_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, expectToThrow, setupTestDb } from './helpers';
@@ -23,10 +24,9 @@ let adminSession: UserSession;
 let activeTeamId: string;
 let inactiveTeamId: string;
 
-async function createPendingUser() {
+async function createPendingUser(email?: string) {
   const { user } = await createTestUser('viewer');
-  await prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true } });
-  return user;
+  return prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true, email } });
 }
 
 beforeAll(async () => {
@@ -107,5 +107,21 @@ describe('users.approvePending', () => {
       where: { teamId_userId: { teamId: activeTeamId, userId: user.id } },
     });
     expect(membership).toBeNull();
+  });
+
+  // #266, owner #69 a: an LDAP user can no longer give an address once approved.
+  describe('a user still on a synthetic LDAP address', () => {
+    it('is refused with its text, and stays pending with no membership and no access change', async () => {
+      const pending = await createPendingUser(`synthetic-${randomUUID().substring(0, 8)}@ldap.local`);
+
+      await expectToThrow(
+        createCallerWithSession(adminSession).users.approvePending({ id: pending.id, teamId: activeTeamId }),
+        { code: 'PRECONDITION_FAILED', message: APPROVAL_NEEDS_EMAIL_MESSAGE }
+      );
+
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({ pendingApproval: true });
+      expect(await prisma.companyTeamMembership.count({ where: { userId: pending.id } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { action: 'USER_ACCESS_CHANGED', targetId: pending.id } })).toBe(0);
+    });
   });
 });
