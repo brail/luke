@@ -116,6 +116,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 - Import of `secrets.server`, `getMasterKey`, `deriveSecret`, `getApiJwtSecret` from `@luke/core` directly (must be `@luke/core/server`)
 - Crypto utilities imported in client-side files (no `typeof window` guard)
+- A write or delete of `auth.strategy` or `auth.ldap.enabled` outside `saveAuthConfig`, except the
+  seed's `auth.strategy` and a full restore (CLAUDE.md "AppConfig System")
 
 **RBAC:**
 

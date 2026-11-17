@@ -304,6 +304,17 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
 - **A form that writes several generic-writer keys calls `saveConfigs` once**, so a failure
   leaves the stored form as it was (`apps/api/test/configFormAtomicity.integration.spec.ts`).
   Keys with dedicated writers follow those writers' transaction contracts.
+- `auth.strategy` and `auth.ldap.enabled` use `saveAuthConfig`
+  (`apps/api/src/services/authConfig.service.ts`); the seed (`auth.strategy` only) and a full
+  restore are operational exceptions. It validates the values, then reads, checks and writes in one
+  transaction, taking `acquireLastAdminLock` before `acquireAppConfigWriteLock`. It refuses a
+  resulting `ldap-only` configuration with LDAP disabled. When the batch writes `auth.strategy` as
+  `ldap-only`, it also requires at least one break-glass administrator at commit, as counted by
+  `countBreakGlassAdmins`: active, approved, with a LOCAL credential matching the current username
+  and verified email when required. This is a check at the strategy write, not a permanent
+  minimum. `saveConfig`, `saveConfigs` and the generic config writes refuse both keys
+  (`setMultiple` and config import report them per entry), and the config router never deletes
+  them (`UNDELETABLE_CONFIG_KEYS`); `deleteConfig` itself removes any key.
 - Stored values are strings: `integerConfigSchema(Inner)` for integers, with integer and range
   validation in `Inner` — never bare `z.coerce.number()`; `booleanConfigSchema` for booleans;
   `jsonConfigSchema(Inner)` for JSON — never a bare `.transform(s => Inner.parse(JSON.parse(s)))`,

@@ -69,6 +69,13 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 - RBAC cache and kill switch (CLAUDE.md "RBAC & Section Access"): a kill-switch save outside
   `saveSectionsDisabled` (it skips the last-admin lock-then-count), or an `rbac.*` write without
   `invalidateRbacCache()` after its transaction commits
+- Break-glass count (CLAUDE.md "AppConfig System"): an account mutation that can reduce
+  `countBreakGlassAdmins` — role, active or approved state, `emailVerifiedAt`, a username no
+  longer matching its LOCAL identity, the LOCAL credential — without holding
+  `acquireLastAdminLock` through commit. Acquire it before any count or state check used by the
+  mutation; `saveAuthConfig` takes it before the AppConfig write lock and counts under both. A
+  write of `auth.requireEmailVerification` outside the AppConfig write lock (`saveConfigs`), the
+  seed aside
 - `prisma.$transaction([...])` array syntax where operations depend on each other (should use callback syntax)
 
 **Async/await bugs:**
