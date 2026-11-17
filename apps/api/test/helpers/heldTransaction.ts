@@ -91,6 +91,10 @@ async function blockedOn(observer: Client, holderPid: number): Promise<{ pid: nu
 export const holdLastAdminLock = (holder: Client) =>
   holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [LAST_ADMIN_LOCK_KEY]);
 
+/** Holds `userId`'s row as `lockUserEmail` does, for `whileHeld`. */
+export const holdUserRow = (userId: string) => (holder: Client) =>
+  holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [userId]);
+
 /** Holds the AppConfig write lock (`acquireAppConfigWriteLock`), for `whileHeld`. */
 export const holdAppConfigWriteLock = (holder: Client) =>
   holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [APP_CONFIG_WRITE_LOCK_KEY]);

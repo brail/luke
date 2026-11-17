@@ -18,7 +18,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
@@ -34,6 +34,9 @@ import { getUserPreferenceValue, setUserPreferenceValue } from '../services/cont
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
 const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
+
+/** The answer to a password change on an account without a local password. */
+const NO_LOCAL_PASSWORD = 'Cambio password non consentito per provider esterni';
 
 export const meRouter = router({
   /**
@@ -322,7 +325,7 @@ export const meRouter = router({
       if (!localIdentity || !localIdentity.localCredential) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Cambio password non consentito per provider esterni',
+          message: NO_LOCAL_PASSWORD,
         });
       }
 
@@ -358,13 +361,27 @@ export const meRouter = router({
       // Generate hash for the new password
       const newPasswordHash = await hashPassword(input.newPassword);
 
+      const checkedHash = localIdentity.localCredential.passwordHash;
+
       // Update the password and bump tokenVersion in a transaction
       await ctx.prisma.$transaction(async trx => {
-        // Update the password hash
-        await trx.localCredential.update({
-          where: { identityId: localIdentity.id },
+        // The user row first, the order of every writer of a user's identities and credential.
+        await lockUserEmail(trx, ctx.session.user.id);
+        // Conditional on the hash the current password was checked against (rule 3): a reset link
+        // used since then set another password, which this must not overwrite.
+        const { count } = await trx.localCredential.updateMany({
+          where: { identityId: localIdentity.id, passwordHash: checkedHash },
           data: { passwordHash: newPasswordHash },
         });
+        if (count === 0) {
+          // No credential any more: the local access was revoked (or the account deleted) meanwhile,
+          // answered as a fresh call would be.
+          const gone = !(await trx.localCredential.findUnique({ where: { identityId: localIdentity.id }, select: { id: true } }));
+          if (gone) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: NO_LOCAL_PASSWORD });
+          }
+          throw new TRPCError({ code: 'CONFLICT', message: 'La password è stata cambiata nel frattempo: riprova' });
+        }
 
         // Bump tokenVersion to invalidate all previous sessions
         await trx.user.update({

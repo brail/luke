@@ -135,11 +135,11 @@ describe('users.forceLocalAccess', () => {
     expect(localIdentity).toBeNull();
   });
 
-  it('LDAP user with a real email → creates LOCAL identity + credential, leaves the LDAP one intact, even if the following email send fails (no test SMTP)', async () => {
+  it('LDAP user with a real email → creates the LOCAL identity with no password, leaves the LDAP one intact, even if the following email send fails (no test SMTP)', async () => {
     const target = await createLdapUser();
 
-    // Sending always fails in this environment (see file header) — the identity/credential
-    // creation happens in its own transaction beforehand and must survive that failure.
+    // Sending always fails in this environment (see file header) — the identity creation happens
+    // in its own transaction beforehand and must survive that failure.
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), {
       code: 'INTERNAL_SERVER_ERROR',
     });
@@ -148,10 +148,11 @@ describe('users.forceLocalAccess', () => {
     expect(identities.map(i => i.provider).sort()).toEqual(['LDAP', 'LOCAL']);
 
     const localIdentity = identities.find(i => i.provider === 'LOCAL')!;
+    // No password until the user sets one through the link.
     const credential = await prisma.localCredential.findUnique({
       where: { identityId: localIdentity.id },
     });
-    expect(credential).not.toBeNull();
+    expect(credential).toBeNull();
 
     // Not asserting the audit row here: `withAuditLog` has a pre-existing, unrelated bug that
     // logs 'SUCCESS' even when the mutation throws (see `auditMiddleware.integration.spec.ts`,

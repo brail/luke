@@ -87,8 +87,11 @@ describe('issuing a link', () => {
     expect(t.text().split(token)).toHaveLength(2); // exactly once
     expect(t.out[0]).toBe('Target database: db.internal:5432/luke');
     expect(t.text()).not.toContain('secret');
+    // The command prepares the identity and writes no password: the link sets it.
+    expect(await prisma.localCredential.count({ where: { identity: { userId: user.id } } })).toBe(0);
 
     await confirmPasswordReset(createTestContext(null), { token, newPassword: NEW_PASSWORD });
+    expect(await prisma.localCredential.count({ where: { identity: { userId: user.id } } })).toBe(1);
     expect(await writtenFor(user.id)).toMatchObject({ identities: 1, tokens: 0 });
   });
 

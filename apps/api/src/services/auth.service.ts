@@ -18,7 +18,7 @@ import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
-import { issueUserToken, type IssuedUserToken } from '../lib/emailHelpers';
+import { issueUserToken, lockUserEmail, type IssuedUserToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, LdapUserNotWrittenError, type LdapRefusal } from '../lib/ldapAuth';
 import { sendPasswordResetEmail } from '../lib/mailer';
@@ -86,9 +86,8 @@ export async function authenticateLocal(
  * verified email when verification is required — what `authenticateUser` asks of them.
  *
  * True at the commit of a transaction holding the locks `saveAuthConfig` takes (#246), not later:
- * the changes that can lower it wait for that commit and are not refused. And a credential row is
- * not proof that anyone knows the password: forcing local access (`users.forceLocalAccess`) stores a
- * random one until the reset link is used.
+ * the changes that can lower it wait for that commit and are not refused. A forced local access
+ * writes no credential: the reset link creates it when the person sets the password.
  */
 export async function countBreakGlassAdmins(prisma: Prisma.TransactionClient): Promise<number> {
   const requireEmailVerification = await getRequireEmailVerification(prisma);
@@ -511,7 +510,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     include: {
       identities: {
         where: { provider: 'LOCAL' },
-        include: { localCredential: true },
+        select: { id: true },
       },
     },
   });
@@ -596,7 +595,8 @@ class LinkGone extends Error {}
 /**
  * Runs `writes`, then deletes the link `tokenId`, in one transaction (writes first: the user row,
  * then its links — the lock order of `issueUserToken` and of an email change). A link deleted
- * since it was looked up — an email change revokes every pending link — rolls the writes back.
+ * since it was looked up — an email change revokes every pending link — rolls the writes back, and
+ * so does `writes` throwing `LinkGone` when what the link acts on has gone.
  *
  * @returns `false` when the link was gone, so the caller answers "not valid", not a 500.
  */
@@ -644,14 +644,15 @@ export async function confirmPasswordReset(
         include: {
           identities: {
             where: { provider: 'LOCAL' },
-            include: { localCredential: true },
+            select: { id: true },
           },
         },
       },
     },
   });
 
-  if (!userToken || !userToken.user.identities[0]?.localCredential) {
+  // A LOCAL identity is enough: the credential may not exist yet (see the upsert below).
+  if (!userToken || userToken.user.identities.length === 0) {
     await logAudit(ctx, {
       action: 'PASSWORD_CHANGED',
       targetType: 'Auth',
@@ -700,9 +701,22 @@ export async function confirmPasswordReset(
   const passwordHash = await hashPassword(newPassword);
 
   const consumed = await consumeLink(ctx, userToken.id, async tx => {
-    await tx.localCredential.update({
-      where: { identityId: userToken.user.identities[0].id },
-      data: { passwordHash, updatedAt: new Date() },
+    // The user row first, the order of every writer of a user's identities and credential
+    // (`lockUserEmail`): a revocation, a rename or a deletion meanwhile is done, or waits for this.
+    await lockUserEmail(tx, userToken.userId);
+    // Read again under the lock: a rename (#229) may have moved the identity; a revocation or the
+    // account's deletion removed it.
+    const identity = await tx.identity.findFirst({
+      where: { userId: userToken.userId, provider: 'LOCAL' },
+      select: { id: true },
+    });
+    if (!identity) throw new LinkGone();
+    // Created here when this link sets the account's first password: a forced local access writes
+    // none.
+    await tx.localCredential.upsert({
+      where: { identityId: identity.id },
+      create: { identityId: identity.id, passwordHash },
+      update: { passwordHash, updatedAt: new Date() },
     });
     await tx.user.update({
       where: { id: userToken.userId },

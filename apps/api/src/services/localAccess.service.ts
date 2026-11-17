@@ -9,11 +9,10 @@
  *   can sign in, from a shell in the API container, and prints the link.
  *
  * What they share is here, and only that: making sure the LOCAL identity exists, under the current
- * username and with a credential, and — for the command — issuing the link in the same transaction
- * as its audit row.
+ * username, and — for the command — issuing the link in the same transaction as its audit row.
+ * Neither writes a password: the credential is created when the link is used (reset consume), so a
+ * credential row means a person set the password.
  */
-
-import { randomBytes } from 'crypto';
 
 import { hasPermission } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
@@ -21,7 +20,6 @@ import type { Prisma, PrismaClient } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { getRequireEmailVerification } from '../lib/configManager';
 import { issueUserToken, lockUserEmail } from '../lib/emailHelpers';
-import { hashPassword } from '../lib/password';
 
 /** An account as the checks below need it. */
 const TARGET_SELECT = {
@@ -33,7 +31,7 @@ const TARGET_SELECT = {
   pendingApproval: true,
   emailVerifiedAt: true,
   identities: {
-    select: { id: true, provider: true, providerId: true, localCredential: { select: { id: true } } },
+    select: { provider: true, providerId: true },
   },
 } satisfies Prisma.UserSelect;
 
@@ -46,17 +44,8 @@ type Db = Prisma.TransactionClient | PrismaClient;
 export class LocalAccessRefused extends Error {}
 
 /**
- * A random password hashed as any other, which nobody knows: it only satisfies the credential's
- * `NOT NULL` until a real one is set through the reset link. Hashed outside any transaction —
- * argon2 is CPU-bound and must not hold one open.
- */
-export function placeholderPasswordHash(): Promise<string> {
-  return hashPassword(randomBytes(32).toString('hex'));
-}
-
-/**
- * Makes sure `user` has a LOCAL identity under their current username, with a credential, and says
- * whether anything was created.
+ * Makes sure `user` has a LOCAL identity under their current username, and says whether it was
+ * created. No credential: the reset link creates it when a person sets the password.
  *
  * Local sign-in finds the identity by the current username, so one left under an old username (a
  * rename before 3.1, which did not move it; one the migration of #229 could not move) would hold a
@@ -66,8 +55,7 @@ export function placeholderPasswordHash(): Promise<string> {
  */
 async function prepareLocalIdentity(
   db: Db,
-  user: { id: string; username: string; identities: Target['identities'] },
-  placeholderHash: string
+  user: { id: string; username: string; identities: Target['identities'] }
 ): Promise<boolean> {
   const local = user.identities.find(identity => identity.provider === 'LOCAL');
 
@@ -77,20 +65,10 @@ async function prepareLocalIdentity(
         `the LOCAL identity of ${user.username} is under the username "${local.providerId}"; local sign-in cannot find it`
       );
     }
-    if (!local.localCredential) {
-      await db.localCredential.create({ data: { identityId: local.id, passwordHash: placeholderHash } });
-    }
     return false;
   }
 
-  await db.identity.create({
-    data: {
-      userId: user.id,
-      provider: 'LOCAL',
-      providerId: user.username,
-      localCredential: { create: { passwordHash: placeholderHash } },
-    },
-  });
+  await db.identity.create({ data: { userId: user.id, provider: 'LOCAL', providerId: user.username } });
   return true;
 }
 
@@ -101,29 +79,27 @@ async function prepareLocalIdentity(
  */
 export async function prepareLocalIdentityLocked(
   tx: Prisma.TransactionClient,
-  userId: string,
-  placeholderHash: string
+  userId: string
 ): Promise<boolean> {
   await lockUserEmail(tx, userId);
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: TARGET_SELECT });
-  return prepareLocalIdentity(tx, user, placeholderHash);
+  return prepareLocalIdentity(tx, user);
 }
 
 /**
  * After a `(LOCAL, username)` unique-key collision: the identity that won is acceptable only if it
- * is this user's, with a credential. Anything else would send a link for an account whose password
- * lives on someone else's identity.
+ * is this user's. Anything else would send a link that sets a password on someone else's identity.
  *
- * @throws {LocalAccessRefused} When the identity belongs to another user or has no credential.
+ * @throws {LocalAccessRefused} When the identity belongs to another user.
  */
 export async function assertOwnLocalIdentity(db: Db, userId: string): Promise<void> {
   // The username as it is now: a rename may have committed since the caller read it.
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, username: true } });
   const identity = await db.identity.findUnique({
     where: { provider_providerId: { provider: 'LOCAL', providerId: user.username } },
-    select: { userId: true, localCredential: { select: { id: true } } },
+    select: { userId: true },
   });
-  if (identity?.userId !== user.id || !identity.localCredential) {
+  if (identity?.userId !== user.id) {
     throw new LocalAccessRefused(`the LOCAL identity "${user.username}" does not belong to this account`);
   }
 }
@@ -210,10 +186,7 @@ export async function grantLocalAccess(
   confirmed: { id: string; username: string },
   options: { anyway: boolean }
 ): Promise<LocalAccessGrant> {
-  const [placeholderHash, requireEmailVerification] = await Promise.all([
-    placeholderPasswordHash(),
-    getRequireEmailVerification(prisma),
-  ]);
+  const requireEmailVerification = await getRequireEmailVerification(prisma);
 
   return prisma.$transaction(async tx => {
     // The user row first, before the identity insert below (whose foreign-key check takes a
@@ -231,7 +204,7 @@ export async function grantLocalAccess(
 
     // `assess` has just established that the account exists.
     const target = user!;
-    const identityCreated = await prepareLocalIdentity(tx, target, placeholderHash);
+    const identityCreated = await prepareLocalIdentity(tx, target);
     const issued = await issueUserToken(tx, target.id, 'RESET', { revokePrevious: true });
     // The row is locked above and `assess` found it: it cannot have gone since.
     if (!issued) throw new LocalAccessRefused('the account no longer exists');

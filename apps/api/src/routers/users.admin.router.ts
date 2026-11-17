@@ -11,7 +11,7 @@ import { APPROVAL_NEEDS_EMAIL_MESSAGE, isSyntheticLdapEmail, LDAP_SYNTHETIC_EMAI
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { issueUserToken } from '../lib/emailHelpers';
+import { issueUserToken, lockUserEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
@@ -22,7 +22,6 @@ import { router, protectedProcedure } from '../lib/trpc';
 import {
   LocalAccessRefused,
   assertOwnLocalIdentity,
-  placeholderPasswordHash,
   prepareLocalIdentityLocked,
 } from '../services/localAccess.service';
 
@@ -281,8 +280,8 @@ export const usersAdminRouter = router({
    * Force-provisions a LOCAL identity for a user currently authenticating via LDAP/OIDC, so login
    * keeps working if AD disables or deletes the account. The existing external identity is left
    * untouched — if AD re-enables the account, that login path keeps working too. Delivers access
-   * via the existing password-reset flow (`/auth/reset`): the placeholder credential created here
-   * is random and never usable on its own.
+   * via the existing password-reset flow (`/auth/reset`): no password is written here, the link
+   * creates the credential when the user sets one.
    *
    * @auth {users:update} + `*:*` — bypassing an external auth provider is admin-only even for a
    *   `users:update` holder, same restriction as the password field in `users.update`
@@ -303,9 +302,7 @@ export const usersAdminRouter = router({
           id: true,
           username: true,
           email: true,
-          identities: {
-            select: { id: true, provider: true, providerId: true, localCredential: { select: { id: true } } },
-          },
+          identities: { select: { provider: true, providerId: true } },
         },
       });
 
@@ -332,19 +329,17 @@ export const usersAdminRouter = router({
         });
       }
 
-      // A LOCAL identity under the current username, with a credential: created if missing (the
-      // credential is a random placeholder until the user sets a password through the link below).
+      // A LOCAL identity under the current username, created if missing. No password: the link below
+      // creates the credential when the user sets one.
       const local = user.identities.find(i => i.provider === 'LOCAL');
-      if (!local || !local.localCredential || local.providerId !== user.username) {
-        const placeholderHash = await placeholderPasswordHash();
+      if (!local || local.providerId !== user.username) {
         try {
           try {
-            await ctx.prisma.$transaction(tx => prepareLocalIdentityLocked(tx, user.id, placeholderHash));
+            await ctx.prisma.$transaction(tx => prepareLocalIdentityLocked(tx, user.id));
           } catch (err) {
-            // A unique key decided against this write — the identity's `(provider, providerId)`, held
-            // by another account, or its credential's `identityId`. The identity that won is
-            // acceptable only if it is this user's, with a credential.
-            if (!isUniqueViolation(err, 'identities_provider_providerId_key', 'local_credentials_identityId_key')) throw err;
+            // The identity's `(provider, providerId)` decided against this write: held by another
+            // account, or created meanwhile. The identity that won is acceptable only if it is this user's.
+            if (!isUniqueViolation(err, 'identities_provider_providerId_key')) throw err;
             await assertOwnLocalIdentity(ctx.prisma, user.id);
           }
         } catch (err) {
@@ -372,9 +367,9 @@ export const usersAdminRouter = router({
       try {
         await sendPasswordResetEmail(ctx.prisma, issued.email, issued.token, baseUrl);
       } catch (error) {
-        // The LOCAL identity/credential (if just created) is deliberately left in place —
-        // it's unusable without the link, and the next call finds it ready and just resends
-        // the link. Only the orphaned token, which nobody received, is cleaned up, mirroring
+        // The LOCAL identity (if just created) is deliberately left in place — it holds no
+        // password until a link is used, and the next call finds it ready and just resends the
+        // link. Only the orphaned token, which nobody received, is cleaned up, mirroring
         // `requestPasswordReset` in `auth.service.ts`; a link sent earlier is never touched.
         await ctx.prisma.userToken.delete({ where: { id: issued.userToken.id } }).catch(e => {
           ctx.logger.warn({ err: e, tokenId: issued.userToken.id }, 'Failed to delete orphaned reset token');
@@ -382,7 +377,7 @@ export const usersAdminRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message:
-            "Credenziale locale pronta ma invio email fallito (verifica configurazione SMTP). Riprova: l'operazione è idempotente.",
+            "Accesso locale predisposto ma invio email fallito (verifica configurazione SMTP). Riprova: l'operazione è idempotente.",
           cause: error,
         });
       }
@@ -427,6 +422,9 @@ export const usersAdminRouter = router({
         // Revoking an administrator's LOCAL credential can lower the break-glass count a strategy
         // change checks under this lock (#246): the two wait for each other.
         await acquireLastAdminLock(tx);
+        // The user row next, before the identity delete: every writer of a user's identities and
+        // credential takes it first (`lockUserEmail`), so a reset link consumed meanwhile waits here.
+        await lockUserEmail(tx, input.id);
         const user = await tx.user.findUnique({
           where: { id: input.id },
           include: { identities: { select: { id: true, provider: true } } },

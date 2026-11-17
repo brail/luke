@@ -107,7 +107,7 @@ export async function runGrantLocalAccess(
   io.out(`Account: ${account.username} <${account.email}>, role ${account.role}, id ${account.id}`);
   io.out(
     identityMissing
-      ? 'LOCAL identity: missing — it will be created, with a password nobody knows until the link is used'
+      ? 'LOCAL identity: missing — it will be created, with no password until the link sets one'
       : 'LOCAL identity: present'
   );
   io.out(

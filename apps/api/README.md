@@ -120,13 +120,13 @@ in the directory revokes it. LDAP provisioning creates no LOCAL credential.
 **Setup requirement.** Before choosing `ldap-only`, make sure at least one
 administrator can log in locally: active, approved, with a verified email when
 `auth.requireEmailVerification` is on, and a local password somebody knows. A
-forced local access counts only once its reset link has been used. The strategy
+forced local access writes no password: it counts once its reset link has been
+used, which creates the credential. The strategy
 save of the LDAP settings page (`integrations.auth.saveStrategy`) refuses
 `ldap-only` with LDAP disabled, and when no administrator is active, approved,
 verified where required and holds a LOCAL credential under their current
 username; the LDAP connection save refuses turning LDAP off under `ldap-only`.
-That check sees a credential row, not whether anyone knows the password: an
-unused forced local access passes it. Both checks run in the save's own
+Both checks run in the save's own
 transaction under the last-admin lock (`saveAuthConfig`), the only application
 writer of `auth.strategy` and `auth.ldap.enabled`: Maintenance → Config refuses
 both keys. A change that can take an administrator out of that count (address,
@@ -164,7 +164,7 @@ It works once, for 30 minutes. When `app.baseUrl` is not stored, or is not an
 http(s) URL, only the path is printed, to be opened on the application's host.
 
 What it does, in one transaction with its audit row: it creates the LOCAL
-identity if the account has none (with a password nobody knows), deletes the
+identity if the account has none (no password: the link creates it), deletes the
 account's other reset tokens — every reset link sent before stops working, even
 if the new one is never used — and issues the new one. The password and the open
 sessions change only when the link is used, through the normal reset page,
@@ -281,7 +281,8 @@ with bodies built in code.
 - **Password reset** — for an active account with a LOCAL identity.
   `auth.requestPasswordReset` answers the same generic message whether or not
   the address exists. The link `{app.baseUrl}/auth/reset?token=…` works once,
-  for 30 minutes; using it sets the password and signs out every session.
+  for 30 minutes; using it sets the password (creating the local credential if
+  the account has none) and signs out every session.
 - **Email verification** — any active account with a real, unverified address
   can get a link: a signed-in user for their own address
   (`auth.requestEmailVerification`), an administrator for any user
