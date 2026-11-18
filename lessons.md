@@ -1223,6 +1223,12 @@ sleep, on AC power only), and the script reports on stderr any sleep
 suite runs on AC power with the lid open; a run the script flags is run again,
 its timeouts are not test results.
 
+**Read before the run, not after (2026-11-18).** During W12b a full integration
+run started on battery without the owner's go-ahead: the script's warning went to
+stderr, and the filter on the run's output (`grep -E "Test Files|Tests|…"`) dropped
+it. Before a long suite, `pmset -g batt` is read on its own; on battery the owner
+is asked first. Any filter on a suite's output keeps the `stay-awake:` lines.
+
 ### A change under `tools/` runs `pnpm test:tools` before the push (2026-11-16)
 
 **What happened.** N1 (#209) classified `packages/nav/tsconfig.test.json` in
