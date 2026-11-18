@@ -7,12 +7,17 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
+import { usePermission } from '../../../../hooks/usePermission';
 
 import { BusinessTimeZoneCard } from './_components/BusinessTimeZoneCard';
 import { OrganizationTab } from './_components/OrganizationTab';
 import { ProfileTab } from './_components/ProfileTab';
 
 export default function CompanySettingsPage() {
+  const { can } = usePermission();
+  // The organization tab reads the teams: shown to whoever may read them.
+  const canReadTeams = can('company_team:read');
+
   return (
     <>
       <PageHeader
@@ -22,15 +27,17 @@ export default function CompanySettingsPage() {
       <Tabs defaultValue="profile" className="mt-6">
         <TabsList>
           <TabsTrigger value="profile">Profilo</TabsTrigger>
-          <TabsTrigger value="organizzazione">Organizzazione</TabsTrigger>
+          {canReadTeams && <TabsTrigger value="organizzazione">Organizzazione</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="mt-6 space-y-6">
           <ProfileTab />
           <BusinessTimeZoneCard />
         </TabsContent>
-        <TabsContent value="organizzazione" className="mt-6">
-          <OrganizationTab />
-        </TabsContent>
+        {canReadTeams && (
+          <TabsContent value="organizzazione" className="mt-6">
+            <OrganizationTab />
+          </TabsContent>
+        )}
       </Tabs>
     </>
   );

@@ -65,11 +65,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'login, refreshToken, logout, confirmPasswordReset and requestPasswordReset covered (rate limit, idempotency, role demotion, the session lifetime and sign-out, password policy on the reset token, the SEC-A takeover chain), submitPendingEmail (password proof, conditional write), requestEmailVerification (own account only), requestEmailVerificationAdmin for an unknown user; confirmEmailVerification remains',
     uncovered: 1,
   },
-  company: {
-    reason:
-      'structure and teams covered on the main path, updateMemberRole by the access audit spec, function restore by the team spec (#237), function reorder by the inactive-function spec, team getById by its key set in responseKeySets.integration.spec.ts; listAllBrands remains',
-    uncovered: 1,
-  },
   users: {
     reason:
       'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); forceVerifyEmail by its audit case in auditlog.integration.spec.ts; list by its search case in users.integration.spec.ts; rejectPending by its approval race in lastAdminGuard.integration.spec.ts; listPending by its key set in responseKeySets.integration.spec.ts; heartbeat and the menu preferences are not',
@@ -82,15 +77,15 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, auth.saveStrategy, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.getLdapConfig, auth.testLdapConnection and auth.testLdapSearch, with the directory client stubbed, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, which builds the URL and its state without contacting Google, google.getConfig, and google.testConnection with the connection spied, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, with the connection spied, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission), nav.sync.preview, on an unreadable password, and both getPasswordState queries; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 8,
+      'saveLdapConfig, auth.saveStrategy, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.getLdapConfig, auth.testLdapConnection and auth.testLdapSearch, with the directory client stubbed, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, which builds the URL and its state without contacting Google, google.getConfig, and google.testConnection with the connection spied, nav.brands.list and nav.seasons.list by screenReads.integration.spec.ts, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, with the connection spied, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission), nav.sync.preview, on an unreadable password, and both getPasswordState queries; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 6,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
   holidays: {
     reason:
-      'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts; listCountries, deleteHoliday and the closure reads have no test yet',
-    uncovered: 4,
+      'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts, listVendorClosures by screenReads.integration.spec.ts; listCountries, deleteHoliday and listVendorClosuresBatch have no test yet',
+    uncovered: 3,
   },
   maintenance: {
     reason:

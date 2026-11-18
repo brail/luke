@@ -122,9 +122,9 @@ describe('RBAC — company.function', () => {
 });
 
 describe('RBAC — company.team', () => {
-  it.each(ALL_ROLES)('%s: listByFunction OK', async role => {
+  it('admin: listByFunction OK', async () => {
     await expect(
-      companyAs(role).team.listByFunction({ functionId: testFunctionId })
+      companyAs('admin').team.listByFunction({ functionId: testFunctionId })
     ).resolves.toBeInstanceOf(Array);
   });
 

@@ -771,4 +771,18 @@ describe('sectionAccess — stored violations are listed, never changed', () => 
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ permission: 'config:read' }), expect.any(String));
     expect(await prisma.userSectionAccess.count({ where: { userId: viewer.id, enabled: true } })).toBe(2);
   });
+
+  it('lists a viewer override and a viewer role default on the calendar configuration', async () => {
+    const { user: viewer } = await createTestUser('viewer');
+    await prisma.userSectionAccess.create({ data: { userId: viewer.id, section: 'admin.calendar_configuration', enabled: true } });
+    await prisma.appConfig.create({
+      data: { key: 'rbac.sectionAccessDefaults', value: JSON.stringify({ viewer: { 'admin.calendar_configuration': 'enabled' } }) },
+    });
+    invalidateRbacCache();
+
+    expect(await findSectionAccessViolations(prisma)).toEqual([
+      { kind: 'user', userId: viewer.id, role: 'viewer', section: 'admin.calendar_configuration' },
+      { kind: 'role', role: 'viewer', section: 'admin.calendar_configuration' },
+    ]);
+  });
 });

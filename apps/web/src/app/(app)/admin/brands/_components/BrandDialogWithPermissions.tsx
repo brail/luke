@@ -98,10 +98,10 @@ export function BrandDialogWithPermissions({
   // Reads brands but cannot create them: every role but admin.
   const isReadOnly = can('brands:read') && !can('brands:create');
 
-  // Synced NAV brands (for linking)
+  // Synced NAV brands, for the link picker of whoever can create or edit a brand, while it is open.
   const { data: navBrands = [] } = trpc.integrations.nav.brands.list.useQuery(
     { excludeLinkedTo: brand?.navBrandId ?? undefined },
-    { staleTime: 5 * 60 * 1000 }
+    { staleTime: 5 * 60 * 1000, enabled: open && canEdit }
   );
 
   // Determine the dialog label from the permissions

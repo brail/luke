@@ -129,8 +129,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // access, so the `settings: false` an editor has in SECTION_ACCESS_DEFAULTS only ever hid the
     // pages, never the endpoints behind them. The two layers CLAUDE.md requires to stay in sync
     // disagreed, and RBAC was the permissive one.
-    // Audit: read-only
-    'audit:read',
     // Dashboard: read
     'dashboard:read',
     // Pricing: read-only (variant updates reserved for admin)
@@ -161,7 +159,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Company structure: read-only (for dropdowns and badges)
     'company_profile:read',
     'company_function:read',
-    'company_team:read',
   ],
   viewer: [
     // Brands: read-only
@@ -171,8 +168,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Users: none, same reason as the editor above
     // Config: none, same reason as the editor above — the settings endpoints it gates do not check
     // section access, so the permission reached further than the hidden pages suggested.
-    // Audit: read-only
-    'audit:read',
     // Dashboard: read
     'dashboard:read',
     // Pricing: read-only
@@ -189,8 +184,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Season Calendar: read, export
     'season_calendar:read',
     'season_calendar:export',
-    // Milestone Template: read-only
-    'milestone_template:read',
     // Phase Catalog: read-only
     'phase_catalog:read',
     // Collection Alert: read alert engine
@@ -198,7 +191,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Company structure: read-only
     'company_profile:read',
     'company_function:read',
-    'company_team:read',
   ],
 };
 

@@ -13,7 +13,11 @@ import { BrandDialogWithPermissions } from '../BrandDialogWithPermissions';
  * real roles; the session only has to carry a role at all, and without one nothing is granted.
  */
 
-const h = vi.hoisted((): { held: Set<string>; role: string | null } => ({ held: new Set(), role: 'editor' }));
+const h = vi.hoisted((): { held: Set<string>; role: string | null; navEnabled: unknown } => ({
+  held: new Set(),
+  role: 'editor',
+  navEnabled: undefined,
+}));
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: h.role ? { user: { role: h.role }, accessToken: 't' } : null }),
@@ -23,7 +27,20 @@ vi.mock('@luke/core', async importOriginal => ({
   hasPermission: (_user: unknown, permission: string) => h.held.has(permission),
 }));
 vi.mock('../../../../../../lib/trpc', () => ({
-  trpc: { integrations: { nav: { brands: { list: { useQuery: () => ({ data: [] }) } } } } },
+  trpc: {
+    integrations: {
+      nav: {
+        brands: {
+          list: {
+            useQuery: (_input: unknown, options?: { enabled?: boolean }) => {
+              h.navEnabled = options?.enabled;
+              return { data: [] };
+            },
+          },
+        },
+      },
+    },
+  },
 }));
 
 type Brand = NonNullable<ComponentProps<typeof BrandDialogWithPermissions>['brand']>;
@@ -114,4 +131,15 @@ test('no role in the session: nothing is granted, whatever the permission table 
 test('create mode with create alone: a new brand can be created', async () => {
   const screen = await open(['brands:create'], { brand: null });
   await expectDialog(screen, { title: 'Nuovo Brand', submit: 'Crea', cancel: 'Annulla', banner: false, editable: true, logo: false });
+});
+
+test.each([
+  ['read only', ['brands:read'], false],
+  ['create alone', ['brands:read', 'brands:create'], true],
+  ['update alone', ['brands:read', 'brands:update'], true],
+] as const)('the NAV link picker loads its list with %s: %s', async (_name, held, enabled) => {
+  h.navEnabled = undefined;
+  const screen = await open([...held]);
+  await expect.element(screen.getByRole('heading')).toBeVisible();
+  expect(h.navEnabled).toBe(enabled);
 });

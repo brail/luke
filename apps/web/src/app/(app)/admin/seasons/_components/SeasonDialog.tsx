@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
 const SeasonFormSchema = SeasonInputSchema.extend({
@@ -70,10 +71,13 @@ export function SeasonDialog({
   isLoading,
 }: SeasonDialogProps) {
   const isEditing = !!season;
+  const { can } = usePermission();
+  const canEdit = can('seasons:create') || can('seasons:update');
 
+  // Synced NAV seasons, for the link picker of whoever can create or edit a season, while it is open.
   const { data: navSeasons = [] } = trpc.integrations.nav.seasons.list.useQuery(
     { excludeLinkedTo: season?.navSeasonId ?? undefined },
-    { staleTime: 5 * 60 * 1000 }
+    { staleTime: 5 * 60 * 1000, enabled: open && canEdit }
   );
 
   const form = useForm<SeasonFormData>({

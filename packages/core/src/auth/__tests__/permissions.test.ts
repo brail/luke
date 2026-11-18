@@ -273,8 +273,8 @@ describe('Role Expansion', () => {
       expect(expanded).not.toContain('config:read');
       expect(expanded).not.toContain('config:update');
 
-      // Should contain audit read only
-      expect(expanded).toContain('audit:read');
+      // No audit read: no screen of the role uses it (every read serves a screen, sectionHierarchy.test.ts).
+      expect(expanded).not.toContain('audit:read');
       expect(expanded).not.toContain('audit:create');
       expect(expanded).not.toContain('audit:update');
 
@@ -301,7 +301,7 @@ describe('Role Expansion', () => {
       expect(expanded).not.toContain('config:read');
       expect(expanded).not.toContain('config:update');
 
-      expect(expanded).toContain('audit:read');
+      expect(expanded).not.toContain('audit:read');
       expect(expanded).toContain('dashboard:read');
     });
 
@@ -383,8 +383,8 @@ describe('Permission Checking', () => {
       expect(hasPermission(editorUser, 'config:read')).toBe(false);
       expect(hasPermission(editorUser, 'config:update')).toBe(false);
 
-      // Audit: only read
-      expect(hasPermission(editorUser, 'audit:read')).toBe(true);
+      // Audit: none
+      expect(hasPermission(editorUser, 'audit:read')).toBe(false);
 
       // Dashboard: read
       expect(hasPermission(editorUser, 'dashboard:read')).toBe(true);
@@ -401,7 +401,7 @@ describe('Permission Checking', () => {
       expect(hasPermission(viewerUser, 'brands:read')).toBe(true);
       expect(hasPermission(viewerUser, 'seasons:read')).toBe(true);
       expect(hasPermission(viewerUser, 'config:read')).toBe(false);
-      expect(hasPermission(viewerUser, 'audit:read')).toBe(true);
+      expect(hasPermission(viewerUser, 'audit:read')).toBe(false);
       expect(hasPermission(viewerUser, 'dashboard:read')).toBe(true);
 
       // No write/delete permissions

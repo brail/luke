@@ -292,7 +292,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     // reached far beyond the pages the interface hid.
     expect(editorPermissions).not.toContain('config:read');
     expect(editorPermissions).not.toContain('config:update');
-    expect(editorPermissions).toContain('audit:read');
+    expect(editorPermissions).not.toContain('audit:read');
     expect(editorPermissions).toContain('dashboard:read');
     // The settings section is admin-only by design: `SECTION_ACCESS_DEFAULTS.editor.settings`
     // is false and no `settings:*` grant is expected for editor. Negative assertion
@@ -306,7 +306,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(viewerPermissions).toContain('seasons:read');
     expect(viewerPermissions).not.toContain('users:read');
     expect(viewerPermissions).not.toContain('config:read');
-    expect(viewerPermissions).toContain('audit:read');
+    expect(viewerPermissions).not.toContain('audit:read');
     expect(viewerPermissions).toContain('dashboard:read');
     expect(viewerPermissions).not.toContain('brands:create');
     expect(viewerPermissions).not.toContain('brands:update');

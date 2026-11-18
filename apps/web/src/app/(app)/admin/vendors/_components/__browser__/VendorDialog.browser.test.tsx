@@ -11,8 +11,11 @@ import type { VendorItem } from '../VendorTable';
  * sitting inside the vendor form — a closure saved there must not also submit the vendor.
  */
 
-const { upsertClosure, closures } = vi.hoisted(() => ({
+const { upsertClosure, closures, closuresQuery, denied } = vi.hoisted(() => ({
   upsertClosure: vi.fn(),
+  closuresQuery: vi.fn(),
+  /** Permissions the current test's user lacks; everything else is held. */
+  denied: new Set<string>(),
   closures: {
     data: [{
       id: 'c1', name: 'Ferie', countryCode: null, type: 'CLOSURE', notes: null, confirmedAt: null,
@@ -28,7 +31,7 @@ vi.mock('../../../../../../lib/trpc', () => {
       pricing: { parameterSets: { list: { useQuery: () => ({ data: [] }) } } },
       holidays: {
         listCountries: { useQuery: () => ({ data: [] }) },
-        listVendorClosures: { useQuery: () => closures },
+        listVendorClosures: { useQuery: (...args: unknown[]) => { closuresQuery(...args); return closures; } },
         upsertVendorClosure: { useMutation: () => ({ mutate: upsertClosure, isPending: false }) },
         deleteVendorClosure: { useMutation: idleMutation },
         confirmVendorClosures: { useMutation: idleMutation },
@@ -40,7 +43,9 @@ vi.mock('../../../../../../lib/trpc', () => {
 vi.mock('../../../../../../contexts/AppContextProvider', () => ({
   useAppContext: () => ({ brand: null, season: { id: 's1', name: 'FW26' } }),
 }));
-vi.mock('../../../../../../hooks/usePermission', () => ({ usePermission: () => ({ can: () => true }) }));
+vi.mock('../../../../../../hooks/usePermission', () => ({
+  usePermission: () => ({ can: (permission: string) => !denied.has(permission) }),
+}));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const vendor: VendorItem = {
@@ -59,7 +64,28 @@ async function renderDialog(forVendor: VendorItem | null) {
   return { onSubmit, screen };
 }
 
-afterEach(() => upsertClosure.mockReset());
+afterEach(() => {
+  upsertClosure.mockReset();
+  closuresQuery.mockReset();
+  denied.clear();
+});
+
+test('the closures tab, and its list, only for whoever can configure the calendar', async () => {
+  denied.add('season_calendar:configure');
+  const { screen } = await renderDialog(vendor);
+
+  await expect.element(screen.getByRole('tab', { name: 'Dati generali' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'Chiusure' }).query()).toBeNull();
+  expect(closuresQuery).not.toHaveBeenCalled();
+});
+
+test('with the permission, the closures tab lists the periods', async () => {
+  const { screen } = await renderDialog(vendor);
+
+  await screen.getByRole('tab', { name: 'Chiusure' }).click();
+  await expect.element(screen.getByRole('cell', { name: 'Ferie' })).toBeInTheDocument();
+  expect(closuresQuery).toHaveBeenCalled();
+});
 
 test('saving a closure does not submit the vendor', async () => {
   // A valid vendor: an invalid one would be refused anyway, and the test would prove nothing.

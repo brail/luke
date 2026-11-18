@@ -37,7 +37,6 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
-import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -84,15 +83,14 @@ const ClosureFormSchema: z.ZodType<ClosureForm, ClosureForm> = VendorClosureUpse
  *
  * Supports manual creation, editing, prefill from national holidays, and bulk
  * confirmation. Requires an active season in AppContext; renders a placeholder
- * when none is selected. Mutations are gated by `season_calendar:update`.
+ * when none is selected. Its host shows it only to whoever can configure the
+ * calendar (`season_calendar:configure`), which every call here asks.
  *
  * @param vendorId - ID of the vendor whose closures are managed.
  * @param vendorName - Display name shown in the card title.
  * @param vendorCountryCode - When set, prefill uses only this country's holidays.
  */
 export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountryCode }: Props) {
-  const { can } = usePermission();
-  const canUpdate = can('season_calendar:configure');
   const { season } = useAppContext();
 
   const [editTarget, setEditTarget] = useState<string | null>(null);
@@ -202,42 +200,38 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
         <CardContent className="space-y-3">
           {/* Actions */}
           <div className="flex flex-wrap gap-2">
-            {canUpdate && (
-              <>
-                <Button type="button" size="sm" onClick={openCreate}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Aggiungi
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const codes = vendorCountryCode
-                      ? [vendorCountryCode]
-                      : countries.map(c => c.code);
-                    if (codes.length === 0) return;
-                    prefillMutation.mutate({ vendorId, seasonId: season.id, countryCodes: codes });
-                  }}
-                  disabled={prefillMutation.isPending || (!vendorCountryCode && countries.length === 0)}
-                >
-                  Prefill da festività
-                </Button>
-                {unconfirmed.length > 0 && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      confirmMutation.mutate({ ids: unconfirmed.map(c => c.id) })
-                    }
-                    disabled={confirmMutation.isPending}
-                  >
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                    Conferma tutti ({unconfirmed.length})
-                  </Button>
-                )}
-              </>
+            <Button type="button" size="sm" onClick={openCreate}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Aggiungi
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const codes = vendorCountryCode
+                  ? [vendorCountryCode]
+                  : countries.map(c => c.code);
+                if (codes.length === 0) return;
+                prefillMutation.mutate({ vendorId, seasonId: season.id, countryCodes: codes });
+              }}
+              disabled={prefillMutation.isPending || (!vendorCountryCode && countries.length === 0)}
+            >
+              Prefill da festività
+            </Button>
+            {unconfirmed.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  confirmMutation.mutate({ ids: unconfirmed.map(c => c.id) })
+                }
+                disabled={confirmMutation.isPending}
+              >
+                <Check className="mr-1.5 h-3.5 w-3.5" />
+                Conferma tutti ({unconfirmed.length})
+              </Button>
             )}
           </div>
 
@@ -252,7 +246,7 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                   <th className="px-3 py-2 text-left font-medium">Fine</th>
                   <th className="px-3 py-2 text-left font-medium">Tipo</th>
                   <th className="px-3 py-2 text-left font-medium">Stato</th>
-                  {canUpdate && <th className="px-3 py-2" />}
+                  <th className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -267,7 +261,7 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                     <tr
                       key={c.id}
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
-                      onClick={() => canUpdate && openEdit(c)}
+                      onClick={() => openEdit(c)}
                     >
                       <td className="px-3 py-2">
                         {c.countryCode ? (
@@ -301,19 +295,17 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           <Badge variant="outline">Bozza</Badge>
                         )}
                       </td>
-                      {canUpdate && (
-                        <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setDeleteTarget(c.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      )}
+                      <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget(c.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
                     </tr>
                   ))
                 )}

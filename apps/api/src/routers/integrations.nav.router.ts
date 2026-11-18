@@ -366,12 +366,14 @@ const navBrandsRouter = router({
   /**
    * Lists NAV brands from the local replica, excluding codes already linked to a local brand (except excludeLinkedTo).
    *
-   * @auth {brands:read}
+   * @auth {brands:create | brands:update}
    * @input {{ excludeLinkedTo?: string }} — navCode of the brand currently being edited.
    * @output {Array<{ navCode, description }>}
    */
   list: protectedProcedure
-    .use(requirePermission('brands:read'))
+    // A read that serves only the brand create/edit dialog's NAV link picker: it asks that dialog's
+    // permissions.
+    .use(requirePermission(['brands:create', 'brands:update']))
     .input(z.object({ excludeLinkedTo: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const linkedCodes = await ctx.prisma.brand.findMany({
@@ -399,12 +401,14 @@ const navSeasonsRouter = router({
   /**
    * Lists NAV seasons from the local replica, excluding codes already linked to a local season (except excludeLinkedTo).
    *
-   * @auth {seasons:read}
+   * @auth {seasons:create | seasons:update}
    * @input {{ excludeLinkedTo?: string }} — navCode of the season currently being edited.
    * @output {Array<{ navCode, description, startingDate, endingDate }>}
    */
   list: protectedProcedure
-    .use(requirePermission('seasons:read'))
+    // A read that serves only the season create/edit dialog's NAV link picker: it asks that dialog's
+    // permissions.
+    .use(requirePermission(['seasons:create', 'seasons:update']))
     .input(z.object({ excludeLinkedTo: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const linkedCodes = await ctx.prisma.season.findMany({

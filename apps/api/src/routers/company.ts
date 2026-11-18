@@ -793,11 +793,12 @@ const companyTeamRouter = router({
   /**
    * Lists all active brands, for use in team brand-scope selection.
    *
-   * @auth brands:read
+   * @auth company_team:read
    * @output Array of Brand (id, code, name)
    */
   listAllBrands: protectedProcedure
-    .use(requirePermission('brands:read'))
+    // Serves only the team dialog's brand tab: it asks the dialog's permission.
+    .use(requirePermission('company_team:read'))
     .query(async ({ ctx }) => {
       return ctx.prisma.brand.findMany({
         where: { isActive: true },

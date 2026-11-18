@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { expandRole } from '../../auth/permissions.js';
-import { Roles } from '../../rbac.js';
+import { expandRole, ROLE_PERMISSIONS, type Permission } from '../../auth/permissions.js';
+import { Roles, type Role } from '../../rbac.js';
 import {
   SECTION_ACCESS_DEFAULTS,
   SECTION_TO_PERMISSION,
@@ -12,6 +12,10 @@ import { effectiveSectionAccess, refusedRoleDefaults, sectionPermissionHeld } fr
 import { ancestorSectionsOf, childSectionsOf, parentSectionOf } from '../sectionHierarchy.js';
 
 const SECTIONS: readonly Section[] = sectionEnum.options;
+const LEAVES = SECTIONS.filter(s => childSectionsOf(s).length === 0);
+const resourceOf = (permission: string) => permission.split(':')[0];
+/** Actions that change nothing: reads, the audit-wide read, revision history, exports. */
+const NON_MUTATING_ACTIONS = new Set(['read', 'read_all', 'view_revisions', 'export']);
 
 /** The static table in the `'enabled' | 'disabled'` shape `getRbacConfig` hands the resolver. */
 const STATIC_DEFAULTS = Object.fromEntries(
@@ -147,11 +151,6 @@ describe('the collection catalog configuration section', () => {
 });
 
 describe('role grants against default section visibility (ADR-038)', () => {
-  const LEAVES = SECTIONS.filter(s => childSectionsOf(s).length === 0);
-  const resourceOf = (permission: string) => permission.split(':')[0];
-  /** Actions that change nothing: reads, the audit-wide read, revision history, exports. */
-  const NON_MUTATING_ACTIONS = new Set(['read', 'read_all', 'view_revisions', 'export']);
-
   it.each(Roles)('%s writes only to resources it sees through a default-visible leaf', role => {
     for (const permission of expandRole(role)) {
       const [resource, action] = permission.split(':');
@@ -202,6 +201,15 @@ describe('refusedRoleDefaults', () => {
     ]);
   });
 
+  it('the calendar configuration leaf follows the template read: refused for the viewer, not the editor', () => {
+    expect(
+      refusedRoleDefaults({
+        viewer: { 'admin.calendar_configuration': 'enabled' },
+        editor: { 'admin.calendar_configuration': 'enabled' },
+      })
+    ).toEqual([{ role: 'viewer', section: 'admin.calendar_configuration' }]);
+  });
+
   it('allows disabled and auto on any leaf, and ignores parents (derived, ADR-027)', () => {
     expect(
       refusedRoleDefaults({ viewer: { 'settings.ldap': 'disabled', 'settings.users': 'auto', settings: 'enabled' } })
@@ -210,5 +218,59 @@ describe('refusedRoleDefaults', () => {
 
   it('refuses nothing for admin', () => {
     expect(refusedRoleDefaults({ admin: Object.fromEntries(SECTIONS.map(s => [s, 'enabled'])) })).toEqual([]);
+  });
+});
+
+/**
+ * The reads a system role holds although no leaf it sees by default maps to their resource, each
+ * with what uses it. The administrator holds the wildcard: every page is its own.
+ */
+const READ_GRANT_EXCEPTIONS = [
+  { role: 'admin', permission: '*:*', reason: 'the wildcard role: every page is its own' },
+  { role: 'editor', permission: 'brands:read', reason: 'context selector, calendar, control' },
+  { role: 'viewer', permission: 'brands:read', reason: 'context selector, calendar, control' },
+  { role: 'editor', permission: 'seasons:read', reason: 'context selector, calendar clone, copy from season' },
+  { role: 'viewer', permission: 'seasons:read', reason: 'context selector, calendar clone, copy from season' },
+  { role: 'editor', permission: 'vendors:read', reason: 'vendor combobox in the collection layout' },
+  { role: 'viewer', permission: 'vendors:read', reason: 'vendor combobox in the collection layout' },
+  { role: 'editor', permission: 'phase_catalog:read', reason: 'event dialog, collection layout' },
+  { role: 'viewer', permission: 'phase_catalog:read', reason: 'event dialog, collection layout' },
+  { role: 'editor', permission: 'company_profile:read', reason: 'calendar-days selector in the event dialog' },
+  { role: 'viewer', permission: 'company_profile:read', reason: 'calendar-days selector in the event dialog' },
+  { role: 'editor', permission: 'company_function:read', reason: 'calendar, event dialog' },
+  { role: 'viewer', permission: 'company_function:read', reason: 'calendar, event dialog' },
+  { role: 'editor', permission: 'milestone_template:read', reason: 'apply-template dialog in the calendar' },
+] as const satisfies readonly { role: Role; permission: Permission; reason: string }[];
+
+describe('every read a role holds serves a screen it sees', () => {
+  /**
+   * Whether `role` sees by default a leaf whose permission is on `permission`'s resource. "Used" is
+   * per resource, not per action: a read of a resource the role works on by default counts.
+   */
+  const usedByDefault = (role: Role, permission: string) =>
+    LEAVES.some(leaf => resourceOf(SECTION_TO_PERMISSION[leaf]) === resourceOf(permission) && SECTION_ACCESS_DEFAULTS[role][leaf]);
+  const declared = (role: Role, permission: string) =>
+    READ_GRANT_EXCEPTIONS.some(e => e.role === role && e.permission === permission);
+
+  it('the administrator holds the wildcard and nothing else, as declared', () => {
+    expect(ROLE_PERMISSIONS.admin).toEqual(['*:*']);
+    expect(READ_GRANT_EXCEPTIONS.filter(e => e.role === 'admin').map(e => e.permission)).toEqual(ROLE_PERMISSIONS.admin);
+  });
+
+  it.each(Roles.filter(role => role !== 'admin'))('%s: each read is used by a default-visible leaf, or declared', role => {
+    const unused = expandRole(role).filter(
+      permission =>
+        NON_MUTATING_ACTIONS.has(permission.split(':')[1] ?? '') && !usedByDefault(role, permission) && !declared(role, permission)
+    );
+    expect(unused).toEqual([]);
+  });
+
+  it('each declared read is still granted, still needed and listed once', () => {
+    const keys = READ_GRANT_EXCEPTIONS.map(e => `${e.role} ${e.permission}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const { role, permission } of READ_GRANT_EXCEPTIONS.filter(e => e.role !== 'admin')) {
+      expect(expandRole(role), `${role} ${permission} granted`).toContain(permission);
+      expect(usedByDefault(role, permission), `${role} ${permission} needed`).toBe(false);
+    }
   });
 });

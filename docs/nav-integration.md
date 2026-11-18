@@ -300,8 +300,8 @@ after the records have been fetched. An entity with no filter row, with
 | `sales:read` | Read the order-portfolio and KIMO replica sync state (`sales.statistics.portafoglio.getSyncState`, `sales.statistics.kimo.getSyncState`) |
 | `sales:sync` | Start a manual order-portfolio or KIMO replica sync (`sales.statistics.portafoglio.triggerSync`, `sales.statistics.kimo.triggerSync`); only `admin` holds it |
 | `vendors:read` | List the vendors of the local NAV replica (`integrations.nav.vendors.list`) |
-| `brands:read` | List the replica's NAV brands not yet linked to a local brand, for the link picker (`integrations.nav.brands.list`) |
-| `seasons:read` | List the replica's NAV seasons not yet linked to a local season, for the link picker (`integrations.nav.seasons.list`) |
+| `brands:create` or `brands:update` | List the replica's NAV brands not yet linked to a local brand, for the link picker of the brand create and edit dialog (`integrations.nav.brands.list`) |
+| `seasons:create` or `seasons:update` | List the replica's NAV seasons not yet linked to a local season, for the link picker of the season create and edit dialog (`integrations.nav.seasons.list`) |
 
 RBAC sections:
 

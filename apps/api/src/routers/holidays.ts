@@ -219,12 +219,13 @@ export const holidaysRouter = router({
   /**
    * Lists vendor closure periods for a specific vendor and season.
    *
-   * @auth {season_calendar:read}
+   * @auth {season_calendar:configure}
    * @input {{ vendorId: string, seasonId: string }}
    * @output {VendorClosurePeriod[]} — sorted by startDate ascending.
    */
   listVendorClosures: protectedProcedure
-    .use(requirePermission('season_calendar:read'))
+    // Serves only the vendor dialog's closures tab, whose every action asks this permission.
+    .use(requirePermission('season_calendar:configure'))
     .input(z.object({
       vendorId: z.uuid(),
       seasonId: z.uuid(),

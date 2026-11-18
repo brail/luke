@@ -65,8 +65,9 @@ interface VendorDialogProps {
  *
  * "Dati generali" tab covers contact info, NAV link, and enabled pricing
  * parameter sets (shown only when a brand+season context is active).
- * "Chiusure" tab embeds `VendorClosurePeriodManager` and is visible only in
- * edit mode. Write fields are disabled for users without `vendors:update`.
+ * "Chiusure" tab embeds `VendorClosurePeriodManager` and is visible only in edit mode, to whoever
+ * can configure the calendar (`season_calendar:configure`). Write fields are disabled for users
+ * without `vendors:update`.
  *
  * @param vendor - Existing vendor to edit; omit for create mode.
  * @param onSubmit - Called with validated `VendorInput` on submission.
@@ -80,6 +81,8 @@ export function VendorDialog({
 }: VendorDialogProps) {
   const { can } = usePermission();
   const canEdit = vendor ? can('vendors:update') : can('vendors:create');
+  // The closures tab: every action in it, the list included, asks this permission.
+  const canSeeClosures = can('season_calendar:configure');
 
   const { brand, season } = useAppContext();
   const hasBrandSeason = !!brand?.id && !!season?.id;
@@ -159,7 +162,7 @@ export function VendorDialog({
             <Tabs value={tab} onValueChange={setTab} className="flex flex-col min-h-0 flex-1">
               <TabsList className="w-full shrink-0">
                 <TabsTrigger value="dati" className="flex-1">Dati generali</TabsTrigger>
-                {vendor && <TabsTrigger value="chiusure" className="flex-1">Chiusure</TabsTrigger>}
+                {vendor && canSeeClosures && <TabsTrigger value="chiusure" className="flex-1">Chiusure</TabsTrigger>}
               </TabsList>
               <TabsContent value="dati" className="overflow-y-auto flex-1 px-1">
             <div className="grid grid-cols-2 gap-4">
@@ -463,7 +466,7 @@ export function VendorDialog({
               />
             </div>
               </TabsContent>
-              {vendor && (
+              {vendor && canSeeClosures && (
                 <TabsContent value="chiusure" className="overflow-y-auto flex-1 py-2">
                   <VendorClosurePeriodManager
                     vendorId={vendor.id}

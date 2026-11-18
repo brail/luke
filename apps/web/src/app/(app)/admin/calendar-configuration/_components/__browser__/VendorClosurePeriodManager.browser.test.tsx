@@ -9,9 +9,8 @@ import { VendorClosurePeriodManager } from '../VendorClosurePeriodManager';
  * other date.
  */
 
-const { upsertMock, idleMutation, closures, permissions } = vi.hoisted(() => ({
+const { upsertMock, idleMutation, closures } = vi.hoisted(() => ({
   upsertMock: vi.fn(),
-  permissions: { can: (_permission: string): boolean => true },
   idleMutation: () => ({ mutate: () => undefined, isPending: false }),
   // The days travel as UTC midnights.
   closures: {
@@ -37,14 +36,10 @@ vi.mock('../../../../../../lib/trpc', () => ({
 vi.mock('../../../../../../contexts/AppContextProvider', () => ({
   useAppContext: () => ({ season: { id: 's1', name: 'FW26' } }),
 }));
-vi.mock('../../../../../../hooks/usePermission', () => ({
-  usePermission: () => ({ can: (permission: string) => permissions.can(permission) }),
-}));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 afterEach(() => {
   upsertMock.mockReset();
-  permissions.can = () => true;
 });
 
 test('the table writes a closure\'s days like every other date', async () => {
@@ -63,16 +58,4 @@ test('an edited closure is saved as the calendar days it shows', async () => {
 
   await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
   expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ startDate: '2026-08-10', endDate: '2026-08-21' }));
-});
-
-test('closures are configured with season_calendar:configure: season_calendar:update alone only reads them', async () => {
-  permissions.can = permission => permission !== 'season_calendar:configure';
-  const screen = await render(<VendorClosurePeriodManager vendorId="v1" vendorName="Fornitore" />);
-
-  await expect.element(screen.getByRole('cell', { name: 'Ferie' })).toBeInTheDocument();
-  // Absent or disabled: either way the closure cannot be added (CLAUDE.md asks for disabled).
-  const add = screen.getByRole('button', { name: 'Aggiungi' }).query();
-  expect(add === null || add.hasAttribute('disabled')).toBe(true);
-  await screen.getByRole('cell', { name: 'Ferie' }).click();
-  expect(screen.getByLabelText('Data inizio').query()).toBeNull();
 });
