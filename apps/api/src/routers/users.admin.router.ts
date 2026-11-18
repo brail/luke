@@ -6,16 +6,17 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { APPROVAL_NEEDS_EMAIL_MESSAGE, isSyntheticLdapEmail, LDAP_SYNTHETIC_EMAIL_DOMAIN, UserIdSchema } from '@luke/core';
+import { APPROVAL_HAS_EMAIL_MESSAGE, APPROVAL_NEEDS_EMAIL_MESSAGE, ApprovePendingUserInputSchema, isSyntheticLdapEmail, LDAP_SYNTHETIC_EMAIL_DOMAIN, UserIdSchema } from '@luke/core';
+import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { issueUserToken, lockUserEmail } from '../lib/emailHelpers';
+import { issueUserToken, lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
-import { requirePermission } from '../lib/permissions';
+import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -24,6 +25,7 @@ import {
   assertOwnLocalIdentity,
   prepareLocalIdentityLocked,
 } from '../services/localAccess.service';
+import { applySectionOverride } from '../services/sectionAccess.service';
 
 export const usersAdminRouter = router({
   /**
@@ -60,83 +62,169 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Approves a pending LDAP user (clears pendingApproval flag), assigns them to the given team
-   * in the same transaction, and sends an account-approved email. A pending user is provisioned
-   * without a team (`ldapAuth.ts`) — this is the first point a human decides where they belong,
-   * so the team is mandatory here rather than defaulted. A user still on a synthetic LDAP address
-   * is refused with `PRECONDITION_FAILED` (#266): the address comes first.
+   * Approves a pending LDAP user in one transaction (#272, ADR-044): for an administrator (`*:*`),
+   * the address, role and section overrides given; then the team, which is mandatory — a pending user
+   * is provisioned without one (`ldapAuth.ts`), and this is the first point a human decides where
+   * they belong. Each part goes through the writer and rules of its own path (`moveUserEmail`, the
+   * role change of `users.update`, `applySectionOverride`), and a refusal anywhere leaves the account
+   * as it was. A user left on a synthetic LDAP address is refused with `PRECONDITION_FAILED` (#266).
+   * The address replaces only a synthetic one. After the commit, a new address gets its verification
+   * link, and the account-approved email goes to the address the approval leaves.
    *
-   * @auth {users:update}
-   * @input {{ id: string (UUID), teamId: string (UUID) }}
+   * @auth {users:update; `*:*` for email, role and sectionOverrides}
+   * @input {ApprovePendingUserInputSchema}
    * @output {{ success: true, message: string }}
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .input(z.object({ id: z.uuid(), teamId: z.uuid() }))
+    .use(withRateLimit('userMutations'))
+    .input(ApprovePendingUserInputSchema)
     .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
-      const user = await ctx.prisma.$transaction(async tx => {
-        const pendingUser = await tx.user.findUnique({ where: { id: input.id } });
-        if (!pendingUser || !pendingUser.pendingApproval) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Utente in attesa non trovato',
-          });
-        }
+      const { id, teamId, email, role, sectionOverrides = [] } = input;
 
-        // Row lock (CLAUDE.md "Raw SQL" exception, `FOR NO KEY UPDATE`, the lock a team update takes):
-        // the team stays active until the membership commits.
-        await tx.$executeRaw`SELECT 1 FROM company_teams WHERE id = ${input.teamId} FOR NO KEY UPDATE`;
-        const team = await tx.companyTeam.findUnique({ where: { id: input.teamId }, select: { isActive: true } });
-        if (!team || !team.isActive) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Team non trovato o non attivo',
-          });
-        }
-
-        // Conditional write (rule 3): of two approvals of the same user, only one finds it pending,
-        // so the user joins one team and the trail records one approval. A synthetic address stays
-        // pending (#266, owner #69 a): once approved, an LDAP user can no longer give one themselves.
-        const { count } = await tx.user.updateMany({
-          where: { id: input.id, pendingApproval: true, NOT: { email: { endsWith: `@${LDAP_SYNTHETIC_EMAIL_DOMAIN}` } } },
-          data: { pendingApproval: false },
+      // Address, role and overrides are an administrator's, as on their own paths (`users.update`,
+      // `sectionAccess.set`).
+      const privileged = [
+        email !== undefined ? 'email' : null,
+        role !== undefined ? 'role' : null,
+        sectionOverrides.length > 0 ? 'sectionOverrides' : null,
+      ].filter(field => field !== null);
+      if (privileged.length > 0 && !can(ctx, '*:*')) {
+        logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Solo un amministratore può modificare: ${privileged.join(', ')}`,
         });
-        if (count === 0) {
-          // The read above names the refusal; the write's condition is what holds it.
-          if (isSyntheticLdapEmail(pendingUser.email)) {
+      }
+
+      let txResult;
+      try {
+        txResult = await ctx.prisma.$transaction(async tx => {
+          // The lock order of `users.update`: the last-admin lock, then the user row. Under the row
+          // lock, of two approvals of the same user the second finds it no longer pending and writes
+          // nothing of its own (rule 3).
+          await acquireLastAdminLock(tx);
+          await lockUserEmail(tx, id);
+          const pendingUser = await tx.user.findUnique({ where: { id } });
+          if (!pendingUser || !pendingUser.pendingApproval) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente in attesa non trovato' });
+          }
+
+          // Only a synthetic address is replaced here: one the user gave on the pending screen while
+          // the dialog was open is theirs, and the refusal sends the dialog back to read it.
+          if (email !== undefined) {
+            if (!isSyntheticLdapEmail(pendingUser.email)) {
+              throw new TRPCError({ code: 'PRECONDITION_FAILED', message: APPROVAL_HAS_EMAIL_MESSAGE });
+            }
+            const resetTokensRevoked = await moveUserEmail(tx, id, email, { pendingApproval: true });
+            // Unreachable under the row lock above (locked, pending, read); fails closed all the same.
+            if (resetTokensRevoked === null) {
+              throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente in attesa non trovato' });
+            }
+            await logAudit(ctx, {
+              action: 'EMAIL_CHANGED',
+              targetType: 'User',
+              targetId: id,
+              result: 'SUCCESS',
+              metadata: { reason: 'admin_approval', resetTokensRevoked },
+            }, { tx });
+          }
+
+          // A new address or role ends the sessions issued before it, as in `users.update`.
+          const roleChanged = role !== undefined && role !== pendingUser.role;
+          if (email !== undefined || roleChanged) {
+            await tx.user.update({
+              where: { id },
+              data: { role: roleChanged ? role : undefined, tokenVersion: { increment: 1 } },
+            });
+          }
+          if (roleChanged) {
+            await logAudit(ctx, {
+              action: 'USER_ACCESS_CHANGED',
+              targetType: 'User',
+              targetId: id,
+              result: 'SUCCESS',
+              metadata: { oldRole: pendingUser.role, newRole: role },
+            }, { tx });
+          }
+
+          // After the role: a leaf turned on is checked against the role the account will have (ADR-043).
+          for (const { section, enabled } of sectionOverrides) {
+            await applySectionOverride(tx, ctx, id, section, enabled);
+          }
+
+          // Row lock (CLAUDE.md "Raw SQL" exception, `FOR NO KEY UPDATE`, the lock a team update takes):
+          // the team stays active until the membership commits.
+          await tx.$executeRaw`SELECT 1 FROM company_teams WHERE id = ${teamId} FOR NO KEY UPDATE`;
+          const team = await tx.companyTeam.findUnique({ where: { id: teamId }, select: { isActive: true } });
+          if (!team || !team.isActive) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Team non trovato o non attivo',
+            });
+          }
+
+          // Conditional write (rule 3). A synthetic address stays pending (#266, owner #69 a): once
+          // approved, an LDAP user can no longer give one themselves.
+          const { count } = await tx.user.updateMany({
+            where: { id, pendingApproval: true, NOT: { email: { endsWith: `@${LDAP_SYNTHETIC_EMAIL_DOMAIN}` } } },
+            data: { pendingApproval: false },
+          });
+          if (count === 0) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: APPROVAL_NEEDS_EMAIL_MESSAGE });
           }
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente in attesa non trovato' });
-        }
-        const membership = await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
-        // Access changes, recorded in the transaction; `USER_APPROVED` stays the post-commit event row.
-        await logAudit(ctx, {
-          action: 'USER_ACCESS_CHANGED',
-          targetType: 'User',
-          targetId: input.id,
-          result: 'SUCCESS',
-          metadata: { oldPendingApproval: true, newPendingApproval: false },
-        }, { tx });
-        await logAudit(ctx, {
-          action: 'COMPANY_TEAM_MEMBER_ADDED',
-          targetType: 'CompanyTeamMembership',
-          targetId: `${input.teamId}:${input.id}`,
-          result: 'SUCCESS',
-          metadata: { teamId: input.teamId, userId: input.id, role: membership.role },
-        }, { tx });
+          const membership = await tx.companyTeamMembership.create({ data: { teamId, userId: id } });
+          // Access changes, recorded in the transaction; `USER_APPROVED` stays the post-commit event row.
+          await logAudit(ctx, {
+            action: 'USER_ACCESS_CHANGED',
+            targetType: 'User',
+            targetId: id,
+            result: 'SUCCESS',
+            metadata: { oldPendingApproval: true, newPendingApproval: false },
+          }, { tx });
+          await logAudit(ctx, {
+            action: 'COMPANY_TEAM_MEMBER_ADDED',
+            targetType: 'CompanyTeamMembership',
+            targetId: `${teamId}:${id}`,
+            result: 'SUCCESS',
+            metadata: { teamId, userId: id, role: membership.role },
+          }, { tx });
 
-        return pendingUser;
-      });
+          return { user: pendingUser, roleChanged };
+        });
+      } catch (err) {
+        // The address's uniqueness is the database's constraint, not a read before the write.
+        if (isUniqueViolation(err, 'users_email_key')) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso da un altro account', cause: err });
+        }
+        throw err;
+      }
+      const { user, roleChanged } = txResult;
+      // The address the approval leaves: the one given, or the one the account had.
+      const approvedEmail = email ?? user.email;
+
+      if (email !== undefined || roleChanged) invalidateTokenVersionCache(id);
+      if (roleChanged) invalidateRbacCache();
+
+      // A new address is unverified: its link goes out as on the pending screen's own path
+      // (`auth.submitPendingEmail`). The approval stands if the mail does not.
+      if (email !== undefined) {
+        try {
+          await sendVerificationEmail(ctx.prisma, { userId: id, reason: 'email_changed', actorId: ctx.session.user.id }, ctx);
+        } catch {
+          ctx.logger.warn({ userId: id }, 'Failed to send verification email after approval');
+        }
+      }
 
       // Send activation notification email (only if the email isn't synthetic)
-      if (!isSyntheticLdapEmail(user.email)) {
+      if (!isSyntheticLdapEmail(approvedEmail)) {
         try {
           const baseUrl =
             await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
           await sendAccountApprovedEmail(
             ctx.prisma,
-            user.email,
+            approvedEmail,
             user.firstName,
             baseUrl
           );

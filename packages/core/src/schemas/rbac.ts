@@ -51,6 +51,12 @@ export const sectionEnum = z.enum([
 ]);
 export type Section = z.infer<typeof sectionEnum>;
 
+/** One section override as an administrator sends it: `true`/`false`, or `null` to remove it. */
+export const SectionOverrideInputSchema = z.object({
+  section: sectionEnum,
+  enabled: z.boolean().nullable(),
+});
+
 /**
  * A per-role section default stored in AppConfig (`rbac.sectionAccessDefaults`): `'enabled'` and
  * `'disabled'` decide, `'auto'` defers to the role's permission through `SECTION_TO_PERMISSION`.

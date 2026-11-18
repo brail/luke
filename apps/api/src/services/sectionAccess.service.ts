@@ -6,6 +6,7 @@
 import { TRPCError } from '@trpc/server';
 
 import {
+  childSectionsOf,
   effectiveSectionAccess,
   refusedRoleDefaults,
   SECTION_TO_PERMISSION,
@@ -17,6 +18,8 @@ import { getRbacConfig } from '@luke/core/server';
 import { Prisma, type PrismaClient } from '@luke/db';
 
 import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
+import { logAudit, type AuditContext } from '../lib/auditLog';
+import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -71,8 +74,8 @@ export async function computeEffectiveForUser(
  * Sets or removes the section access override for a user — the only writer of `userSectionAccess`.
  * Turning a leaf on needs the permission it maps to (ADR-043); turning it off or removing the
  * override never does. The role is read under a row lock held until commit, so a concurrent role
- * change cannot land between the check and the write. Runs inside the caller's `$transaction`, which
- * owns the recovery guard (`ADMIN_RECOVERY_SECTION`) and the audit row.
+ * change cannot land between the check and the write. Runs inside the caller's `$transaction`;
+ * `applySectionOverride` owns the recovery guard (`ADMIN_RECOVERY_SECTION`) and the audit row.
  *
  * @param enabled - `true` to allow, `false` to deny, `null` to remove the override entirely.
  * @returns The upserted record, or null when the override was removed.
@@ -84,7 +87,7 @@ export async function setOverride(
   userId: string,
   section: Section,
   enabled: boolean | null,
-  logger?: FastifyBaseLogger
+  logger?: Pick<FastifyBaseLogger, 'error'>
 ) {
   if (enabled === true) {
     const role = await lockUserRole(prisma, userId);
@@ -113,6 +116,73 @@ export async function setOverride(
     update: { enabled },
     create: { userId, section, enabled },
   });
+}
+
+/**
+ * One administrator's override of one section, with every rule around the writer: a parent section
+ * takes none (it derives from its children, ADR-027); the recovery section is never taken from the
+ * last administrator able to recover the system; `setOverride` checks the permission a leaf needs
+ * (ADR-043); the audit row is written in the same transaction. The one path for `sectionAccess.set`
+ * and the approval of a pending user (ADR-044). Runs inside the caller's `$transaction`.
+ *
+ * @throws {TRPCError} `BAD_REQUEST` for a parent section, for the last recovery-capable
+ *   administrator, or for a missing permission; `NOT_FOUND` for no such user (turning a leaf on).
+ */
+export async function applySectionOverride(
+  tx: Prisma.TransactionClient,
+  ctx: AuditContext,
+  userId: string,
+  section: Section,
+  enabled: boolean | null
+) {
+  if (childSectionsOf(section).length > 0) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `La sezione ${section} dipende dalle sue sottosezioni: abilita o disabilita quelle.`,
+    });
+  }
+
+  // Removing the recovery section (`ADMIN_RECOVERY_SECTION`, `settings.users`) from the last admin
+  // locks them out of user administration — checked only when the target is an admin. The lock is
+  // taken before the role is read, like every other point that evaluates this invariant, so it
+  // serializes against another holder (another override, `hardDelete`, a demotion,
+  // `setRoleDefaults`). A concurrent PROMOTION of the same user does not take it: a narrow, known
+  // window remains.
+  if (section === ADMIN_RECOVERY_SECTION && enabled !== true) {
+    await acquireLastAdminLock(tx);
+    const target = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+
+    if (target?.role === 'admin') {
+      const { sectionAccessDefaults, disabledSections } = await getRbacConfig(tx, { bypassCache: true });
+      const survivingAdmins = await countRecoveryCapableAdminsAfterChange(
+        tx,
+        userId,
+        section,
+        enabled,
+        sectionAccessDefaults,
+        disabledSections
+      );
+      if (survivingAdmins === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            "Questa modifica toglierebbe a tutti gli amministratori l'accesso necessario ad amministrare gli utenti.",
+        });
+      }
+    }
+  }
+
+  // Turning a leaf on is checked by the writer itself (ADR-043), under a lock on the role.
+  const override = await setOverride(tx, userId, section, enabled, ctx.logger);
+  // Keyed by user and section, not by the override row, which a removal deletes (#222).
+  // `enabled: null` is a removal.
+  await logAudit(ctx, {
+    action: 'SECTION_ACCESS_UPDATED',
+    targetType: 'UserSectionAccess',
+    targetId: `${userId}:${section}`,
+    metadata: { targetUserId: userId, section, enabled },
+  }, { tx });
+  return override;
 }
 
 /**

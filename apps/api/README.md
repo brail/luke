@@ -229,7 +229,7 @@ same transaction as the change, so the change is not saved without its row:
 | `COMPANY_TEAM_MEMBER_ROLE_UPDATED` | `company.team.updateMemberRole` | `teamId`, `userId`, `oldRole`, `newRole` |
 | `CALENDAR_EVENT_USER_VISIBILITY_GRANTED` / `_REVOKED` | `seasonCalendar.grantUserVisibility` / `revokeUserVisibility` — only the shares really created or removed | `eventId`, `userId` |
 | `CALENDAR_EVENT_VISIBILITY_CHANGED` | `seasonCalendar.createMilestone`, `updateMilestone` (when the set changes), `applyTemplate` and `cloneFromBrandSeason` (per event created with functions), `deleteMilestone(s)` (per event deleted) | `oldVisibilityFunctionIds`/`newVisibilityFunctionIds`, sorted; `eventDeleted` on a deletion, which also ends the event's per-person shares |
-| `SECTION_ACCESS_UPDATED` | `sectionAccess.set`; target `UserSectionAccess` `${userId}:${section}` | `targetUserId`, `section`, `enabled` (`null`: the override was removed) |
+| `SECTION_ACCESS_UPDATED` | `sectionAccess.set`, `users.approvePending` (one per override); target `UserSectionAccess` `${userId}:${section}` | `targetUserId`, `section`, `enabled` (`null`: the override was removed) |
 | `CONFIG_UPSERT` on `rbac.sectionAccessDefaults` | `sectionAccess.setRoleDefaults` | `sectionAccessDefaults`: the whole stored map |
 | `CONFIG_UPSERT` on `app.sections.disabled` | `config.set` / `update` / `importJson`, through `saveSectionsDisabled` | `sectionsDisabled`: the whole list |
 | `CONFIG_UPSERT` on `auth.strategy` | `integrations.auth.saveStrategy`; a refused `ldap-only` is a FAILURE row | `key`, `strategy`, `errorCode` on a refusal |
@@ -344,7 +344,10 @@ first sign-in is refused (`email_in_use`, table above); an address Luke makes
 itself (`<username>@ldap.local`) that is already held becomes
 `ldap-<uuid>@ldap.local`. `users.approvePending` refuses a pending user whose
 address is still synthetic (`PRECONDITION_FAILED`): the user gives one from the
-pending screen first, or the request is rejected. For an LDAP account `users.update` refuses changes to the fields the
+pending screen, an administrator gives one in the approval itself (`email`,
+`*:*`; an `EMAIL_CHANGED` row with reason `admin_approval`, the verification
+link mailed after the commit), or the request is rejected. The approval never
+replaces an address the user already gave. For an LDAP account `users.update` refuses changes to the fields the
 directory owns — username, first and last name, password (`getLockedFields` in
 `@luke/core`, with `resolveEffectiveProvider`: an external identity wins over
 LOCAL whatever the row order). An administrator may still set an LDAP account's

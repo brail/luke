@@ -4,6 +4,7 @@ import { Roles } from '../rbac.js';
 
 import { HardDeleteConfirmSchema } from './confirmation.js';
 import { passwordPrefilterSchema } from './password.js';
+import { SectionOverrideInputSchema } from './rbac.js';
 
 /**
  * A user's email address in the one form Luke stores and compares (#228): trimmed, lowercase, and
@@ -195,7 +196,32 @@ export function isSyntheticLdapEmail(email: string): boolean {
  * cannot change their own address once approved, so an approval without one leaves them unreachable.
  */
 export const APPROVAL_NEEDS_EMAIL_MESSAGE =
-  'Questo utente non ha ancora un indirizzo email: attendi che lo inserisca dalla schermata di attesa, oppure rifiuta la richiesta.';
+  'Questo utente non ha ancora un indirizzo email: inseriscilo nella finestra di approvazione (serve un amministratore), attendi che lo inserisca dalla schermata di attesa, oppure rifiuta la richiesta.';
+
+/**
+ * An address Luke can mail: the stored form (`EmailSchema`), and not a synthetic LDAP one, which
+ * reaches nobody and would leave a pending account as unapprovable as before.
+ */
+export const MailableEmailSchema = EmailSchema.refine(email => !isSyntheticLdapEmail(email), 'Email non valida');
+
+/** Why an approval's address was refused: the user gave one on the pending screen meanwhile (#272). */
+export const APPROVAL_HAS_EMAIL_MESSAGE =
+  "L'utente ha inserito nel frattempo un proprio indirizzo email, che resta: riprova l'approvazione.";
+
+/**
+ * One approval of a pending user (#272, ADR-044): the team, and — for an administrator (`*:*`) — the
+ * address, the role and the section overrides, all applied in the approval's transaction. At most
+ * one override per section.
+ */
+export const ApprovePendingUserInputSchema = UserIdSchema.extend({
+  teamId: z.uuid(),
+  email: MailableEmailSchema.optional(),
+  role: z.enum(Roles).optional(),
+  sectionOverrides: z
+    .array(SectionOverrideInputSchema)
+    .refine(items => new Set(items.map(item => item.section)).size === items.length, 'Sezione ripetuta')
+    .optional(),
+});
 
 /**
  * The user fields the given provider owns, which nobody edits in Luke: none for LOCAL; username,

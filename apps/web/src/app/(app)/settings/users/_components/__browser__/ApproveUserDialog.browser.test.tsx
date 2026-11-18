@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
 import { TooltipProvider } from '../../../../../../components/ui/tooltip';
 import { ApproveUserDialog } from '../ApproveUserDialog';
 
-import { defaultsWith, deferred, rows, setCalls } from './sectionAccessTestKit';
+import { defaultsWith, deferred, rows } from './sectionAccessTestKit';
 
 /**
- * An approval attempt is the role (if the administrator changed it), the override edits, then the
- * approval. After any failure the dialog re-reads the stored role, the pending status and the
- * overrides before another attempt (R2c, ADR-027). `fetchPending` and `fetchByUser` are those reads.
+ * An approval attempt is one `approvePending` call carrying the address (if synthetic), the role (if
+ * the administrator changed it), the override edits and the team (ADR-044). After any failure the
+ * dialog re-reads the stored role, the pending status and the overrides before another attempt
+ * (ADR-027). `fetchPending` and `fetchByUser` are those reads.
  */
 
 const h = vi.hoisted(() => ({
@@ -17,7 +19,6 @@ const h = vi.hoisted(() => ({
   fetchByUser: vi.fn(),
   fetchPending: vi.fn(),
   setMutate: vi.fn(),
-  updateMutate: vi.fn(),
   approveMutate: vi.fn(),
   /** `*:*` held or not: whether the dialog configures role and sections, or only approves. */
   admin: { value: true },
@@ -37,7 +38,6 @@ vi.mock('../../../../../../lib/trpc', () => ({
       set: { useMutation: () => ({ mutateAsync: h.setMutate }) },
     },
     users: {
-      update: { useMutation: () => ({ mutateAsync: h.updateMutate }) },
       approvePending: { useMutation: () => ({ mutateAsync: h.approveMutate }) },
     },
     company: {
@@ -57,7 +57,10 @@ vi.mock('../../../../../../hooks/usePermission', () => ({
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
-const pendingViewer = { id: 'u-p', username: 'newbie', firstName: 'New', lastName: 'Bie', role: 'viewer' as const };
+const pendingViewer = { id: 'u-p', username: 'newbie', email: 'newbie@example.com', firstName: 'New', lastName: 'Bie', role: 'viewer' as const };
+const syntheticViewer = { ...pendingViewer, email: 'newbie@ldap.local' };
+/** The payload of the `n`-th approval call (0-based). */
+const approval = (n: number) => h.approveMutate.mock.calls[n]?.[0];
 const pendingAs = (role: string) => ({ users: [{ ...pendingViewer, role }], total: 1 });
 
 type Screen = Awaited<ReturnType<typeof render>>;
@@ -76,11 +79,11 @@ async function chooseRole(screen: Screen, label: 'Viewer' | 'Editor' | 'Admin') 
   await screen.getByRole('option', { name: label }).click();
 }
 
-function dialog(onApproved = vi.fn()) {
+function dialog(onApproved = vi.fn(), user = pendingViewer) {
   // The app mounts TooltipProvider once (components/Providers.tsx); the section switches' PermissionTooltip needs it.
   return (
     <TooltipProvider delayDuration={0}>
-      <ApproveUserDialog user={pendingViewer} open onOpenChange={() => undefined} onApproved={onApproved} />
+      <ApproveUserDialog user={user} open onOpenChange={() => undefined} onApproved={onApproved} />
     </TooltipProvider>
   );
 }
@@ -91,7 +94,6 @@ beforeEach(() => {
   h.fetchByUser.mockResolvedValue([]);
   h.fetchPending.mockResolvedValue(pendingAs('viewer'));
   h.setMutate.mockResolvedValue(null);
-  h.updateMutate.mockResolvedValue({});
   h.approveMutate.mockResolvedValue({ success: true });
 });
 
@@ -107,15 +109,47 @@ test('renders no switch before the role defaults have answered', async () => {
   expect(screen.getByRole('switch').elements()).toHaveLength(0);
 });
 
-test('after a failed approval, a role change removes the overrides already saved, not the killed ones', async () => {
+test('one call carries the role, the edits and the team; no separate write', async () => {
+  const screen = await render(dialog());
+  await chooseRole(screen, 'Editor');
+  await sw(screen, '↳ Stagioni').click();
+  await chooseTeam(screen);
+  await approveButton(screen).click();
+
+  await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
+  expect(approval(0)).toEqual({
+    id: 'u-p',
+    teamId: 't1',
+    role: 'editor',
+    sectionOverrides: [{ section: 'admin.seasons', enabled: true }],
+  });
+  expect(h.setMutate).not.toHaveBeenCalled();
+});
+
+test('after a refused approval, which stored nothing, the next attempt sends the same choices again', async () => {
+  const screen = await render(dialog());
+  await chooseRole(screen, 'Editor');
+  await sw(screen, '↳ Stagioni').click();
+  await chooseTeam(screen);
+
+  h.approveMutate.mockRejectedValueOnce(new Error('approval refused'));
+  await approveButton(screen).click();
+  await expect.poll(() => h.fetchPending.mock.calls.length).toBe(2);
+  await expect.element(approveButton(screen)).toBeEnabled();
+
+  await approveButton(screen).click();
+  await expect.poll(() => h.approveMutate.mock.calls.length).toBe(2);
+  expect(approval(1)).toEqual(approval(0));
+});
+
+test('after a refused approval, a role change resets the edits but leaves the killed leaves alone', async () => {
   h.defaults.data = defaultsWith(['admin.brands']);
   h.fetchByUser.mockResolvedValue(rows({ 'admin.brands': true }));
   const screen = await render(dialog());
   await sw(screen, '↳ Stagioni').click();
   await chooseTeam(screen);
 
-  h.approveMutate.mockRejectedValueOnce(new Error('approval failed'));
-  h.fetchByUser.mockResolvedValue(rows({ 'admin.brands': true, 'admin.seasons': true }));
+  h.approveMutate.mockRejectedValueOnce(new Error('approval refused'));
   await approveButton(screen).click();
   await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
   await expect.element(approveButton(screen)).toBeEnabled();
@@ -124,29 +158,8 @@ test('after a failed approval, a role change removes the overrides already saved
   await approveButton(screen).click();
 
   await expect.poll(() => h.approveMutate.mock.calls.length).toBe(2);
-  expect(setCalls(h.setMutate)).toEqual([
-    ['admin.seasons', true],
-    ['admin.seasons', null],
-  ]);
-  expect(h.updateMutate).toHaveBeenCalledWith({ id: 'u-p', role: 'editor' });
-});
-
-test('a role update that committed but answered with an error is not skipped when the role is switched back', async () => {
-  const screen = await render(dialog());
-  await chooseRole(screen, 'Editor');
-  await chooseTeam(screen);
-
-  h.updateMutate.mockRejectedValueOnce(new Error('connection reset'));
-  h.fetchPending.mockResolvedValue(pendingAs('editor')); // it committed
-  await approveButton(screen).click();
-  await expect.poll(() => h.fetchPending.mock.calls.length).toBe(2);
-  await expect.element(approveButton(screen)).toBeEnabled();
-
-  await chooseRole(screen, 'Viewer');
-  await approveButton(screen).click();
-
-  await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
-  expect(h.updateMutate).toHaveBeenLastCalledWith({ id: 'u-p', role: 'viewer' });
+  expect(approval(0).sectionOverrides).toEqual([{ section: 'admin.seasons', enabled: true }]);
+  expect(approval(1)).toMatchObject({ role: 'editor', sectionOverrides: [] });
 });
 
 test('an approval that committed but answered with an error ends the dialog without a second approval', async () => {
@@ -173,16 +186,16 @@ test('a role another administrator changed is shown, not overwritten, when this 
   await expect.element(screen.getByRole('combobox').nth(0)).toHaveTextContent('Editor');
   await approveButton(screen).click();
   await expect.poll(() => h.approveMutate.mock.calls.length).toBe(2);
-  expect(h.updateMutate).not.toHaveBeenCalled();
+  expect(approval(1).role).toBeUndefined();
 });
 
-test('nothing is editable while the attempt is in flight, from the role request on', async () => {
+test('nothing is editable while the attempt is in flight', async () => {
   const screen = await render(dialog());
   await chooseRole(screen, 'Editor');
   await chooseTeam(screen);
 
   const inFlight = deferred<object>();
-  h.updateMutate.mockReturnValueOnce(inFlight.promise);
+  h.approveMutate.mockReturnValueOnce(inFlight.promise);
   await approveButton(screen).click();
 
   await expect.element(screen.getByRole('combobox').nth(0)).toBeDisabled();
@@ -203,7 +216,79 @@ test('an edit on a leaf killed, then reset by a role change, then revived, is st
   await approveButton(screen).click();
 
   await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
-  expect(setCalls(h.setMutate)).toEqual([['admin.seasons', true]]);
+  expect(approval(0).sectionOverrides).toEqual([{ section: 'admin.seasons', enabled: true }]);
+});
+
+describe('an account on a synthetic address (#272)', () => {
+  beforeEach(() => {
+    h.fetchPending.mockResolvedValue({ users: [syntheticViewer], total: 1 });
+  });
+
+  test('asks for a real address, approves only with a valid one, and sends it in its stored form', async () => {
+    const screen = await render(dialog(vi.fn(), syntheticViewer));
+    await chooseTeam(screen);
+    const field = screen.getByLabelText('Email *');
+
+    // Accepted by the browser's own check (`type="email"`), refused by `EmailSchema`: no dot in the domain.
+    await field.fill('person@host');
+    await approveButton(screen).click();
+    await expect.element(screen.getByText('Email non valida')).toBeVisible();
+    expect(h.approveMutate).not.toHaveBeenCalled();
+
+    await field.fill('  Real.Person@Example.COM ');
+    await approveButton(screen).click();
+
+    await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
+    expect(approval(0)).toMatchObject({ email: 'real.person@example.com' });
+  });
+
+  test('Enter in the address field submits the approval', async () => {
+    const screen = await render(dialog(vi.fn(), syntheticViewer));
+    await chooseTeam(screen);
+    await screen.getByLabelText('Email *').fill('enter@example.com');
+    await userEvent.keyboard('{Enter}');
+
+    await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
+    expect(approval(0)).toMatchObject({ email: 'enter@example.com' });
+  });
+
+  test('keeps the typed address after a refused approval', async () => {
+    const screen = await render(dialog(vi.fn(), syntheticViewer));
+    await chooseTeam(screen);
+    await screen.getByLabelText('Email *').fill('taken@example.com');
+
+    h.approveMutate.mockRejectedValueOnce(new Error('Email già in uso da un altro account'));
+    await approveButton(screen).click();
+    await expect.element(approveButton(screen)).toBeEnabled();
+
+    await expect.element(screen.getByLabelText('Email *')).toHaveValue('taken@example.com');
+  });
+
+  test('an address the user gave meanwhile ends the field: the next attempt sends none', async () => {
+    const screen = await render(dialog(vi.fn(), syntheticViewer));
+    await chooseTeam(screen);
+    await screen.getByLabelText('Email *').fill('typed@example.com');
+
+    h.approveMutate.mockRejectedValueOnce(new Error('refused'));
+    h.fetchPending.mockResolvedValue({ users: [pendingViewer], total: 1 });
+    await approveButton(screen).click();
+    await expect.poll(() => screen.getByLabelText('Email *').elements().length).toBe(0);
+
+    await approveButton(screen).click();
+    await expect.poll(() => h.approveMutate.mock.calls.length).toBe(2);
+    expect(approval(1).email).toBeUndefined();
+  });
+
+  test('an account with a real address shows no address field and sends none', async () => {
+    h.fetchPending.mockResolvedValue(pendingAs('viewer'));
+    const screen = await render(dialog());
+    await chooseTeam(screen);
+    await approveButton(screen).click();
+
+    await expect.poll(() => h.approveMutate.mock.calls.length).toBe(1);
+    expect(screen.getByLabelText('Email *').elements()).toHaveLength(0);
+    expect(approval(0).email).toBeUndefined();
+  });
 });
 
 test('a failing fresh read at opening shows no switch and allows no attempt', async () => {
@@ -232,10 +317,9 @@ describe('without *:*, as an editor who may approve', () => {
     await approveButton(screen).click();
 
     await vi.waitFor(() => expect(onApproved).toHaveBeenCalled());
-    expect(h.approveMutate).toHaveBeenCalledWith({ id: pendingViewer.id, teamId: 't1' });
+    expect(h.approveMutate).toHaveBeenCalledWith({ id: pendingViewer.id, teamId: 't1', sectionOverrides: [] });
     expect(h.fetchByUser).not.toHaveBeenCalled();
     expect(h.setMutate).not.toHaveBeenCalled();
-    expect(h.updateMutate).not.toHaveBeenCalled();
   });
 
   test('after a failed approval, re-reads the pending account and still never the overrides', async () => {

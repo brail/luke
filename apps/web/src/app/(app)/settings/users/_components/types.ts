@@ -96,6 +96,8 @@ export interface TableProps {
 export type UserForApproval = {
   id: string;
   username: string;
+  /** The stored address; a synthetic one is replaced in the approval (#272). */
+  email: string;
   firstName: string;
   lastName: string;
   role: Role;

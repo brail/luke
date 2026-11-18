@@ -7,12 +7,12 @@ import { TooltipProvider } from '../../../../../../components/ui/tooltip';
 import { PendingUsersTab } from '../PendingUsersTab';
 
 /**
- * A pending user still on a synthetic LDAP address cannot be approved (#266, owner #69 a): the
- * button stays visible, disabled, and says why. The server refuses it as well; the tab keeps the
- * administrator from opening a dialog that writes the role before the refusal.
+ * A pending user still on a synthetic LDAP address is approved only with a real address, which an
+ * administrator (`*:*`) enters in the approval itself (#272). Whoever else may approve sees the
+ * button disabled, saying why (#266, owner #69 a).
  */
 
-const h = vi.hoisted(() => ({ can: { value: true } }));
+const h = vi.hoisted(() => ({ can: { value: true }, admin: { value: true } }));
 
 const pending = (username: string, email: string) => ({
   id: `id-${username}`,
@@ -41,7 +41,7 @@ vi.mock('../../../../../../lib/trpc', () => ({
 }));
 
 vi.mock('../../../../../../hooks/usePermission', () => ({
-  usePermission: () => ({ can: () => h.can.value }),
+  usePermission: () => ({ can: (permission: string) => h.can.value && (permission !== '*:*' || h.admin.value) }),
 }));
 
 vi.mock('../../../../../../hooks/useFormatDate', () => ({
@@ -56,6 +56,7 @@ vi.mock('../../../../../../lib/useStandardMutation', () => ({
 
 beforeEach(() => {
   h.can.value = true;
+  h.admin.value = true;
 });
 
 // `delayDuration={0}`: the production provider's delay tests nothing here.
@@ -70,7 +71,15 @@ function focusWrapper(screen: Awaited<ReturnType<typeof tab>>, username: string)
   wrapper.focus();
 }
 
-test('a synthetic address: Approva disabled, saying why; a real one: enabled', async () => {
+test('an administrator may approve either: the address is given in the approval', async () => {
+  const screen = await tab();
+
+  await expect.element(row(screen, 'nomail').getByRole('button', { name: 'Approva' })).toBeEnabled();
+  await expect.element(row(screen, 'withmail').getByRole('button', { name: 'Approva' })).toBeEnabled();
+});
+
+test('without *:*, a synthetic address: Approva disabled, saying why; a real one: enabled', async () => {
+  h.admin.value = false;
   const screen = await tab();
 
   await expect.element(row(screen, 'nomail').getByRole('button', { name: 'Approva' })).toBeDisabled();

@@ -7,10 +7,9 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
-  childSectionsOf,
   refusedRoleDefaults,
   sectionAccessDefaultsSchema,
-  sectionEnum,
+  SectionOverrideInputSchema,
   SectionPermissionMissingError,
 } from '@luke/core';
 import type { Section } from '@luke/core';
@@ -27,17 +26,13 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import {
-  setOverride,
+  applySectionOverride,
   listOverridesForUser,
-  ADMIN_RECOVERY_SECTION,
   countRecoveryCapableAdmins,
-  countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
   computeEffectiveForUser,
   missingSectionPermissionMessage,
 } from '../services/sectionAccess.service';
-
-const sectionSchema = sectionEnum;
 
 /** The refusal of a role-defaults map that turns leaves on without their permission (ADR-043). */
 function refusedRoleDefaultsError(refused: { role: string; section: Section }[]): TRPCError {
@@ -51,11 +46,7 @@ const setRoleDefaultsInput = z.object({
   sectionAccessDefaults: sectionAccessDefaultsSchema,
 });
 
-const setInput = z.object({
-  userId: z.string().min(1),
-  section: sectionSchema,
-  enabled: z.boolean().nullable(), // null = remove override (auto)
-});
+const setInput = SectionOverrideInputSchema.extend({ userId: z.string().min(1) });
 
 export const sectionAccessRouter = router({
   /**
@@ -186,10 +177,9 @@ export const sectionAccessRouter = router({
     }),
 
   /**
-   * Sets a section access override for a user; refuses to take `settings.users` (user administration)
-   * from the last administrator able to recover the system.
-   * A parent section is derived from its children, so it takes no override at all, `null` included:
-   * the overrides stored on parents before that rule were removed by migration (ADR-027).
+   * Sets a section access override for a user, through `applySectionOverride` and its rules: no
+   * override on a parent section (ADR-027), `settings.users` never taken from the last administrator
+   * able to recover the system, a leaf turned on only with its permission (ADR-043).
    *
    * @auth {*:*}
    * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
@@ -199,73 +189,7 @@ export const sectionAccessRouter = router({
     .use(requirePermission('*:*'))
     .input(setInput)
     .use(withRateLimit('sectionAccessSet'))
-    .mutation(async ({ input, ctx }) => {
-      const { userId, section, enabled } = input;
-
-      if (childSectionsOf(section).length > 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `La sezione ${section} dipende dalle sue sottosezioni: abilita o disabilita quelle.`,
-        });
-      }
-
-      const result = await ctx.prisma.$transaction(async tx => {
-        // Safety check: prevent removing user administration from the last
-        // admin — only if the target is an admin: revoking an override for a
-        // viewer/editor doesn't touch the invariant at all. Lock acquired
-        // before reading the role, like every other point that evaluates
-        // this invariant — correctly serializes against another
-        // operation holding the same lock (another `set`, `hardDelete`,
-        // demotion, `setRoleDefaults`). Does not cover a concurrent
-        // PROMOTION of the same `userId` (viewer/editor → admin): that
-        // path doesn't acquire this lock, so a narrow, known window
-        // remains, not closed by this reordering.
-        // The recovery section (`ADMIN_RECOVERY_SECTION`, `settings.users`):
-        // removing it from the last admin locks them out of user
-        // administration. `settings` never reaches here — a parent is
-        // refused above.
-        if (section === ADMIN_RECOVERY_SECTION && enabled !== true) {
-          await acquireLastAdminLock(tx);
-          const target = await tx.user.findUnique({
-            where: { id: userId },
-            select: { role: true },
-          });
-
-          if (target?.role === 'admin') {
-            const { sectionAccessDefaults, disabledSections } = await getRbacConfig(tx, {
-              bypassCache: true,
-            });
-            const survivingAdmins = await countRecoveryCapableAdminsAfterChange(
-              tx,
-              userId,
-              section,
-              enabled,
-              sectionAccessDefaults,
-              disabledSections
-            );
-            if (survivingAdmins === 0) {
-              throw new TRPCError({
-                code: 'BAD_REQUEST',
-                message:
-                  "Questa modifica toglierebbe a tutti gli amministratori l'accesso necessario ad amministrare gli utenti.",
-              });
-            }
-          }
-        }
-
-        // Turning a leaf on is checked by the writer itself (ADR-043), under a lock on the role.
-        const override = await setOverride(tx, userId, section, enabled, ctx.logger);
-        // Keyed by user and section, not by the override row, which a removal deletes (#222).
-        // `enabled: null` is a removal.
-        await logAudit(ctx, {
-          action: 'SECTION_ACCESS_UPDATED',
-          targetType: 'UserSectionAccess',
-          targetId: `${userId}:${section}`,
-          metadata: { targetUserId: userId, section, enabled },
-        }, { tx });
-        return override;
-      });
-
-      return result;
-    }),
+    .mutation(({ input, ctx }) =>
+      ctx.prisma.$transaction(tx => applySectionOverride(tx, ctx, input.userId, input.section, input.enabled))
+    ),
 });

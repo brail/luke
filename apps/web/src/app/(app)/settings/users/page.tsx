@@ -176,6 +176,7 @@ export default function UsersPage() {
         setPendingAccessUser({
           id: data.id,
           username: data.username,
+          email: data.email,
           firstName: data.firstName,
           lastName: data.lastName,
           role: data.role,

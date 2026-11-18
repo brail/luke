@@ -36,6 +36,7 @@ export function PendingUsersTab() {
   const refresh = useRefresh();
 
   const canUpdate = can('users:update');
+  const canConfigure = can('*:*');
   const canDelete = can('users:delete');
 
   const [approveTarget, setApproveTarget] = useState<UserForApproval | null>(null);
@@ -131,16 +132,17 @@ export function PendingUsersTab() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    {/* No approval on a synthetic address (#266): the dialog would write the role
-                        first, and the server refuses the approval itself. */}
+                    {/* A synthetic address (#266) is replaced in the approval itself (#272), which
+                        takes an administrator: whoever else approves sees why they cannot. */}
                     <PermissionButton
-                      hasPermission={canUpdate && !isSyntheticLdapEmail(user.email)}
+                      hasPermission={canUpdate && (canConfigure || !isSyntheticLdapEmail(user.email))}
                       tooltip={canUpdate ? APPROVAL_NEEDS_EMAIL_MESSAGE : "Non hai i permessi per approvare questo utente"}
                       size="sm"
                       onClick={() =>
                         setApproveTarget({
                           id: user.id,
                           username: user.username,
+                          email: user.email,
                           firstName: user.firstName || '',
                           lastName: user.lastName || '',
                           role: user.role,

@@ -50,3 +50,4 @@ this record adds one rule to them and changes nothing it decides.
 Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
 
 - **2026-11-15 — Consequences, first item, "for every write made through the API".** Not every API write: a role change through `users.update` can leave an enabled override or role default on a leaf the new role cannot read, without refusal. Only `sectionAccess.set` and `sectionAccess.setRoleDefaults` check the rule; the next sentence of that item, violations created afterwards are reported, covers this case.
+- **2026-11-18 — Decision, "The writes" and "Holding the check", and the erratum of 2026-11-15.** `users.approvePending` also turns leaves on, through `applySectionOverride` and `setOverride`: the same check under the same `FOR SHARE` lock, against the role the approval has just written ([ADR-044](044-pending-user-approval-in-one-transaction.md)).

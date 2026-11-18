@@ -95,6 +95,8 @@ export function useSectionOverridesEditor({ userId, open }: { userId: string; op
     shown,
     /** Whether a save has anything to send. */
     hasChanges: toSend.length > 0,
+    /** The edits as the approval sends them in its own transaction (`users.approvePending`, ADR-044). */
+    sendable: toSend.map(([section, enabled]) => ({ section, enabled })),
     /** Takes the overrides the list wants to show and keeps, as edits, where they differ from the server. */
     onChange: (next: SectionOverrides) => setEdits(editsBetween(server ?? {}, next)),
     /** Every switchable leaf back to the role defaults (a role change); killed leaves untouched. */
