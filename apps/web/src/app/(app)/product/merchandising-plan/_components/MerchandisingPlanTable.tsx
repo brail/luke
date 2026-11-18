@@ -4,6 +4,7 @@ import { PackageSearch, Star } from 'lucide-react';
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
+import { fullName } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -213,10 +214,7 @@ export function MerchandisingPlanTable({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {row.assignedUser
-                        ? `${row.assignedUser.firstName} ${row.assignedUser.lastName}`.trim() ||
-                          row.assignedUser.email
-                        : '—'}
+                      {row.assignedUser ? fullName(row.assignedUser) : '—'}
                     </TableCell>
                   </TableRow>
                 );

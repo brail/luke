@@ -156,6 +156,38 @@ describe('responses trimmed to what their screens read', () => {
     }
   });
 
+  it('a person named in a team or a merchandising plan row', async () => {
+    const uid = randomUUID().substring(0, 6).toUpperCase();
+    const PERSON = sorted('id', 'username', 'firstName', 'lastName');
+    const fn = await prisma.companyFunction.create({ data: { slug: `keys-${uid.toLowerCase()}`, name: `Keys ${uid}` } });
+    const team = await prisma.companyTeam.create({ data: { functionId: fn.id, name: `keys-team-${uid}` } });
+    await prisma.companyTeamMembership.create({ data: { teamId: team.id, userId: admin.user.id } });
+    const [brand, season] = await Promise.all([
+      prisma.brand.create({ data: { code: `KP${uid}`, name: `Keys Plan Brand ${uid}`, isActive: true } }),
+      prisma.season.create({ data: { code: `KP${uid}`, name: `Keys Plan Season ${uid}`, year: 2036, isActive: true } }),
+    ]);
+    const plan = await prisma.merchandisingPlan.create({ data: { brandId: brand.id, seasonId: season.id } });
+    await prisma.merchandisingPlanRow.create({
+      data: {
+        planId: plan.id,
+        articleCode: 'ART-K',
+        styleDescription: 'Style',
+        colorCode: 'C1',
+        colorDescription: 'Black',
+        gender: 'MAN',
+        productCategory: 'SNEAKER',
+        assignedUserId: admin.user.id,
+      },
+    });
+    const caller = createCallerWithSession(admin.session);
+
+    const { memberships } = await caller.company.team.getById({ id: team.id });
+    const [row] = await caller.merchandisingPlan.listRows({ planId: plan.id });
+
+    expect(keysOf(memberships[0]?.user)).toEqual(PERSON);
+    expect(keysOf(row?.assignedUser)).toEqual(PERSON);
+  });
+
   it('users.list and users.listPending, and each identity', async () => {
     const pending = await prisma.user.create({
       data: {

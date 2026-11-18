@@ -67,8 +67,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   company: {
     reason:
-      'structure and teams covered on the main path, updateMemberRole by the access audit spec, function restore by the team spec (#237), function reorder by the inactive-function spec; team getById and listAllBrands remain',
-    uncovered: 2,
+      'structure and teams covered on the main path, updateMemberRole by the access audit spec, function restore by the team spec (#237), function reorder by the inactive-function spec, team getById by its key set in responseKeySets.integration.spec.ts; listAllBrands remains',
+    uncovered: 1,
   },
   users: {
     reason:

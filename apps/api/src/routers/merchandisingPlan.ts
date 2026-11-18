@@ -29,6 +29,7 @@ import { logAudit } from '../lib/auditLog';
 import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
 import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -183,7 +184,7 @@ export const merchandisingPlanRouter = router({
         orderBy: { order: 'asc' },
         include: {
           assignedUser: {
-            select: { id: true, firstName: true, lastName: true, email: true },
+            select: PERSON_REFERENCE_SELECT,
           },
           pricingParameterSet: {
             select: { id: true, name: true },

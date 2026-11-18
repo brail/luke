@@ -31,6 +31,7 @@
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import { APPROVED_ADMIN_WHERE, APPROVED_USER_WHERE } from '../lib/approvedUsers';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
 
 import { unionBrandScopes, type FunctionBrands } from './context.service';
 
@@ -132,14 +133,14 @@ export async function listUsersWithBrandAccess(
   const [admins, memberships] = await Promise.all([
     prisma.user.findMany({
       where: APPROVED_ADMIN_WHERE,
-      select: { id: true, username: true, firstName: true, lastName: true },
+      select: PERSON_REFERENCE_SELECT,
     }),
     prisma.companyTeamMembership.findMany({
       where: {
         team: { isActive: true, brandScopes: { some: { brandId } } },
         user: APPROVED_USER_WHERE,
       },
-      select: { user: { select: { id: true, username: true, firstName: true, lastName: true } } },
+      select: { user: { select: PERSON_REFERENCE_SELECT } },
     }),
   ]);
 

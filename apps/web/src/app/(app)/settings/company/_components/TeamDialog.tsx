@@ -7,7 +7,8 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { CompanyTeamInputSchema } from '@luke/core';
+import type { RouterOutputs } from '@luke/api';
+import { CompanyTeamInputSchema, fullName } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -48,11 +49,6 @@ import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-function displayName(u: { firstName?: string | null; lastName?: string | null; username: string }) {
-  const full = [u.firstName, u.lastName].filter(Boolean).join(' ');
-  return full || u.username;
-}
 
 /**
  * The fields both team dialogs collect by typing. `description` is narrowed to a plain string so
@@ -161,6 +157,12 @@ export function CreateTeamDialog({ open, onClose, onSaved, functionId }: CreateT
 
 // ── EditTeamDialog ────────────────────────────────────────────────────────────
 
+/** A person as the dialog names them: a team member, or a candidate from the users list. */
+type Person = Pick<
+  RouterOutputs['company']['team']['getById']['memberships'][number]['user'],
+  'id' | 'username' | 'firstName' | 'lastName'
+>;
+
 interface EditTeamDialogProps {
   open: boolean;
   onClose: () => void;
@@ -214,11 +216,11 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
   }, [team, form]);
 
   const userMap = useMemo(() => {
-    const map = new Map<string, { id: string; email: string; username: string; firstName?: string | null; lastName?: string | null }>();
+    const map = new Map<string, Person>();
     allUsers.forEach(u => map.set(u.id, u));
     team?.memberships.forEach(m => {
       if (!map.has(m.userId)) {
-        map.set(m.userId, { id: m.userId, email: m.user.email, username: m.user.username, firstName: null, lastName: null });
+        map.set(m.userId, m.user);
       }
     });
     return map;
@@ -339,7 +341,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
                       <SelectContent>
                         {availableUsers.map(u => (
                           <SelectItem key={u.id} value={u.id}>
-                            {displayName(u)} — {u.email}
+                            {fullName(u)} — {u.username}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -359,8 +361,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
                       return (
                         <div key={userId} className="flex items-center gap-3 px-3 py-2.5">
                           <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium">{u ? displayName(u) : userId}</span>
-                            {u?.email && <span className="ml-2 text-xs text-muted-foreground">{u.email}</span>}
+                            <span className="text-sm font-medium">{u ? fullName(u) : userId}</span>
                           </div>
                           <Badge variant={role === 'LEADER' ? 'default' : 'secondary'} className="text-xs shrink-0">
                             {role === 'LEADER' ? 'Leader' : 'Membro'}

@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
     name: 'Team',
     description: null,
     brandScopes: [],
-    memberships: [{ userId: 'u1', role: 'MEMBER', user: { id: 'u1', email: 'm@example.com', username: 'member' } }],
+    memberships: [{ userId: 'u1', role: 'MEMBER', user: { id: 'u1', username: 'member', firstName: 'Maria', lastName: 'Rossi' } }],
   },
 }));
 
@@ -58,8 +58,7 @@ test('the read-only view does not load the users list and still lists the member
 
   await userEvent.click(screen.getByRole('tab', { name: /Membri/ }));
 
-  await expect.element(screen.getByText('member')).toBeInTheDocument();
-  await expect.element(screen.getByText('m@example.com')).toBeInTheDocument();
+  await expect.element(screen.getByText('Maria Rossi')).toBeInTheDocument();
   expect(h.usersList).toHaveBeenCalled();
   expect(h.usersList).not.toHaveBeenCalledWith(expect.anything(), { enabled: true });
 });

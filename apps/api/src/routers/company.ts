@@ -28,6 +28,7 @@ import { isUniqueViolation, refuseOnInactiveFunction } from '../lib/error.js';
 import { createNotification } from '../lib/notifications.js';
 import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { deleteObjectByKey } from '../storage';
@@ -515,7 +516,7 @@ const companyTeamRouter = router({
         where: { id: input.id },
         include: {
           memberships: {
-            include: { user: { select: { id: true, email: true, username: true } } },
+            include: { user: { select: PERSON_REFERENCE_SELECT } },
           },
           brandScopes: {
             include: { brand: { select: { id: true, code: true, name: true } } },
