@@ -19,7 +19,7 @@ import type { Prisma, PrismaClient, User } from '@luke/db';
 import { APPROVED_ADMIN_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
+import { getAuthStrategy, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
 import { issueUserToken, lockUserEmail, type IssuedUserToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, LdapUserNotWrittenError, type LdapRefusal } from '../lib/ldapAuth';
@@ -82,11 +82,6 @@ export async function authenticateLocal(
   return user;
 }
 
-/** The sign-in strategy in force: the stored `auth.strategy`, `local-first` when absent or empty. */
-export async function getAuthStrategy(db: Prisma.TransactionClient): Promise<string> {
-  return (await getConfig(db, 'auth.strategy')) || 'local-first';
-}
-
 /**
  * Who a local password signs in, per strategy: every strategy that tries local credentials admits
  * anyone; `ldap-only` only the break-glass path, an administrator (`*:*`). One entry per
@@ -99,13 +94,9 @@ const LOCAL_SIGN_IN_ADMITS: Record<LdapStrategy, (role: Role) => boolean> = {
   'ldap-only': role => hasPermission({ role }, '*:*'),
 };
 
-/**
- * Whether `strategy` lets a local password sign in an account of `role`. A stored value that is no
- * strategy admits nobody (sign-in answers it with a server error).
- */
-export function strategyAdmitsLocal(strategy: string, role: Role): boolean {
-  // Narrowed by the own-key check just before: a stored value outside the list never reaches the cast.
-  return Object.hasOwn(LOCAL_SIGN_IN_ADMITS, strategy) && LOCAL_SIGN_IN_ADMITS[strategy as LdapStrategy](role);
+/** Whether `strategy` lets a local password sign in an account of `role`. */
+export function strategyAdmitsLocal(strategy: LdapStrategy, role: Role): boolean {
+  return LOCAL_SIGN_IN_ADMITS[strategy](role);
 }
 
 /** Whether the email check of a local sign-in passes: verification off, or the address verified. */
@@ -121,9 +112,11 @@ export function emailAdmitsLocal(requireEmailVerification: boolean, emailVerifie
  * is a temporary block, not a property of the password.
  */
 export function localSignInRefusal(
-  policy: { strategy: string; requireEmailVerification: boolean },
+  policy: { strategy: LdapStrategy | null; requireEmailVerification: boolean },
   user: { role: Role; emailVerifiedAt: Date | null }
-): 'strategy' | 'email_unverified' | null {
+): 'strategy_unavailable' | 'strategy' | 'email_unverified' | null {
+  // No valid strategy stored: sign-in refuses everyone (`verifyCredentials`).
+  if (policy.strategy === null) return 'strategy_unavailable';
   if (!strategyAdmitsLocal(policy.strategy, user.role)) return 'strategy';
   if (!emailAdmitsLocal(policy.requireEmailVerification, user.emailVerifiedAt)) return 'email_unverified';
   return null;
@@ -189,6 +182,21 @@ async function notifyLdapUnavailable(ctx: Context): Promise<void> {
 }
 
 /**
+ * Tells the administrators that a sign-in was refused because no valid strategy is stored, at most
+ * once per `SYSTEM_FAILURE_DEDUP_MS`. Never the answer's cost: a failure is logged.
+ */
+async function notifyStrategyUnavailable(ctx: Context): Promise<void> {
+  await notifyDeduped(ctx.prisma, 'auth.strategy_unavailable', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(ctx.prisma, {
+    category: 'SYSTEM',
+    title: 'Strategia di accesso non disponibile',
+    message:
+      'Un accesso è stato rifiutato perché la strategia di accesso non è salvata o non è valida. ' +
+      'Sceglila in Impostazioni › LDAP.',
+    data: { type: 'strategy_unavailable' },
+  })).catch(err => ctx.logger.error({ err }, 'Failed to notify admins of a missing sign-in strategy'));
+}
+
+/**
  * Who reads the answer of `verifyCredentials`. `public` — the default, so a caller that forgets the
  * option gets the safe answer — is a caller with no session, told nothing about the app's state
  * before the password is proven. `signedIn` is a session re-proving its own password
@@ -211,9 +219,12 @@ export type CredentialsAnswerMode = 'public' | 'signedIn';
  * at most once per `SYSTEM_FAILURE_DEDUP_MS`.
  *
  * @returns The authenticated user, the method that authenticated them, and the strategy in force.
- * @throws {TRPCError} In `public` mode, UNAUTHORIZED with `SIGN_IN_REFUSED_MESSAGE` for every
- *   failure before the password is proven (a full account bucket included), and SERVICE_UNAVAILABLE
- *   only when the directory verified the password and the user record could not be written. In
+ * @throws {TRPCError} In either mode, after the account bucket, SERVICE_UNAVAILABLE with
+ *   `AUTH_UNAVAILABLE_MESSAGE` when no valid strategy is stored: the same for every account, before
+ *   any password is checked. In `public` mode, UNAUTHORIZED with `SIGN_IN_REFUSED_MESSAGE` for every
+ *   other failure before the password is proven (a full account bucket included), and
+ *   SERVICE_UNAVAILABLE when the directory verified the password and the user record could not be
+ *   written. In
  *   `signedIn` mode, UNAUTHORIZED for a wrong password or a refusal, TOO_MANY_REQUESTS for a full
  *   account bucket, SERVICE_UNAVAILABLE when LDAP could not complete the check. In either mode,
  *   FORBIDDEN with the marker `LDAP_EMAIL_IN_USE` when the directory verified the password of a
@@ -223,7 +234,7 @@ export async function verifyCredentials(
   ctx: Context,
   input: { username: string; password: string },
   mode: CredentialsAnswerMode = 'public'
-): Promise<{ user: User; authMethod: 'local' | 'ldap'; strategy: string }> {
+): Promise<{ user: User; authMethod: 'local' | 'ldap'; strategy: LdapStrategy }> {
   const { username, password } = input;
 
   // Bucket separate from the per-IP rate limit of `withRateLimit('login')` (router auth.ts):
@@ -251,6 +262,19 @@ export async function verifyCredentials(
     // accounts it has reached. The per-IP bucket, about the caller's own rate, stays distinct.
     if (mode === 'public') throw credentialsRefused();
     throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: SIGNED_IN_THROTTLED });
+  }
+
+  // No valid strategy stored: nobody signs in, no password is checked and LDAP is not called. The
+  // state is the same for every account, so the answer tells nothing about this one.
+  if (strategy === null) {
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      result: 'FAILURE',
+      metadata: { username, reason: 'strategy_unavailable' },
+    });
+    await notifyStrategyUnavailable(ctx);
+    throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE });
   }
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
@@ -355,12 +379,6 @@ export async function verifyCredentials(
         authMethod = 'local';
       }
       break;
-
-    default:
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: `Strategia di autenticazione non valida: ${strategy}`,
-      });
   }
 
   if (!authenticatedUser) {

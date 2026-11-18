@@ -316,10 +316,16 @@ and the `AUTH_LOGIN_FAILED` rows say `ldap_unavailable`. In order:
    explains its checks and why the printed link is a credential.
 3. **Nobody can sign in to change the strategy.** `auth.strategy` is read on
    every login, so changing the row restores the local fallback to every user
-   with a LOCAL credential; it gives nobody a password:
+   with a LOCAL credential; it gives nobody a password. The strategy has no
+   default: when the row is missing or holds an invalid value, every sign-in is
+   refused as unavailable (audit reason `strategy_unavailable`, administrators
+   notified) and the LDAP settings page shows no strategy. The statement below
+   writes the row whether or not it exists:
 
    ```sql
-   UPDATE app_configs SET value = 'local-first', "updatedAt" = now() WHERE key = 'auth.strategy';
+   INSERT INTO app_configs (id, key, value, "isEncrypted", "updatedAt")
+   VALUES (gen_random_uuid(), 'auth.strategy', 'local-first', false, now())
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "isEncrypted" = false, "updatedAt" = now();
    ```
 
    The statement writes no audit row. Record it in the incident notes, and once

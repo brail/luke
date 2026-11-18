@@ -12,14 +12,14 @@ import { appRouter } from '../src/routers/index';
 import { countBreakGlassAdmins } from '../src/services/auth.service';
 import { inspectLocalAccess } from '../src/services/localAccess.service';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb, setAuthStrategy } from './helpers';
 
 let prisma: PrismaClient;
 let ip = 0;
 
 beforeEach(async () => {
   prisma = await setupTestDb();
-  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: 'local-only', isEncrypted: false } });
+  await setAuthStrategy(prisma, 'local-only');
 });
 
 /** A login from its own IP, so the per-IP `login` bucket never fills across the file. */

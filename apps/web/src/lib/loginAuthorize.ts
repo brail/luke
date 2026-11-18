@@ -24,8 +24,9 @@ import { debugError } from './debug';
 import { markLoginThrottled } from './loginThrottleContext';
 
 /**
- * The API answered `SERVICE_UNAVAILABLE`, which before a session it does only after the password is
- * proven: the directory verified it and the login could not be completed.
+ * The API answered `SERVICE_UNAVAILABLE`: sign-in is unavailable for everyone (no valid strategy
+ * stored, before any password check), or the directory verified the password and the login could
+ * not be completed. Either way nothing here may rely on the password being proven.
  */
 export class LoginUnavailable extends CredentialsSignin {
   code = 'unavailable';

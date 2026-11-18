@@ -65,7 +65,8 @@ describe('the generic config writes refuse both keys', () => {
     expect(result.successCount).toBe(1);
     expect(result.errors.map(e => e.key)).toEqual(['auth.strategy', 'auth.ldap.enabled']);
     expect(await getConfig(prisma, 'app.name')).toBe('Imported');
-    expect(await getConfig(prisma, 'auth.strategy')).toBeNull();
+    // Refused: the value the instance started from stays.
+    expect(await getConfig(prisma, 'auth.strategy')).toBe('local-first');
     expect(await getConfig(prisma, 'auth.ldap.enabled')).toBe('true');
   });
 });
@@ -86,7 +87,8 @@ describe('the strategy save and the changes that lower the break-glass count wai
     );
 
     expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'BAD_REQUEST' } });
-    expect(await getConfig(prisma, 'auth.strategy')).toBeNull();
+    // Refused: the value the instance started from stays.
+    expect(await getConfig(prisma, 'auth.strategy')).toBe('local-first');
   });
 
   // A verification-policy change is a `saveConfigs` write, which holds this lock

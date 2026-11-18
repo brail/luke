@@ -22,7 +22,7 @@ import { getMaintenanceState, writeMaintenanceState } from '../src/lib/maintenan
 import * as notifications from '../src/lib/notifications';
 import { appRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, lastAudit, setupTestDb, setAuthStrategy } from './helpers';
 
 let prisma: PrismaClient;
 let ip = 0;
@@ -33,7 +33,7 @@ const REFUSED = { code: 'UNAUTHORIZED', message: SIGN_IN_REFUSED_MESSAGE };
 
 beforeEach(async () => {
   prisma = await setupTestDb();
-  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: 'ldap-only', isEncrypted: false } });
+  await setAuthStrategy(prisma, 'ldap-only');
 });
 
 afterEach(() => {

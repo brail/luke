@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
+  AUTH_UNAVAILABLE_MESSAGE,
   UserProfileSchema,
   ChangeEmailSchema,
   ChangePasswordSchema,
@@ -20,7 +21,7 @@ import {
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { acquireAppConfigWriteLock, getRequireEmailVerification } from '../lib/configManager';
+import { acquireAppConfigWriteLock, getAuthStrategy, getRequireEmailVerification } from '../lib/configManager';
 import { lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
@@ -32,12 +33,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { selfProcedure, router } from '../lib/trpc';
 import { resolveUserTimeZone } from '../lib/userTimeZone';
-import {
-  getAuthStrategy,
-  localSignInRefusal,
-  verifyCredentials,
-  WRONG_CURRENT_PASSWORD,
-} from '../services/auth.service';
+import { localSignInRefusal, verifyCredentials, WRONG_CURRENT_PASSWORD } from '../services/auth.service';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -48,10 +44,17 @@ const NO_LOCAL_PASSWORD = 'Cambio password non consentito per provider esterni';
 
 /** The answer to a password change whose local password could not sign in now (#275). */
 const LOCAL_SIGN_IN_REFUSED = {
-  strategy: "Con l'accesso solo tramite LDAP la password locale di Luke non si usa e non si può cambiare",
-  email_unverified:
-    'Verifica prima la tua email: finché non è verificata la password locale di Luke non si usa e non si può cambiare',
-} as const;
+  strategy_unavailable: { code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE },
+  strategy: {
+    code: 'FORBIDDEN',
+    message: "Con l'accesso solo tramite LDAP la password locale di Luke non si usa e non si può cambiare",
+  },
+  email_unverified: {
+    code: 'FORBIDDEN',
+    message:
+      'Verifica prima la tua email: finché non è verificata la password locale di Luke non si usa e non si può cambiare',
+  },
+} as const satisfies Record<string, { code: TRPCError['code']; message: string }>;
 
 /**
  * Why `user`'s local password could not sign in now (`localSignInRefusal`), the policy read from
@@ -73,7 +76,7 @@ async function assertLocalSignInNow(
 ): Promise<void> {
   const refusal = await localSignInRefusalFor(db, user);
   if (refusal) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: LOCAL_SIGN_IN_REFUSED[refusal] });
+    throw new TRPCError(LOCAL_SIGN_IN_REFUSED[refusal]);
   }
 }
 
@@ -344,7 +347,8 @@ export const meRouter = router({
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
    * @throws {TRPCError} TOO_MANY_REQUESTS when the login's per-IP or the per-account bucket is full;
-   *   FORBIDDEN when the account has no local password it can change, or one that cannot sign in now.
+   *   FORBIDDEN when the account has no local password it can change, or one that cannot sign in now;
+   *   SERVICE_UNAVAILABLE when no valid sign-in strategy is stored.
    */
   changePassword: selfProcedure
     // A password is checked here: the login's per-IP bucket (rule 12). `passwordChange` is the

@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { AUTH_UNAVAILABLE_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, setupTestDb, TEST_USER_PASSWORD } from './helpers';
@@ -46,13 +47,17 @@ const change = (session: Awaited<ReturnType<typeof createTestUser>>['session']) 
     confirmNewPassword: NEW_PASSWORD,
   });
 
+/** The answer when no valid sign-in strategy is stored. */
+const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE } as const;
+
 /**
  * Asserts that the profile flag and the change agree: `refusal` undefined → offered and accepted;
- * otherwise not offered, refused FORBIDDEN with `refusal` (any text when `true`), nothing written.
+ * otherwise not offered and refused, nothing written: FORBIDDEN with `refusal` (any text when
+ * `true`), or the answer `refusal` names.
  */
 async function expectAgreement(
   { user, session }: Awaited<ReturnType<typeof createTestUser>>,
-  refusal?: string | true
+  refusal?: string | true | typeof UNAVAILABLE
 ) {
   expect((await createCallerWithSession(session).me.get()).canChangePassword).toBe(refusal === undefined);
   const before = await written(user.id);
@@ -61,7 +66,7 @@ async function expectAgreement(
     return;
   }
   await expect(change(session)).rejects.toMatchObject(
-    refusal === true ? { code: 'FORBIDDEN' } : { code: 'FORBIDDEN', message: refusal }
+    typeof refusal === 'object' ? refusal : refusal === true ? { code: 'FORBIDDEN' } : { code: 'FORBIDDEN', message: refusal }
   );
   expect(await written(user.id)).toEqual(before);
 }
@@ -106,8 +111,8 @@ describe('me.get canChangePassword agrees with me.changePassword', () => {
     ['ldap-only, an administrator (break-glass)', 'admin', 'ldap-only', undefined],
     ['local-only', 'editor', 'local-only', undefined],
     ['ldap-first', 'editor', 'ldap-first', undefined],
-    ['an empty stored strategy, read as local-first', 'editor', '', undefined],
-    ['an unknown stored strategy', 'editor', 'bogus', STRATEGY_REFUSED],
+    ['an empty stored strategy', 'editor', '', UNAVAILABLE],
+    ['an unknown stored strategy', 'editor', 'bogus', UNAVAILABLE],
   ] as const)('%s', async (_name, role, strategy, refusal) => {
     const account = await createTestUser(role);
     await addLdap(account.user);
@@ -143,12 +148,23 @@ describe('me.changePassword re-checks under the locks of what it reads', () => {
     const before = await written(user.id);
 
     const outcome = await whileHeld(holdLastAdminLock, () => change(session), holder =>
-      holder.query(
-        `INSERT INTO app_configs (id, key, value, "isEncrypted", "updatedAt") VALUES (gen_random_uuid(), 'auth.strategy', 'ldap-only', false, now())`
-      )
+      holder.query(`UPDATE app_configs SET value = 'ldap-only' WHERE key = 'auth.strategy'`)
     );
 
     expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'FORBIDDEN', message: STRATEGY_REFUSED } });
+    expect(await written(user.id)).toEqual(before);
+  });
+
+  it.each([
+    ['deleted', `DELETE FROM app_configs WHERE key = 'auth.strategy'`],
+    ['made invalid', `UPDATE app_configs SET value = 'bogus' WHERE key = 'auth.strategy'`],
+  ])('a strategy %s meanwhile refuses the change as unavailable', async (_name, sql) => {
+    const { user, session } = await createTestUser('editor');
+    const before = await written(user.id);
+
+    const outcome = await whileHeld(holdLastAdminLock, () => change(session), holder => holder.query(sql));
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: UNAVAILABLE });
     expect(await written(user.id)).toEqual(before);
   });
 

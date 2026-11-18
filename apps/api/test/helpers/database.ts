@@ -189,6 +189,9 @@ export async function resetTestData(
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`
   );
+  // The sign-in strategy has no default (a missing one refuses every sign-in): every test starts
+  // from the value the seed writes, as an installed instance does. `setAuthStrategy` changes it.
+  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: 'local-first', isEncrypted: false } });
 }
 
 /**

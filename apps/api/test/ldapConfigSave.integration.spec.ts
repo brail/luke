@@ -24,7 +24,7 @@ import type { PrismaClient } from '@luke/db';
 import { getConfig, saveConfig } from '../src/lib/configManager';
 import { saveAuthConfig } from '../src/services/authConfig.service';
 
-import { createCallerAs, createTestUser, lastAudit, setupTestDb } from './helpers';
+import { createCallerAs, createTestUser, lastAudit, setupTestDb, setAuthStrategy } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -50,8 +50,7 @@ beforeEach(async () => {
 const storedStrategy = () => getConfig(prisma, 'auth.strategy');
 
 /** Straight to the table: the strategy a test starts from. */
-const storeStrategy = (value: string) =>
-  prisma.appConfig.create({ data: { key: 'auth.strategy', value, isEncrypted: false } });
+const storeStrategy = (value: string) => setAuthStrategy(prisma, value);
 
 /** A caller that is an administrator with no local credential, as a directory administrator is. */
 async function directoryAdmin() {
@@ -157,14 +156,16 @@ describe('integrations.auth.saveStrategy: ldap-only needs a local administrator 
     const caller = await createCallerAs('admin');
 
     await expect(caller.integrations.auth.saveStrategy(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(await storedStrategy()).toBeNull();
+    // Refused: the value the instance started from stays.
+    expect(await storedStrategy()).toBe('local-first');
   });
 
   it('refuses ldap-only when no administrator has a local credential, before writing anything, and audits it', async () => {
     const caller = await directoryAdmin();
 
     await expect(caller.integrations.auth.saveStrategy(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(await storedStrategy()).toBeNull();
+    // Refused: the value the instance started from stays.
+    expect(await storedStrategy()).toBe('local-first');
     expect(await lastAudit('CONFIG_UPSERT')).toMatchObject({
       result: 'FAILURE',
       metadata: { key: 'auth.strategy', strategy: 'ldap-only', errorCode: 'BAD_REQUEST' },

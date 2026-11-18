@@ -57,7 +57,8 @@ export interface LdapConfig {
   groupSearchBase: string;
   groupSearchFilter: string;
   roleMapping: RoleMapping;
-  strategy: LdapStrategy;
+  /** `null` when no valid strategy is stored (`getAuthStrategy`). */
+  strategy: LdapStrategy | null;
 }
 
 // Exported for reuse by other AES-256-GCM modules (e.g. apps/api/src/lib/backup/crypto.ts)
@@ -988,6 +989,22 @@ export function ldapEnabledFrom(stored: string | undefined): boolean {
   return AppConfigRegistry['auth.ldap.enabled'].safeParse(stored).data === true;
 }
 
+/** A stored sign-in strategy when the registry accepts it; absent, empty or invalid is `null`. */
+function authStrategyFrom(stored: string | null | undefined): LdapStrategy | null {
+  return AppConfigRegistry['auth.strategy'].safeParse(stored).data ?? null;
+}
+
+/**
+ * The sign-in strategy, with no default: a missing or invalid value is `null`, and every reader
+ * refuses what it would decide on it. Read as the boot check reads it (`getConfig`): a row an
+ * earlier release stored encrypted is decrypted, and one that does not decrypt throws.
+ *
+ * @param db - Prisma client or transaction client.
+ */
+export async function getAuthStrategy(db: Prisma.TransactionClient): Promise<LdapStrategy | null> {
+  return authStrategyFrom(await getConfig(db, 'auth.strategy'));
+}
+
 /**
  * Whether LDAP is on, read alone and never decrypted: LDAP off needs no encrypted key, and a row
  * this instance cannot decrypt must not turn a wrong password into an outage.
@@ -1061,7 +1078,7 @@ async function loadLdapConfig(
         groupSearchBase: '',
         groupSearchFilter: '',
         roleMapping: {},
-        strategy: 'local-first',
+        strategy: null,
       },
     };
   }
@@ -1084,9 +1101,15 @@ async function loadLdapConfig(
   const groupSearchFilter = getConfigValue('groupSearchFilter');
   // `|| '{}'`: blank is what the form's reader makes of a row it cannot decrypt, not invalid JSON.
   const roleMappingStr = getConfigValue('roleMapping') || '{}';
-  const strategy =
-    (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
-    'local-first';
+  // The row read above, decrypted as sign-in reads it; one that does not decrypt shows as none
+  // here, so the form still opens and a strategy can be saved over it.
+  const strategyRow = configMap.get('auth.strategy');
+  let strategy: LdapStrategy | null = null;
+  try {
+    strategy = authStrategyFrom(strategyRow?.isEncrypted ? decryptValue(strategyRow.value) : strategyRow?.value);
+  } catch (error) {
+    logger.error({ key: 'auth.strategy', error: toErrorMessage(error) }, 'Config decryption error');
+  }
 
   // Dropped whole, never in part: a partial mapping could silently change who is an administrator.
   // Every new LDAP user is then a viewer; existing users keep their role.

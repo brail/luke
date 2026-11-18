@@ -5,6 +5,7 @@ import { PrismaClient } from '@luke/db';
 import { encryptValue, getLdapConfig } from '../src/lib/configManager';
 import { checkLdap } from '../src/observability/readiness';
 
+import { setAuthStrategy } from './helpers';
 import { setupTestDb } from './helpers/database';
 
 describe('LDAP Config Management', () => {
@@ -20,7 +21,7 @@ describe('LDAP Config Management', () => {
     await prisma.appConfig.deleteMany({ where: { key: { startsWith: 'auth.' } } });
   });
 
-  it('returns the default configuration when no LDAP configuration exists', async () => {
+  it('returns the empty configuration, with no strategy, when nothing is stored', async () => {
     const config = await getLdapConfig(prisma);
 
     expect(config).toEqual({
@@ -33,8 +34,16 @@ describe('LDAP Config Management', () => {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: {},
-      strategy: 'local-first',
+      strategy: null,
     });
+  });
+
+  it('reads the stored strategy when it is the only key, and none for an invalid one', async () => {
+    await setAuthStrategy(prisma, 'local-first');
+    expect((await getLdapConfig(prisma)).strategy).toBe('local-first');
+
+    await setAuthStrategy(prisma, 'bogus');
+    expect((await getLdapConfig(prisma)).strategy).toBeNull();
   });
 
   it('returns a partial configuration when only some keys exist', async () => {
@@ -44,9 +53,9 @@ describe('LDAP Config Management', () => {
       data: [
         { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
         { key: 'auth.ldap.url', value: 'ldap://example.com', isEncrypted: false },
-        { key: 'auth.strategy', value: 'ldap-first', isEncrypted: false },
       ],
     });
+    await setAuthStrategy(prisma, 'ldap-first');
 
     const config = await getLdapConfig(prisma);
 

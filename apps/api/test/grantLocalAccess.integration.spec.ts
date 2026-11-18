@@ -19,7 +19,7 @@ import * as ldapAuth from '../src/lib/ldapAuth';
 import { appRouter } from '../src/routers/index';
 import { confirmPasswordReset } from '../src/services/auth.service';
 
-import { createTestContext, createTestUser, setupTestDb } from './helpers';
+import { createTestContext, createTestUser, setupTestDb, setAuthStrategy } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -274,7 +274,7 @@ describe('a failed audit write', () => {
 // The reason the command exists: under ldap-only, with LDAP refusing everyone and no administrator
 // able to sign in locally, the printed link leads back in through the break-glass path.
 it('end to end: ldap-only, LDAP refusing everyone, the link leads to a local sign-in', async () => {
-  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: 'ldap-only', isEncrypted: false } });
+  await setAuthStrategy(prisma, 'ldap-only');
   vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({ user: null, reason: 'invalid_credentials' });
   const user = await directoryAdmin();
   const login = () => appRouter.createCaller(createTestContext(null)).auth.login({ username: user.username, password: NEW_PASSWORD });

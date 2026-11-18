@@ -78,8 +78,8 @@ export default function LoginPage() {
 
       if (result?.error) {
         // Auth.js v5 flattens every authorize() error to "CredentialsSignin"; `code` is the one
-        // thing that tells them apart. Every code but `credentials` and `throttled` comes from an
-        // answer given once the password is proven.
+        // thing that tells them apart. Every code but `credentials`, `throttled` and `unavailable`
+        // comes from an answer given once the password is proven; `unavailable` may come before.
         if (result.code === 'maintenance') {
           setError('Sistema in manutenzione: accesso non disponibile. Riprova al termine.');
           return;

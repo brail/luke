@@ -38,6 +38,18 @@ export async function setupTestDb(): Promise<PrismaClient> {
 }
 
 /**
+ * Stores `strategy` as the sign-in strategy (`setupTestDb` starts every test at `local-first`), as
+ * a restore or a script would: not through `saveAuthConfig`, whose checks a test sets up on purpose.
+ */
+export async function setAuthStrategy(prisma: PrismaClient, strategy: string): Promise<void> {
+  await prisma.appConfig.upsert({
+    where: { key: 'auth.strategy' },
+    create: { key: 'auth.strategy', value: strategy, isEncrypted: false },
+    update: { value: strategy },
+  });
+}
+
+/**
  * Password for test users. Needed by tests that exercise `me.changePassword`:
  * without a local credential the router responds FORBIDDEN ("password change
  * not allowed for external providers") instead of UNAUTHORIZED, and the test

@@ -28,7 +28,7 @@ import * as ldapAuth from '../src/lib/ldapAuth';
 import { createContext } from '../src/lib/trpc';
 import { appRouter, type AppRouter } from '../src/routers/index';
 
-import { TEST_USER_PASSWORD, createCallerWithIP, createTestUser, lastAudit, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createCallerWithIP, createTestUser, lastAudit, setupTestDb, setAuthStrategy } from './helpers';
 
 let prisma: PrismaClient;
 let app: FastifyInstance;
@@ -53,7 +53,7 @@ afterEach(async () => {
 });
 
 async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only') {
-  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: strategy, isEncrypted: false } });
+  await setAuthStrategy(prisma, strategy);
 }
 
 /** One `auth.login` over HTTP, from its own address unless `fromIp` is given. */

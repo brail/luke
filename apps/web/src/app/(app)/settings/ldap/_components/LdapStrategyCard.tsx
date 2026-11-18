@@ -31,10 +31,10 @@ const STRATEGY_LABELS: Record<LdapStrategy, string> = {
  * change it, and saving one leaves the other's unsaved edits alone. The server refuses `ldap-only`
  * without LDAP on or without an administrator who can sign in locally.
  *
- * @param stored - The strategy as the page last read it.
+ * @param stored - The strategy as the page last read it; `null` when none valid is stored.
  * @param readAt - When the page read it (`dataUpdatedAt`): a new read, even of the same value, wins.
  */
-export function LdapStrategyCard({ stored, readAt }: { stored: LdapStrategy; readAt: number }) {
+export function LdapStrategyCard({ stored, readAt }: { stored: LdapStrategy | null; readAt: number }) {
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
@@ -59,13 +59,14 @@ export function LdapStrategyCard({ stored, readAt }: { stored: LdapStrategy; rea
       <div className="max-w-sm space-y-1.5">
         <Label htmlFor="ldap-strategy">Strategia</Label>
         <Select
-          value={strategy}
+          // Empty when nothing valid is stored: the placeholder shows until one is chosen.
+          value={strategy ?? ''}
           // Only the four items below can be chosen.
           onValueChange={value => setDraft(value as LdapStrategy)}
           disabled={!canUpdate}
         >
           <SelectTrigger id="ldap-strategy">
-            <SelectValue />
+            <SelectValue placeholder="Non impostata" />
           </SelectTrigger>
           <SelectContent>
             {LDAP_STRATEGIES.map(value => (
@@ -75,15 +76,20 @@ export function LdapStrategyCard({ stored, readAt }: { stored: LdapStrategy; rea
             ))}
           </SelectContent>
         </Select>
+        {current === null && (
+          <p className="text-sm text-destructive">
+            Nessuna strategia salvata: l&apos;accesso è bloccato finché non ne scegli una.
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">
           Si salva da sola: le modifiche ai parametri LDAP non la cambiano.
         </p>
       </div>
       {/* Its own name: the connection settings have their own save on the same page. */}
       <SettingsActions
-        onSave={() => saveMutation.mutate({ strategy })}
+        onSave={() => strategy && saveMutation.mutate({ strategy })}
         isSaving={saveMutation.isPending}
-        disabled={!canUpdate || strategy === current}
+        disabled={!canUpdate || strategy === null || strategy === current}
         saveLabel="Salva strategia"
       />
     </SectionCard>

@@ -33,6 +33,7 @@ import {
   createTestUser,
   lastAudit,
   setupTestDb,
+  setAuthStrategy,
 } from './helpers';
 
 let prisma: PrismaClient;
@@ -47,7 +48,7 @@ afterEach(() => {
 });
 
 async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only' | 'local-only') {
-  await prisma.appConfig.create({ data: { key: 'auth.strategy', value: strategy, isEncrypted: false } });
+  await setAuthStrategy(prisma, strategy);
 }
 
 /** What a login is answered for every refusal before the password is proven. */

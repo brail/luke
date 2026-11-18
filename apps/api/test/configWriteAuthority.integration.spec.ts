@@ -161,9 +161,11 @@ describe('AppConfig write authority', () => {
       expect(await getConfig(testPrisma, 'auth.ldap.bindPassword')).toBe('real-secret');
       expect(await testPrisma.appConfig.findUnique({ where: { key: 'auth.ldap.bindDN' } })).toBeNull();
       expect(result.successCount).toBe(1);
+      // `auth.strategy`, in every export, is refused too: it has its own writer.
       expect(result.errors.map(e => e.key).sort()).toEqual([
         'auth.ldap.bindDN',
         'auth.ldap.bindPassword',
+        'auth.strategy',
       ]);
     });
 
