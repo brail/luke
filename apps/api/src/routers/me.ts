@@ -15,9 +15,12 @@ import {
   greetingAt,
   isSyntheticLdapEmail,
   resolveEffectiveProvider,
+  type Role,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { acquireAppConfigWriteLock, getRequireEmailVerification } from '../lib/configManager';
 import { lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
@@ -29,7 +32,12 @@ import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { selfProcedure, router } from '../lib/trpc';
 import { resolveUserTimeZone } from '../lib/userTimeZone';
-import { verifyCredentials, WRONG_CURRENT_PASSWORD } from '../services/auth.service';
+import {
+  getAuthStrategy,
+  localSignInRefusal,
+  verifyCredentials,
+  WRONG_CURRENT_PASSWORD,
+} from '../services/auth.service';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -37,6 +45,37 @@ const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 
 /** The answer to a password change on an account without a local password. */
 const NO_LOCAL_PASSWORD = 'Cambio password non consentito per provider esterni';
+
+/** The answer to a password change whose local password could not sign in now (#275). */
+const LOCAL_SIGN_IN_REFUSED = {
+  strategy: "Con l'accesso solo tramite LDAP la password locale di Luke non si usa e non si può cambiare",
+  email_unverified:
+    'Verifica prima la tua email: finché non è verificata la password locale di Luke non si usa e non si può cambiare',
+} as const;
+
+/**
+ * Why `user`'s local password could not sign in now (`localSignInRefusal`), the policy read from
+ * `db`; `user` comes from the database row, never the session.
+ */
+async function localSignInRefusalFor(
+  db: Prisma.TransactionClient,
+  user: { role: Role; emailVerifiedAt: Date | null }
+): Promise<keyof typeof LOCAL_SIGN_IN_REFUSED | null> {
+  const strategy = await getAuthStrategy(db);
+  const requireEmailVerification = await getRequireEmailVerification(db);
+  return localSignInRefusal({ strategy, requireEmailVerification }, user);
+}
+
+/** Refuses the password change when `user`'s local password could not sign in now (`localSignInRefusalFor`). */
+async function assertLocalSignInNow(
+  db: Prisma.TransactionClient,
+  user: { role: Role; emailVerifiedAt: Date | null }
+): Promise<void> {
+  const refusal = await localSignInRefusalFor(db, user);
+  if (refusal) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: LOCAL_SIGN_IN_REFUSED[refusal] });
+  }
+}
 
 /**
  * The local password a user can change: the LOCAL identity under the current username, holding a
@@ -61,7 +100,7 @@ export const meRouter = router({
    * @output {User with provider, profileCompletion, loginCount, lastLoginAt. `timezone` is the zone
    *   the server renders in (`resolveUserTimeZone`): the business zone when the stored value is not
    *   an IANA name. `canChangePassword`: whether `me.changePassword` accepts this account — a local
-   *   password, whatever the effective provider (#268).}
+   *   password, whatever the effective provider (#268), that can sign in now (#275).}
    */
   get: selfProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
@@ -124,7 +163,8 @@ export const meRouter = router({
       ...user,
       timezone,
       provider,
-      canChangePassword: changeableLocalIdentity(user) !== undefined,
+      canChangePassword:
+        changeableLocalIdentity(user) !== undefined && (await localSignInRefusalFor(ctx.prisma, user)) === null,
       profileCompletion,
       dailyGreetingEnabled,
       // Remove identities from output (not needed in frontend)
@@ -296,13 +336,15 @@ export const meRouter = router({
 
   /**
    * Changes the current user's local password (`changeableLocalIdentity`), whatever the effective
-   * provider: an LDAP account with a local password changes that one, never the directory's.
+   * provider: an LDAP account with a local password changes that one, never the directory's. Only a
+   * password that can sign in now (`localSignInRefusal`, #275): checked again under the locks of
+   * every writer of what it reads, so a strategy, role or verification change cannot slip between.
    *
    * @auth {authenticated}
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
    * @throws {TRPCError} TOO_MANY_REQUESTS when the login's per-IP or the per-account bucket is full;
-   *   FORBIDDEN when the account has no local password it can change.
+   *   FORBIDDEN when the account has no local password it can change, or one that cannot sign in now.
    */
   changePassword: selfProcedure
     // A password is checked here: the login's per-IP bucket (rule 12). `passwordChange` is the
@@ -317,6 +359,8 @@ export const meRouter = router({
         select: {
           id: true,
           username: true,
+          role: true,
+          emailVerifiedAt: true,
           identities: {
             select: {
               id: true,
@@ -347,6 +391,10 @@ export const meRouter = router({
           message: NO_LOCAL_PASSWORD,
         });
       }
+
+      // Answered before the password hashing and the locks below; the check that holds is the one
+      // repeated under those locks.
+      await assertLocalSignInNow(ctx.prisma, userWithProvider);
 
       // Verify the current password
       const isCurrentPasswordValid = await verifyPassword(
@@ -384,8 +432,21 @@ export const meRouter = router({
 
       // Update the password and bump tokenVersion in a transaction
       await ctx.prisma.$transaction(async trx => {
-        // The user row first, the order of every writer of a user's identities and credential.
+        // What the sign-in rule reads holds until commit (rule 3): the last-admin lock (strategy and
+        // role writers), the AppConfig write lock (`auth.requireEmailVerification`), then the user
+        // row — the order of every writer of a user's identities and credential.
+        await acquireLastAdminLock(trx);
+        await acquireAppConfigWriteLock(trx);
         await lockUserEmail(trx, ctx.session.user.id);
+        const current = await trx.user.findUnique({
+          where: { id: ctx.session.user.id },
+          select: { role: true, emailVerifiedAt: true },
+        });
+        // The account deleted meanwhile: answered as a fresh call would be.
+        if (!current) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: NO_LOCAL_PASSWORD });
+        }
+        await assertLocalSignInNow(trx, current);
         // Conditional on the hash the current password was checked against (rule 3): a reset link
         // used since then set another password, which this must not overwrite.
         const { count } = await trx.localCredential.updateMany({

@@ -11,6 +11,8 @@ import {
   hasPermission,
   isSyntheticLdapEmail,
   SIGN_IN_REFUSED_MESSAGE,
+  type LdapStrategy,
+  type Role,
 } from '@luke/core';
 import type { Prisma, PrismaClient, User } from '@luke/db';
 
@@ -78,6 +80,53 @@ export async function authenticateLocal(
   }
 
   return user;
+}
+
+/** The sign-in strategy in force: the stored `auth.strategy`, `local-first` when absent or empty. */
+export async function getAuthStrategy(db: Prisma.TransactionClient): Promise<string> {
+  return (await getConfig(db, 'auth.strategy')) || 'local-first';
+}
+
+/**
+ * Who a local password signs in, per strategy: every strategy that tries local credentials admits
+ * anyone; `ldap-only` only the break-glass path, an administrator (`*:*`). One entry per
+ * `LdapStrategy`, so a new strategy does not compile until it says.
+ */
+const LOCAL_SIGN_IN_ADMITS: Record<LdapStrategy, (role: Role) => boolean> = {
+  'local-only': () => true,
+  'local-first': () => true,
+  'ldap-first': () => true,
+  'ldap-only': role => hasPermission({ role }, '*:*'),
+};
+
+/**
+ * Whether `strategy` lets a local password sign in an account of `role`. A stored value that is no
+ * strategy admits nobody (sign-in answers it with a server error).
+ */
+export function strategyAdmitsLocal(strategy: string, role: Role): boolean {
+  // Narrowed by the own-key check just before: a stored value outside the list never reaches the cast.
+  return Object.hasOwn(LOCAL_SIGN_IN_ADMITS, strategy) && LOCAL_SIGN_IN_ADMITS[strategy as LdapStrategy](role);
+}
+
+/** Whether the email check of a local sign-in passes: verification off, or the address verified. */
+export function emailAdmitsLocal(requireEmailVerification: boolean, emailVerifiedAt: Date | null): boolean {
+  return !requireEmailVerification || emailVerifiedAt !== null;
+}
+
+/**
+ * Why a local password could not sign this account in now, or `null` when it could: the strategy's
+ * rule, then the email check of local sign-in — what `verifyCredentials` and `authenticateUser`
+ * apply to a local login, for a caller that asks without a password (the profile's password change).
+ * Pending approval and maintenance are left out: a signed-in session is approved, and maintenance
+ * is a temporary block, not a property of the password.
+ */
+export function localSignInRefusal(
+  policy: { strategy: string; requireEmailVerification: boolean },
+  user: { role: Role; emailVerifiedAt: Date | null }
+): 'strategy' | 'email_unverified' | null {
+  if (!strategyAdmitsLocal(policy.strategy, user.role)) return 'strategy';
+  if (!emailAdmitsLocal(policy.requireEmailVerification, user.emailVerifiedAt)) return 'email_unverified';
+  return null;
 }
 
 /**
@@ -183,9 +232,9 @@ export async function verifyCredentials(
   // stays unchanged. No data dependency between this policy and the auth strategy
   // below: resolved in parallel instead of in sequence.
   const usernameRateLimitKey = username.trim().toLowerCase();
-  const [usernameRateLimitPolicy, authStrategyConfig] = await Promise.all([
+  const [usernameRateLimitPolicy, strategy] = await Promise.all([
     resolveRateLimitPolicy('loginByUsername', ctx.prisma),
-    getConfig(ctx.prisma, 'auth.strategy'),
+    getAuthStrategy(ctx.prisma),
   ]);
 
   try {
@@ -203,8 +252,6 @@ export async function verifyCredentials(
     if (mode === 'public') throw credentialsRefused();
     throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: SIGNED_IN_THROTTLED });
   }
-
-  const strategy = authStrategyConfig || 'local-first';
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
 
@@ -262,7 +309,7 @@ export async function verifyCredentials(
       // be told from an unknown user — so there is no condition on why LDAP refused.
       if (!authenticatedUser) {
         const local = await authenticateLocal(ctx.prisma, username, password);
-        if (local && hasPermission({ role: local.role }, '*:*')) {
+        if (local && strategyAdmitsLocal(strategy, local.role)) {
           authenticatedUser = local;
           authMethod = 'local';
         } else if (local) {
@@ -394,11 +441,7 @@ export async function authenticateUser(
   // Verify email (LOCAL only)
   const requireEmailVerification = await getRequireEmailVerification(ctx.prisma);
 
-  if (
-    requireEmailVerification &&
-    authMethod === 'local' &&
-    !authenticatedUser.emailVerifiedAt
-  ) {
+  if (authMethod === 'local' && !emailAdmitsLocal(requireEmailVerification, authenticatedUser.emailVerifiedAt)) {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
