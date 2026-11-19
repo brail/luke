@@ -15,8 +15,9 @@ import { ProfileTab } from './_components/ProfileTab';
 
 export default function CompanySettingsPage() {
   const { can } = usePermission();
-  // The organization tab reads the teams: shown to whoever may read them.
-  const canReadTeams = can('company_team:read');
+  // The organization tab lists the functions: shown to whoever may read them. Its team part asks
+  // for the team read of its own (`OrganizationTab`).
+  const canReadFunctions = can('company_function:read');
 
   return (
     <>
@@ -27,13 +28,13 @@ export default function CompanySettingsPage() {
       <Tabs defaultValue="profile" className="mt-6">
         <TabsList>
           <TabsTrigger value="profile">Profilo</TabsTrigger>
-          {canReadTeams && <TabsTrigger value="organizzazione">Organizzazione</TabsTrigger>}
+          {canReadFunctions && <TabsTrigger value="organizzazione">Organizzazione</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="mt-6 space-y-6">
           <ProfileTab />
           <BusinessTimeZoneCard />
         </TabsContent>
-        {canReadTeams && (
+        {canReadFunctions && (
           <TabsContent value="organizzazione" className="mt-6">
             <OrganizationTab />
           </TabsContent>

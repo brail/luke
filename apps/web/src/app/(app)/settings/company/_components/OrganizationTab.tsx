@@ -14,7 +14,9 @@ import { TeamList } from './TeamList';
 /**
  * "Organizzazione" settings tab showing the two-level company structure:
  * a sidebar of company functions on the left and the team list for the selected function on the right.
- * Respects `company_function:*` and `company_team:*` permissions for all CRUD actions.
+ * The functions need `company_function:read` (the page shows the tab only then); the team list needs
+ * `company_team:read`, and is not mounted without it. CRUD actions follow `company_function:*` and
+ * `company_team:*`.
  */
 export function OrganizationTab() {
   const { can } = usePermission();
@@ -26,6 +28,7 @@ export function OrganizationTab() {
   const canCreateTeam = can('company_team:create');
   const canUpdateTeam = can('company_team:update');
   const canDeleteTeam = can('company_team:delete');
+  const canReadTeams = can('company_team:read');
 
   const [showInactive, setShowInactive] = useState(false);
   const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: showInactive });
@@ -82,12 +85,14 @@ export function OrganizationTab() {
               )}
             </div>
 
-            <TeamList
-              functionId={selectedFunction.id}
-              canCreate={canCreateTeam}
-              canUpdate={canUpdateTeam}
-              canDelete={canDeleteTeam}
-            />
+            {canReadTeams && (
+              <TeamList
+                functionId={selectedFunction.id}
+                canCreate={canCreateTeam}
+                canUpdate={canUpdateTeam}
+                canDelete={canDeleteTeam}
+              />
+            )}
           </div>
         )}
       </div>
