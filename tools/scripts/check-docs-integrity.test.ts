@@ -59,7 +59,7 @@ import {
   italianTokens,
   trackedMarkdown,
 } from './check-docs-integrity';
-import { sequence } from './lib/pnpmWorkspace';
+import { sequence, sequenceEntries } from './lib/pnpmWorkspace';
 import { type Problem } from './lib/report';
 
 const created: string[] = [];
@@ -772,6 +772,26 @@ test('the shared reader keeps its lenient default and rejects malformed blocks o
   }
 });
 
+test('the shared reader drops inline comments and lends a comment block only to the item below it', () => {
+  const yaml =
+    "key:\n  - 'apps/*' # quoted\n  - '!apps/legacy'\n  # for b\n  - b\n  # orphan\n\n  - c # inline\nnext: 1\n";
+
+  assert.deepEqual(sequence(yaml, 'key'), ['apps/*', '!apps/legacy', 'b', 'c']);
+  assert.deepEqual(
+    sequenceEntries(yaml, 'key')?.map(({ line, comment }) => [line, comment]),
+    [
+      [2, 'quoted'],
+      [3, ''],
+      [5, 'for b'],
+      [8, 'inline'],
+    ]
+  );
+  assert.throws(
+    () => sequence('key:\n  - [a]\n', 'key', { strict: true }),
+    /`key` has an item the checks cannot read: `- \[a\]`\./
+  );
+});
+
 test('workspace discovery fails closed instead of checking a partial or empty list', () => {
   for (const [yaml, error] of [
     ['allowBuilds:\n  esbuild: true\n', /declares no workspace globs/],
@@ -794,10 +814,6 @@ test('workspace discovery fails closed instead of checking a partial or empty li
     [
       'packages:\n  - apps/*\nallowBuilds:\n  esbuild: true\npackages:\n  - packages/*\n',
       /`packages` is declared more than once/,
-    ],
-    [
-      'packages:\n  - apps/* # applications\n',
-      /unsupported workspace glob `apps\/\* # applications`/,
     ],
     ['packages:\n  - apps/{web,core}\n', /unsupported workspace glob/],
     ["packages:\n  - 'apps/**/**'\n", /unsupported workspace glob/],

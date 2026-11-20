@@ -135,6 +135,7 @@ const WORKSPACE_YAML = `packages:
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
+  # Fixture reason: the baseline keeps a whole-package exclusion with its reason.
   - electron-to-chromium
 `;
 

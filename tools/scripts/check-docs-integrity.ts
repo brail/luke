@@ -306,7 +306,7 @@ export function checkReachability(
  * matches `apps` — because pnpm appends `/package.json` to every glob, and the
  * `**` in that pattern matches zero levels. Everything else pnpm's glob engine
  * would accept — `?`, character classes, braces, extglobs, `./` and `..`
- * segments, consecutive `**` segments, trailing slashes, inline comments —
+ * segments, consecutive `**` segments, trailing slashes —
  * throws rather than being approximated: a misread pattern silently drops or
  * invents a workspace.
  */

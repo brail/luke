@@ -119,7 +119,9 @@ Three things `pnpm outdated` will not tell you, and you must check by hand:
   is set, versions younger than that window are invisible to resolution, so
   "latest" in the report is not latest on the registry.
   `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` is the per-package
-  exemption list — read it before concluding a package cannot be updated.
+  exemption list — read it before concluding a package cannot be updated. A
+  version-pinned entry there is a security fast path that expires with the
+  window (`references/platform-policy.md` §3, "Release age").
 - **Overrides that outrank the bump.** Anything in the `overrides` block of
   `pnpm-workspace.yaml` wins over `pnpm update`. Cross-check every advisory
   finding against that block (§6), and against `osv-scanner.toml`: an entry

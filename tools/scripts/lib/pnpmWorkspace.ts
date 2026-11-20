@@ -29,6 +29,16 @@ export function scalar(yaml: string, key: string): string | null {
 /** A column-0 mapping key: the only line a strict block may end on. */
 const TOP_LEVEL_KEY = /^(?:[A-Za-z_][\w.-]*|'[^']*'|"[^"]*"):(?:[ \t]|$)/;
 
+/** One item of a top-level block sequence, with the comment written for it. */
+export interface SequenceEntry {
+  /** The item, unquoted, without its inline comment. */
+  value: string;
+  /** 1-based line of the item. */
+  line: number;
+  /** The full-line comments right above the item and its inline comment, joined. */
+  comment: string;
+}
+
 /**
  * The items of a top-level block sequence, or `null` when the key is absent or
  * not written as a block (`key: [a, b]`, `key: # note`).
@@ -48,8 +58,22 @@ const TOP_LEVEL_KEY = /^(?:[A-Za-z_][\w.-]*|'[^']*'|"[^"]*"):(?:[ \t]|$)/;
 export function sequence(
   yaml: string,
   key: string,
-  { strict = false }: { strict?: boolean } = {}
+  options: { strict?: boolean } = {}
 ): string[] | null {
+  return sequenceEntries(yaml, key, options)?.map(entry => entry.value) ?? null;
+}
+
+/**
+ * `sequence()` with each item's line and comment. As in `mapping()`, a comment
+ * block belongs to the item right below it: it ends at a blank line or at
+ * another item. As in YAML, a `#` after whitespace starts an inline comment, so
+ * `- pkg # note` is the item `pkg`.
+ */
+export function sequenceEntries(
+  yaml: string,
+  key: string,
+  { strict = false }: { strict?: boolean } = {}
+): SequenceEntry[] | null {
   const declarations = yaml.match(new RegExp(`^${key}:(?:[ \\t]|$)`, 'gm')) ?? [];
   if (strict && declarations.length > 1) {
     throw new Error(
@@ -59,11 +83,18 @@ export function sequence(
   }
   const start = yaml.match(new RegExp(`^${key}:[ \\t]*$`, 'm'));
   if (start?.index === undefined) return null;
-  const items: string[] = [];
-  for (const line of yaml.slice(start.index).split('\n').slice(1)) {
-    if (/^[ \t]*#/.test(line)) continue;
+  const firstLine = yaml.slice(0, start.index).split('\n').length;
+  const entries: SequenceEntry[] = [];
+  let comment: string[] = [];
+  for (const [offset, line] of yaml.slice(start.index).split(/\r?\n/).slice(1).entries()) {
+    const note = line.match(/^[ \t]*#(.*)$/);
+    if (note) {
+      comment.push(note[1].trim());
+      continue;
+    }
     const item = line.match(/^[ \t]+-[ \t]+(.*?)\s*$/);
     if (!item) {
+      comment = [];
       if (/^\S/.test(line)) {
         if (strict && line.startsWith('-')) {
           throw new Error(
@@ -85,9 +116,18 @@ export function sequence(
       }
       continue;
     }
-    items.push(item[1].replace(/^['"]|['"]$/g, ''));
+    const parsed = valueAndComment(item[1]);
+    if (strict && parsed === null) {
+      throw new Error(`\`${key}\` has an item the checks cannot read: \`${line.trim()}\`.`);
+    }
+    entries.push({
+      value: parsed?.value ?? item[1].replace(/^['"]|['"]$/g, ''),
+      line: firstLine + offset + 1,
+      comment: [...comment, parsed?.comment ?? ''].join(' ').trim(),
+    });
+    comment = [];
   }
-  return items;
+  return entries;
 }
 
 /** One entry of a top-level block mapping, with the comment written for it. */

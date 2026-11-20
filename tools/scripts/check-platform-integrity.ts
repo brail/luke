@@ -31,10 +31,10 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { validRange } from 'semver';
+import { valid, validRange } from 'semver';
 
 import { lockfilePackages as parseLockfilePackages } from './lib/pnpmLockfile';
-import { mapping, scalar, sequence, splitSelector } from './lib/pnpmWorkspace';
+import { mapping, scalar, sequenceEntries, splitSelector } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 // ---------------------------------------------------------------------------
@@ -517,8 +517,26 @@ function checkPackageManager(root: string, problems: Problem[]): void {
   }
 }
 
-/** P4 — the approved release-age quarantine is on, strict, and unbypassed. */
-function checkReleaseAgePolicy(root: string, problems: Problem[]): void {
+/**
+ * The instant a fast-path exclusion's version was published, as an entry's comment states it in
+ * the form `pnpm view <pkg> time --json` prints (`published 2026-11-20T08:00:00.000Z`), or `null`
+ * when the comment states none or one that is not a real instant in that form (`2026-02-30` does
+ * not round-trip).
+ */
+function publishedAt(comment: string): number | null {
+  const instant = comment.match(/\bpublished (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)(?!\S)/)?.[1];
+  if (instant === undefined) return null;
+  const time = Date.parse(instant);
+  return Number.isNaN(time) || new Date(time).toISOString() !== instant ? null : time;
+}
+
+/**
+ * P4 — the approved release-age quarantine is on, strict, and unbypassed.
+ *
+ * `now` makes the gate deliberately clock-dependent: a fast-path exclusion turns it red once its
+ * version is older than the window, so the entry cannot stay behind (#274).
+ */
+function checkReleaseAgePolicy(root: string, problems: Problem[], now: Date): void {
   const yaml = read(root, 'pnpm-workspace.yaml');
   if (yaml === null) {
     problems.push({
@@ -570,15 +588,33 @@ function checkReleaseAgePolicy(root: string, problems: Problem[]): void {
     });
   }
 
-  // P4c — exclusions are bounded and current.
-  const excludes = sequence(yaml, 'minimumReleaseAgeExclude') ?? [];
+  // P4c — exclusions are bounded and current. Read strict: a declaration the reader cannot take in
+  // full would otherwise pass as fewer exclusions, or none.
+  let excludes;
+  try {
+    excludes = sequenceEntries(yaml, 'minimumReleaseAgeExclude', { strict: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    problems.push({ file: 'pnpm-workspace.yaml', line: 1, message });
+    return;
+  }
+  if (excludes === null && scalar(yaml, 'minimumReleaseAgeExclude') !== null) {
+    problems.push({
+      file: 'pnpm-workspace.yaml',
+      line: 1,
+      message:
+        '`minimumReleaseAgeExclude` is not written as a block sequence (`- item` lines right below ' +
+        'a bare key), so the checks cannot read it: rewrite it as one.',
+    });
+    return;
+  }
   const resolved = lockfilePackages(root);
 
-  for (const selector of excludes) {
+  for (const { value: selector, line, comment } of excludes ?? []) {
+    const at = { file: 'pnpm-workspace.yaml', line };
     if (UNIVERSAL_EXCLUDE_SELECTORS.includes(selector)) {
       problems.push({
-        file: 'pnpm-workspace.yaml',
-        line: 1,
+        ...at,
         message:
           `\`${selector}\` exempts every package, which disables the quarantine ` +
           'entirely while looking like a narrow exception. A bounded scope ' +
@@ -598,12 +634,68 @@ function checkReleaseAgePolicy(root: string, problems: Problem[]): void {
 
     if (!matches) {
       problems.push({
-        file: 'pnpm-workspace.yaml',
-        line: 1,
+        ...at,
         message:
           `\`${selector}\` matches nothing the lockfile currently resolves. ` +
           'An exception is added with the dependency that needs it, never ' +
           'ahead of one: a dormant entry reads as active policy.',
+      });
+    }
+
+    // P4e — a whole-package exclusion says why; a version-pinned one is the security fast path,
+    // which names its advisory and expires with the window.
+    if (version === undefined) {
+      if (comment === '') {
+        problems.push({
+          ...at,
+          message:
+            `\`${selector}\` exempts the whole package with no reason: its own comment (the ` +
+            'lines right above it, or inline) must say why the quarantine cannot apply to it.',
+        });
+      }
+      continue;
+    }
+    if (valid(version) !== version) {
+      problems.push({
+        ...at,
+        message:
+          `\`${selector}\` does not name one exact version as the lockfile spells it: a ` +
+          'fast-path entry pins the single fixed version it lets through, so it has one publish ' +
+          'instant and one expiry.',
+      });
+      continue;
+    }
+    if (!ADVISORY_ID.test(comment)) {
+      problems.push({
+        ...at,
+        message:
+          `\`${selector}\` names no advisory: a fast-path entry exists only for a security fix, ` +
+          'and its comment must carry the GHSA or CVE id it answers.',
+      });
+    }
+    const published = publishedAt(comment);
+    if (published === null) {
+      problems.push({
+        ...at,
+        message:
+          `\`${selector}\` states no publish instant: its comment must carry ` +
+          '`published <UTC instant>` as `pnpm view <pkg> time --json` prints it ' +
+          '(`published 2026-11-20T08:00:00.000Z`), so the check knows when it expires.',
+      });
+    } else if (published > now.getTime()) {
+      problems.push({
+        ...at,
+        message:
+          `\`${selector}\` states a publish instant in the future: copy it from ` +
+          '`pnpm view <pkg> time --json`.',
+      });
+    } else if (now.getTime() - published >= MINIMUM_RELEASE_AGE * 60_000) {
+      problems.push({
+        ...at,
+        message:
+          `\`${selector}\` is past the quarantine window: the version is older than ` +
+          `${MINIMUM_RELEASE_AGE / 60} hours, so the quarantine admits it on its own. ` +
+          'Remove the entry (luke-deps security mode, fast path).',
       });
     }
   }
@@ -1683,7 +1775,7 @@ function checkOverrides(root: string, all: Manifest[], problems: Problem[]): voi
 }
 
 /** Every platform invariant, against a repository root. */
-export function checkPlatformIntegrity(root: string): Problem[] {
+export function checkPlatformIntegrity(root: string, now: Date = new Date()): Problem[] {
   const problems: Problem[] = [];
   const all = manifests(root);
 
@@ -1698,7 +1790,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkVersionAlignment(all, problems);
   checkNodePins(root, problems);
   checkPackageManager(root, problems);
-  checkReleaseAgePolicy(root, problems);
+  checkReleaseAgePolicy(root, problems, now);
   checkOverrides(root, all, problems);
   checkDependencyFamilies(all, problems);
   checkSecurityRunnerCanonicalForm(root, problems);

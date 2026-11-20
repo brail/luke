@@ -85,8 +85,8 @@ function repo(files: RepoFiles): string {
 }
 
 /** The invariant is violated: at least one problem matches. */
-function expectFailure(files: RepoFiles, pattern: RegExp): void {
-  const problems = checkPlatformIntegrity(repo(files));
+function expectFailure(files: RepoFiles, pattern: RegExp, now?: Date): void {
+  const problems = checkPlatformIntegrity(repo(files), now);
   const matched = problems.filter(p => pattern.test(p.message));
   assert.ok(
     matched.length > 0,
@@ -96,8 +96,8 @@ function expectFailure(files: RepoFiles, pattern: RegExp): void {
 }
 
 /** The configuration is legitimate: nothing is reported at all. */
-function expectClean(files: RepoFiles): void {
-  const problems = checkPlatformIntegrity(repo(files));
+function expectClean(files: RepoFiles, now?: Date): void {
+  const problems = checkPlatformIntegrity(repo(files), now);
   assert.deepEqual(
     problems.map(p => p.message),
     [],
@@ -263,6 +263,16 @@ test('P4d fails when strict enforcement is merely omitted', () => {
 
 const POLICY = 'minimumReleaseAge: 4320\nminimumReleaseAgeStrict: true\n';
 
+// P4e — the security fast path: one pinned version, its advisory, its publish
+// instant, and an expiry at the end of the window. The clock is fixed so the
+// 72 h boundary is exact.
+
+const NOW = new Date('2026-11-20T12:00:00.000Z');
+const ADVISORY = 'GHSA-7589-6fvf-x4pw';
+function exclude(items: string): RepoFiles {
+  return withPolicy(`${POLICY}minimumReleaseAgeExclude:\n${items}`);
+}
+
 test('P4c fails on a universal exclusion that silently disables the quarantine', () => {
   for (const selector of ["'*'", "'**'"]) {
     expectFailure(
@@ -274,7 +284,7 @@ test('P4c fails on a universal exclusion that silently disables the quarantine',
 
 test('P4c accepts a bounded scope wildcard with a resolved match', () => {
   expectClean(
-    withPolicy(`${POLICY}minimumReleaseAgeExclude:\n  - '@myorg/*'\n`)
+    withPolicy(`${POLICY}minimumReleaseAgeExclude:\n  - '@myorg/*' # reason: in-house scope\n`)
   );
 });
 
@@ -295,8 +305,99 @@ test('P4c fails on a stale version-specific exclusion', () => {
 
 test('P4c accepts a current version-specific exclusion', () => {
   expectClean(
-    withPolicy(`${POLICY}minimumReleaseAgeExclude:\n  - prettier@3.9.6\n`)
+    exclude(`  - prettier@3.9.6 # ${ADVISORY}, published 2026-11-20T08:00:00.000Z\n`),
+    NOW
   );
+});
+
+test('P4e accepts a fast-path entry inside the window, its comment above it', () => {
+  // The inline form is the P4c case above.
+  expectClean(
+    exclude(`  # ${ADVISORY}, published 2026-11-17T12:00:00.001Z\n  - prettier@3.9.6\n`),
+    NOW
+  );
+});
+
+test('P4e fails on a fast-path entry once its version is past the window', () => {
+  expectFailure(
+    exclude(`  - prettier@3.9.6 # ${ADVISORY}, published 2026-11-17T12:00:00.000Z\n`),
+    /`prettier@3\.9\.6` is past the quarantine window: .*older than 72 hours/,
+    NOW
+  );
+  expectFailure(
+    exclude(`  - prettier@3.9.6 # ${ADVISORY}, published 2026-11-01T08:00:00.000Z\n`),
+    /is past the quarantine window/,
+    NOW
+  );
+});
+
+test('P4e fails on a publish instant in the future', () => {
+  expectFailure(
+    exclude(`  - prettier@3.9.6 # ${ADVISORY}, published 2026-11-20T13:00:00.000Z\n`),
+    /states a publish instant in the future/,
+    NOW
+  );
+});
+
+test('P4e fails when the publish instant is missing or not a real UTC instant', () => {
+  for (const instant of [
+    '',
+    'published 2026-11-20',
+    'published 2026-11-20T08:00:00.000',
+    'published 2026-11-20T08:00:00.000+01:00',
+    'published 2026-11-20T08:00Z',
+    'published 2026-02-30T08:00:00.000Z',
+    'published 2026-11-20T24:00:00.000Z',
+  ]) {
+    expectFailure(
+      exclude(`  - prettier@3.9.6 # ${ADVISORY} ${instant}\n`),
+      /`prettier@3\.9\.6` states no publish instant/,
+      NOW
+    );
+  }
+});
+
+test('P4e fails on a fast-path entry that names no advisory', () => {
+  expectFailure(
+    exclude('  - prettier@3.9.6 # published 2026-11-20T08:00:00.000Z\n'),
+    /`prettier@3\.9\.6` names no advisory/,
+    NOW
+  );
+  // A comment block ends at a blank line: it is not lent to the entry below it.
+  expectFailure(
+    exclude(`  # ${ADVISORY}, published 2026-11-20T08:00:00.000Z\n\n  - prettier@3.9.6\n`),
+    /names no advisory/,
+    NOW
+  );
+});
+
+test('P4e fails on an entry that does not pin one exact version', () => {
+  for (const selector of ["'prettier@3.9.6 || 3.9.7'", 'prettier@^3.9.6', 'prettier@v3.9.6']) {
+    expectFailure(
+      exclude(`  - ${selector} # ${ADVISORY}, published 2026-11-20T08:00:00.000Z\n`),
+      /does not name one exact version/,
+      NOW
+    );
+  }
+});
+
+test('P4e fails on a whole-package exclusion without a reason, and accepts one with it', () => {
+  expectFailure(exclude('  - prettier\n'), /`prettier` exempts the whole package with no reason/);
+  expectClean(exclude('  - prettier # reason: data-only, republished daily\n'));
+});
+
+test('P4 refuses an exclusion list it cannot read in full', () => {
+  for (const [yaml, message] of [
+    ['minimumReleaseAgeExclude: [prettier@3.9.6]\n', /is not written as a block sequence/],
+    ['minimumReleaseAgeExclude: # note\n  - prettier\n', /is not written as a block sequence/],
+    ['minimumReleaseAgeExclude:\n- prettier\n', /item that is not indented/],
+    [
+      'minimumReleaseAgeExclude:\n  - prettier\nminimumReleaseAgeExclude:\n  - eslint\n',
+      /declared more than once/,
+    ],
+  ] as const) {
+    expectFailure(withPolicy(`${POLICY}${yaml}`), message, NOW);
+  }
 });
 
 // ---------------------------------------------------------------------------

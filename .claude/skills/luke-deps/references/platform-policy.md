@@ -84,7 +84,25 @@ static analysis   Semgrep, Gitleaks, OSV
   version in the natural range is dead weight.
 - **Release age** — quarantine is either on or off. An exclusion list without a
   `minimumReleaseAge` is inert policy that reads as protection. This is a
-  decision to surface, never one to make silently.
+  decision to surface, never one to make silently. The window is 72 hours
+  (`minimumReleaseAge: 4320`), strict (owner, #76 c, #274).
+  - **Fast path for a security fix.** A fixed version younger than the window
+    enters through a `minimumReleaseAgeExclude` entry pinned to that one
+    version (`pkg@x.y.z`), whose comment carries the GHSA or CVE id and the
+    publish instant as `pnpm view <pkg> time --json` prints it
+    (`# GHSA-…, published 2026-11-20T08:00:00.000Z`). Never a whole-package
+    entry, never a `||` list: one version, one instant, one expiry. The check
+    cannot read the registry, so review compares the instant with
+    `pnpm view`.
+  - **Guard.** P4e in `check-platform-integrity` refuses a pinned entry without
+    advisory id or valid UTC instant, and fails once the version is older than
+    the window: then pnpm admits it on its own, so the entry is removed in a
+    `chore(deps)` commit. A whole-package exclusion must state its reason.
+  - **Release consequence.** The gate is clock-dependent on purpose. A tag cut
+    while an entry is inside its window passes; a full rerun of that same tag
+    after expiry fails, and the cleanup commit does not repair it — recovery is
+    a new commit and a new tag (the next candidate, or a hotfix published
+    during the window). No bypass.
 - **Majors** — one per verification cycle, always.
 
 ## 4. Held technology decisions

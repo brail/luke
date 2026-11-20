@@ -18,10 +18,15 @@ allowBuilds:
 # explicit rather than inherited: with `false`, a range whose only match is
 # younger than the window installs the immature version instead of failing.
 # Exclusions are added with the dependency that needs one, never ahead of it.
+#
+# Fast path for a security fix younger than the window (luke-deps security mode):
+# a `minimumReleaseAgeExclude` entry pinned to that one version, commented with
+# its advisory id and publish instant, e.g.
+#   - pkg@1.2.3 # GHSA-xxxx-xxxx-xxxx, published 2026-11-20T08:00:00.000Z
+# `check:drift` (P4e) fails once the version is older than the window: remove
+# the entry then. A whole-package exclusion must state its reason.
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
-minimumReleaseAgeExclude:
-  - electron-to-chromium
 
 overrides:
   # GHSA-w5hq-g745-h8pq (CVE-2026-41907): missing buffer bounds check in v3/v5/v6, fixed in 11.1.1

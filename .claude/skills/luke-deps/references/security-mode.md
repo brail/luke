@@ -15,6 +15,13 @@ the finding.
    fixed version and `pnpm why -r <pkg> --prod` empty → a time-limited entry
    in `osv-scanner.toml`, as its header requires. No fixed version and code
    that runs in production → the owner decides; never an ignore.
+   Fixed version younger than the 72 h quarantine (strict: install fails with
+   `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, and a Dependabot security PR fails the
+   frozen install in CI) → wait, or take the fast path: a
+   `minimumReleaseAgeExclude` entry pinned to that version, with the advisory
+   id and `published <instant>` from `pnpm view <pkg> time --json` in its
+   comment (`platform-policy.md` §3, "Release age"). Remove the entry in a
+   `chore(deps)` commit once `check:drift` reports it past the window.
 4. Check the finding is not being _caused_ by an existing override.
 5. Re-run `pnpm security:deps` to confirm it is gone — the exit code, not a
    reading of the diff. Exit 0 can come from a filter: read the
