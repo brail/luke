@@ -691,10 +691,19 @@ export function checkSkills(root: string): SkillCheckSummary {
 // ── Agent definitions ────────────────────────────────────────────────────────
 
 /**
- * The roles `CLAUDE.md` "Sessions, agents and models" delegates to `.claude/agents/`. A deleted file must
- * turn the check red, not leave it vacuously green.
+ * The roles delegated to `.claude/agents/`: those of `CLAUDE.md` "Sessions, agents and models" and the
+ * `ux-audit` skill's auditors. A deleted file must turn the check red, not leave it vacuously green, nor
+ * let an outside agent of the same name stand in for it.
  */
-export const EXPECTED_AGENTS = ['design-author', 'plan-reviewer', 'researcher', 'verifier'];
+export const EXPECTED_AGENTS = [
+  'design-author',
+  'plan-reviewer',
+  'researcher',
+  'verifier',
+  'ux-designer',
+  'accessibility-auditor',
+  'performance-auditor',
+];
 
 /** The models and the standard efforts a role may declare; `xhigh` and `max` are per-call exceptions. */
 const AGENT_MODELS = ['fable', 'opus', 'sonnet', 'haiku'];
@@ -752,7 +761,7 @@ export function checkAgents(root: string): number {
       problems.push({
         file: `.claude/agents/${name}.md`,
         line: 1,
-        message: 'is missing: CLAUDE.md "Sessions, agents and models" delegates this role to it.',
+        message: 'is missing: CLAUDE.md "Sessions, agents and models" or a skill delegates this role to it.',
       });
     }
   }

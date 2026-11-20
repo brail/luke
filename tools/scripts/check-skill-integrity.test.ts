@@ -536,5 +536,5 @@ test('a deleted role file turns the check red instead of passing vacuously', () 
   withRepo(agentFiles(EXPECTED_AGENTS.filter(name => name !== 'researcher')), root =>
     assert.throws(() => checkAgents(root), /researcher\.md:1 — is missing/)
   );
-  withRepo({}, root => assert.throws(() => checkAgents(root), /4 problems in agent definitions/));
+  withRepo({}, root => assert.throws(() => checkAgents(root), new RegExp(`\\] ${EXPECTED_AGENTS.length} problems in agent definitions`)));
 });

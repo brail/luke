@@ -33,6 +33,7 @@ were equally believable.
 | `luke-fix`       | controlled application remediation                                                     | platform, docs and test remediation                    | yes, after approval  | re-audit + `luke-test` verification              |
 | `luke-docs`      | documentation impact and semantic drift; README, JSDoc, Prisma field docs, ADR index    | code compliance, architectural decisions, platform policy | audit no / docs and comments yes | repository evidence + docs integrity checker |
 | `luke-full`      | orchestration and synthesis                                                            | any checklist of its own                               | no                   | child skill reports                              |
+| `ux-audit`       | evidence and assessment of the rendered UI on a disposable instance (usability, accessibility, perceived performance) and the refactoring plan derived from it | code changes, dependency choices, RC or production data | `.planning/ux-audit/` only | captured evidence (screenshots, Lighthouse, traces) + gated report |
 
 ## 2. The boundary rule
 
@@ -88,6 +89,7 @@ rather than leaving the second to be inferred.
 | auth bypass, IDOR, injection, token weakness, data exposure | `luke-security` | `luke-fix`        |
 | missing or inadequate verification for a change             | `luke-test`     | `luke-test`       |
 | documentation impact; README / JSDoc / Prisma doc / ADR index or semantic drift | `luke-docs` | `luke-docs` |
+| usability, accessibility or perceived-performance finding in the rendered UI | `ux-audit` | `luke-fix` |
 
 The two columns differ only where the skill that owns an invariant is not the
 one that may edit the code: an application finding is judged by its specialist
