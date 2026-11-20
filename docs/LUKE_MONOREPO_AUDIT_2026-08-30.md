@@ -5161,7 +5161,7 @@ appendix is modified.
 | `sideEffects: false` and barrel tree-shaking | H.11 | not needed | closed |
 | The `zod` pre-bundle coupling in the browser test config | H.11 | check it on a cold cache, drop it if unneeded | closed by `4552c014` |
 | An unknown first token does not stop luke-fix, luke-deps or luke-test | U.9 | stop on it | closed by `fb2c1706` |
-| `.claude/commands/ux-audit.md` argument binding | U.9 | bind it when the command is first used | open, at first use |
+| `.claude/commands/ux-audit.md` argument binding | U.9 | bind it when the command is first used | closed by `b52bf669`: the untracked local command was removed outside git; the `ux-audit` skill that commit adds replaces it and binds its arguments once (`**Invocation arguments:** $ARGUMENTS`) |
 | Lockfile deduplication candidate | S.6 | joins Z.3's "next `/luke-deps` review" row | open, next `/luke-deps` |
 | Module-identity headers naming unpublished subpaths | H.12 | join Z.3's comment unit | open, with that unit |
 | CHANGELOG versus GitHub Releases | T.8 | generate the Release from the CHANGELOG section | closed by `f06df275`, `1093ed18` and `1e33918c`: `release.yml` publishes "Luke X.Y.Z" for every stable tag |
@@ -5190,5 +5190,5 @@ Outside the 22: the protocol's dead "Score honesty" rule, which contradicted luk
 health, is replaced by a no-score rule (`18f3686f`).
 
 Open after this section: the trust policy, the lockfile and the H.12 headers wait for their next
-unit as stated; the second audit pass waits for the graduation; the ux-audit binding waits for
-first use; the web lint units are #133. Every residual in Z.2, Z.3 and Z.5 keeps its disposition.
+unit as stated; the second audit pass waits for the graduation; the web lint units are #133.
+Every residual in Z.2, Z.3 and Z.5 keeps its disposition.
