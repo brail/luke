@@ -340,6 +340,17 @@ Users who exist only in the directory wait for it either way. Prevention is the
 setup requirement in the API documentation: before choosing `ldap-only`, make
 sure at least one administrator can log in locally.
 
+A certificate the client refuses over `ldaps://` is an outage of the same kind:
+the service bind fails, the rows say `ldap_unavailable` and `/readyz` reports
+`ldap` as failed. `Test Connessione` names the reason — a certificate no trusted
+authority issued, a host name the certificate does not carry, or one expired or
+not yet valid. A directory whose certificate no public CA issued (self-signed, or
+from an enterprise CA) is trusted by pasting its certificate, or the CA's, into
+`Certificati attendibili` on the LDAP settings page; the URL must use a host name
+the certificate carries. Verification cannot be turned off, by setting or by
+`NODE_TLS_REJECT_UNAUTHORIZED`. Change the URL or the certificate with an
+administrator who can sign in locally at hand, then run `Test Connessione`.
+
 ---
 
 ## Ending maintenance without the web

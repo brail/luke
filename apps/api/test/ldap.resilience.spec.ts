@@ -34,6 +34,7 @@ const ldapConfig = {
   groupSearchBase: '',
   groupSearchFilter: '',
   roleMapping: {},
+  trustedCertificates: '',
   strategy: 'local-first' as const,
 };
 
@@ -140,6 +141,22 @@ describe('LDAP Resilience', () => {
         timeout: 3000,
         connectTimeout: 3000,
       });
+    });
+
+    it('builds the sign-in client with the TLS options of every LDAP client (#281)', async () => {
+      const client = new ResilientLdapClient(
+        { ...ldapConfig, url: 'ldaps://test.com', trustedCertificates: 'trusted-pem' },
+        resilienceConfig,
+        silentLogger
+      );
+      await client.connect();
+
+      expect(ClientConstructor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'ldaps://test.com',
+          tlsOptions: expect.objectContaining({ rejectUnauthorized: true, ca: expect.arrayContaining(['trusted-pem']) }),
+        })
+      );
     });
   });
 

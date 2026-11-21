@@ -17,16 +17,34 @@ import {
 } from '../lib/configManager';
 import { externalCheckFailed, toErrorCode, toErrorMessage } from '../lib/error';
 import { fillLdapFilter } from '../lib/ldapAuth';
+import { ldapClientOptions, trustedCertificateDetails } from '../lib/ldapTls';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
+import { tlsFailureKind, type TlsFailureKind } from '../lib/tlsErrors';
 import { router, protectedProcedure } from '../lib/trpc';
 import { saveAuthConfig, type AuthConfigWrite } from '../services/authConfig.service';
 
-/** The fixed text of a bind the directory refused in a settings test (#193); the caller logs why. */
+/** The fixed text of each certificate refusal a settings test can name (#281); any other kind has none. */
+const TLS_REFUSED_MESSAGES: Partial<Record<TlsFailureKind, string>> = {
+  untrusted:
+    'Connessione LDAP fallita: il certificato del server non è attendibile. Incolla in «Certificati attendibili» il certificato del server o della CA che lo ha emesso.',
+  hostname:
+    "Connessione LDAP fallita: il nome del server nell'URL non corrisponde al certificato. Usa nell'URL il nome riportato nel certificato.",
+  validity: 'Connessione LDAP fallita: il certificato del server è scaduto o non ancora valido.',
+};
+
+/**
+ * The fixed text of a bind that failed in a settings test (#193): refused credentials, a refused
+ * certificate (#281, from the TLS error's `code`, which ldapts passes through), or anything else. The
+ * caller logs why.
+ */
 function bindFailedMessage(err: unknown): string {
-  return err instanceof InvalidCredentialsError
-    ? 'Connessione LDAP fallita: credenziali di bind non valide'
-    : 'Connessione LDAP fallita: verifica URL, raggiungibilità del server, certificato TLS e bind DN';
+  if (err instanceof InvalidCredentialsError) return 'Connessione LDAP fallita: credenziali di bind non valide';
+  // Only the `code` Node sets on its socket errors is read.
+  const kind = tlsFailureKind((err as { code?: unknown } | null)?.code);
+  const tlsRefused = kind === null ? undefined : TLS_REFUSED_MESSAGES[kind];
+  if (tlsRefused) return tlsRefused;
+  return 'Connessione LDAP fallita: verifica URL, raggiungibilità del server, certificato TLS e bind DN';
 }
 
 export const ldapRouter = router({
@@ -35,7 +53,7 @@ export const ldapRouter = router({
    * sensitive). Never the strategy (`saveStrategy`, #246); turning LDAP off under `ldap-only` is refused.
    *
    * @auth {config:update}
-   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, enabled.
+   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, trustedCertificates, enabled.
    * @output {{ success: true, message: string }}
    */
   saveLdapConfig: protectedProcedure
@@ -74,6 +92,11 @@ export const ldapRouter = router({
           {
             key: 'auth.ldap.roleMapping',
             value: input.roleMapping,
+            encrypt: true,
+          },
+          {
+            key: 'auth.ldap.trustedCertificates',
+            value: input.trustedCertificates,
             encrypt: true,
           },
         ];
@@ -129,6 +152,7 @@ export const ldapRouter = router({
               'auth.ldap.groupSearchBase',
               'auth.ldap.groupSearchFilter',
               'auth.ldap.roleMapping',
+              'auth.ldap.trustedCertificates',
             ],
             ldapEnabled: input.enabled,
             hasBindPassword: !!input.bindPassword,
@@ -213,6 +237,12 @@ export const ldapRouter = router({
         const roleMappingJson =
           invalidRoleMapping ?? (unreadable.includes('roleMapping') ? '' : JSON.stringify(config.roleMapping, null, 2));
 
+        // None, logged, when the stored certificates do not parse.
+        const certificateDetails = config.trustedCertificates ? trustedCertificateDetails(config.trustedCertificates) : [];
+        if (certificateDetails === null) {
+          ctx.logger.warn({ key: 'auth.ldap.trustedCertificates' }, 'Stored LDAP trusted certificates do not parse');
+        }
+
         // For security, omit sensitive data
         return {
           enabled: config.enabled,
@@ -224,6 +254,8 @@ export const ldapRouter = router({
           groupSearchBase: config.groupSearchBase,
           groupSearchFilter: config.groupSearchFilter,
           roleMapping: roleMappingJson,
+          trustedCertificates: config.trustedCertificates,
+          trustedCertificateDetails: certificateDetails ?? [],
           strategy: config.strategy,
           unreadable,
           roleMappingInvalid: invalidRoleMapping !== null,
@@ -270,11 +302,7 @@ export const ldapRouter = router({
         ctx.logger.info('Testing LDAP connection');
 
         // Create LDAP client (ldapts: lazy connection on first bind)
-        client = new Client({
-          url: config.url,
-          timeout: 10000,
-          connectTimeout: 5000,
-        });
+        client = new Client(ldapClientOptions(config, { timeout: 10000, connectTimeout: 5000 }));
 
         // Test connection and bind
         try {
@@ -351,10 +379,7 @@ export const ldapRouter = router({
         }
 
         // Create LDAP client (ldapts: lazy connection on first bind)
-        client = new Client({
-          url: config.url,
-          timeout: 10000,
-        });
+        client = new Client(ldapClientOptions(config, { timeout: 10000, connectTimeout: 5000 }));
 
         // Administrative bind
         try {

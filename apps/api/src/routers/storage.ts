@@ -20,6 +20,7 @@ import { externalCheckFailed } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { resolvePublicUrl } from '../lib/storageUrl';
+import { tlsFailureKind } from '../lib/tlsErrors';
 import { router, protectedProcedure } from '../lib/trpc';
 import { resetStorageProvider, getStorageProvider, connectS3Provider, readS3Config } from '../storage';
 import { generateStorageKey } from '../storage/keys';
@@ -46,18 +47,6 @@ const S3_UNREACHABLE_CODES: ReadonlySet<unknown> = new Set([
   'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
 ]);
 
-/** Node's codes for a certificate the client refused. */
-const TLS_CERT_CODES: ReadonlySet<unknown> = new Set([
-  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
-  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CERT_HAS_EXPIRED',
-]);
-
-/** A TLS failure: SSL on a plain port, or the reverse (`EPROTO`, `ERR_SSL_*`), or a refused certificate. */
-function isTlsFailure(code: unknown): boolean {
-  if (typeof code !== 'string') return false;
-  return code === 'EPROTO' || code.startsWith('ERR_SSL_') || code.startsWith('ERR_TLS_') || TLS_CERT_CODES.has(code);
-}
-
 /**
  * The fixed text of a failed S3 connection test (#255), from the network error's `code` or the S3
  * error's `name` (AWS SDK v3). A missing bucket is created by `init`, so it reads as a refused
@@ -69,7 +58,7 @@ function s3TestFailureMessage(err: unknown): string {
   if (S3_UNREACHABLE_CODES.has(code) || name === 'TimeoutError') {
     return 'Server S3 non raggiungibile: verifica endpoint e porta';
   }
-  if (isTlsFailure(code)) return 'Connessione TLS al server S3 non riuscita: verifica SSL, porta e certificato';
+  if (tlsFailureKind(code) !== null) return 'Connessione TLS al server S3 non riuscita: verifica SSL, porta e certificato';
   if (name === 'InvalidAccessKeyId' || name === 'SignatureDoesNotMatch') {
     return 'Accesso S3 rifiutato: verifica access key e secret key';
   }

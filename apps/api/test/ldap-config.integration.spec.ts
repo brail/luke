@@ -34,6 +34,7 @@ describe('LDAP Config Management', () => {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: {},
+      trustedCertificates: '',
       strategy: null,
     });
   });
@@ -139,7 +140,8 @@ describe('LDAP Config Management', () => {
     const result = await checkLdap(prisma);
 
     expect(result.ok).toBe(false);
-    // The read itself failed: no bind was tried. A fixed text: `/readyz` is open to anyone.
-    expect(result.message).toBe('LDAP configuration cannot be read');
+    // The read itself failed: no bind was tried. The runner logs this message and publishes only
+    // ok/failed, so it names the broken key.
+    expect(result.message).toContain('auth.ldap.bindPassword');
   });
 });

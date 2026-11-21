@@ -205,7 +205,10 @@ for the value again, as NAV's preview and manual sync do. On the LDAP page each 
 asks only for the fields it reads, while LDAP sign-in and `/readyz` refuse any
 unreadable LDAP value; an unreadable field there can also be removed with `Rimuovi`
 (through `config.delete`, after a confirmation), except the URL, search base and
-search filter, which LDAP needs. On the LDAP, Google, mail
+search filter, which LDAP needs. The LDAP page also holds `Certificati attendibili`
+(PEM, for `ldaps://`): under it each stored certificate's subject, whether it is
+self-signed and its expiry in the profile zone, and a note when the URL is
+`ldap://`, where it is not used. On the LDAP, Google, mail
 and NAV pages a blank save keeps the credential's row; the storage page refuses it
 until the value is entered again. Google's refresh token has no field: the page asks
 to connect the account again, or to disconnect it. The mail and NAV pages read their

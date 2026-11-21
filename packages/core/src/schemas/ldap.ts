@@ -30,6 +30,26 @@ export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];
 export const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 export type RoleMapping = z.infer<typeof RoleMappingSchema>;
 
+/** The refusal of a value that is not one or more PEM certificates. */
+export const TRUSTED_CERTIFICATES_MESSAGE = 'Certificati non validi: incolla uno o più blocchi PEM «BEGIN CERTIFICATE».';
+
+/**
+ * One PEM `CERTIFICATE` block. Its body's characters exclude `-`, so a match is linear. The API splits
+ * a stored value into certificates with it (`ldapTls.ts`).
+ */
+export const PEM_CERTIFICATE_BLOCK = /-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----/;
+
+/**
+ * Certificates LDAP over TLS trusts besides the public CAs (#281): the directory's own certificate,
+ * self-signed, or the CA that issued it. One to ten PEM `CERTIFICATE` blocks and nothing else, so a
+ * pasted private key is refused by its shape; the API also parses each block (`ldapTls.ts`), which
+ * this browser-safe check cannot.
+ */
+export const TrustedCertificatesSchema = z
+  .string()
+  .max(65_536, TRUSTED_CERTIFICATES_MESSAGE)
+  .regex(new RegExp(`^\\s*(?:${PEM_CERTIFICATE_BLOCK.source}\\s*){1,10}$`), TRUSTED_CERTIFICATES_MESSAGE);
+
 /**
  * Input schema for saving the LDAP connection settings (`saveLdapConfig`).
  * `roleMapping` is the JSON text of a `RoleMappingSchema`; a mistyped role names its group. The
@@ -48,6 +68,12 @@ export const ldapConfigSchema = z.object({
   searchFilter: z.string().min(1, 'Search Filter è obbligatorio'),
   groupSearchBase: z.string().optional().or(z.literal('')),
   groupSearchFilter: z.string().optional().or(z.literal('')),
+  // Trimmed: a field emptied down to a newline is "none", which the save turns into an absent key.
+  trustedCertificates: z
+    .string()
+    .trim()
+    .refine(value => value === '' || TrustedCertificatesSchema.safeParse(value).success, TRUSTED_CERTIFICATES_MESSAGE)
+    .optional(),
   roleMapping: z
     .string()
     .optional()
@@ -135,10 +161,16 @@ export const LDAP_STORED_FIELDS = [
   'groupSearchBase',
   'groupSearchFilter',
   'roleMapping',
+  'trustedCertificates',
 ] as const;
 export type LdapStoredField = (typeof LDAP_STORED_FIELDS)[number];
 
-const LDAP_CONNECTION_TEST_FIELDS = ['url', 'bindDN', 'bindPassword'] as const satisfies readonly LdapStoredField[];
+const LDAP_CONNECTION_TEST_FIELDS = [
+  'url',
+  'bindDN',
+  'bindPassword',
+  'trustedCertificates',
+] as const satisfies readonly LdapStoredField[];
 
 /**
  * The fields each settings test reads: only an unreadable one of these stops that test, so an

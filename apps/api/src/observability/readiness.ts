@@ -11,8 +11,9 @@ import { Client } from 'ldapts';
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
-import { getLdapConfig, isLdapEnabled, UnreadableStoredConfigError } from '../lib/configManager';
+import { getLdapConfig, isLdapEnabled } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
+import { ldapClientOptions } from '../lib/ldapTls';
 
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -75,11 +76,7 @@ export async function checkLdap(
     const config = await getLdapConfig(prisma);
 
     // Ping LDAP with a short timeout (ldapts: lazy connection on first bind)
-    const client = new Client({
-      url: config.url,
-      timeout: 2000,
-      connectTimeout: 2000,
-    });
+    const client = new Client(ldapClientOptions(config, { timeout: 2000, connectTimeout: 2000 }));
 
     try {
       await client.bind(config.bindDN, config.bindPassword);
@@ -94,10 +91,7 @@ export async function checkLdap(
       }
     }
   } catch (error: unknown) {
-    // A fixed text: `/readyz` is open to anyone, and which stored key is broken is not for them.
-    if (error instanceof UnreadableStoredConfigError) {
-      return { ok: false, message: 'LDAP configuration cannot be read' };
-    }
+    // The runner publishes only ok/failed and logs this message, so it may name the broken key.
     return { ok: false, message: toErrorMessage(error) };
   }
 }

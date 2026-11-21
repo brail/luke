@@ -16,6 +16,7 @@ import pino from 'pino';
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
 
 import { ServiceUnavailableError, toErrorMessage } from './error';
+import { ldapClientOptions } from './ldapTls';
 
 import type { LdapConfig } from './configManager';
 import type { SearchOptions, Entry } from 'ldapts';
@@ -191,11 +192,12 @@ export class ResilientLdapClient {
       }
     }
 
-    this._client = new Client({
-      url: this.ldapConfig.url,
-      timeout: this.resilienceConfig.timeoutMs,
-      connectTimeout: Math.min(this.resilienceConfig.timeoutMs, 5000),
-    });
+    this._client = new Client(
+      ldapClientOptions(this.ldapConfig, {
+        timeout: this.resilienceConfig.timeoutMs,
+        connectTimeout: Math.min(this.resilienceConfig.timeoutMs, 5000),
+      })
+    );
   }
 
   /**

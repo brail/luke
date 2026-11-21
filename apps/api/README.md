@@ -49,6 +49,20 @@ Two consequences of guarding that step alone:
 | A search filter that does not parse | `BAD_REQUEST`, before anything is sent |
 | No answer, or 51/52, on every attempt | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), the last error as its cause |
 
+**TLS.** Every ldapts client — sign-in, readiness and the two settings tests —
+is built from `ldapClientOptions` (`src/lib/ldapTls.ts`; Semgrep
+`luke-ldap-client-options`). Over `ldaps://` the server's certificate is always
+verified, `rejectUnauthorized: true` set explicitly so
+`NODE_TLS_REJECT_UNAUTHORIZED` cannot turn it off, and the host name in the URL
+must match the certificate. A directory whose certificate no public CA issued
+(self-signed, or from an enterprise CA) is trusted through
+`auth.ldap.trustedCertificates`: PEM certificates, in addition to the public
+CAs, each parsed as X.509 before it is stored. Over `ldap://` no TLS option is
+passed and a stored certificate is not used. A TLS failure of the service bind
+counts toward the breaker like any other unusable answer; the settings tests
+name an untrusted certificate, a host name mismatch and an expired one with
+fixed texts.
+
 `src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
 or `ldap-first` using `auth.strategy`. `src/lib/ldapAuth.ts` runs the LDAP half
 of a login, and what it does with a failure depends on whether the username has

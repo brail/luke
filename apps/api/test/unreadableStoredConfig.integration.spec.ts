@@ -165,7 +165,7 @@ describe('LDAP settings', () => {
 
       // Sign-in (`authenticateViaLdap`) and `/readyz` read every field.
       await expect(getLdapConfig(prisma)).rejects.toBeInstanceOf(ConfigDecryptionError);
-      expect(await checkLdap(prisma)).toEqual({ ok: false, message: 'LDAP configuration cannot be read' });
+      expect(await checkLdap(prisma)).toEqual({ ok: false, message: expect.stringContaining('auth.ldap.roleMapping') });
     });
   });
 

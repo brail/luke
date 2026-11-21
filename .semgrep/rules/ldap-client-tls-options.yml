@@ -1,0 +1,47 @@
+rules:
+  - id: luke-ldap-client-options
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Build an ldapts Client from ldapClientOptions(config, timeouts) in
+      apps/api/src/lib/ldapTls.ts (#281). It is the one place that verifies the
+      server over ldaps:// against the public CAs plus the trusted certificates,
+      sets rejectUnauthorized explicitly (left out, Node takes it from
+      NODE_TLS_REJECT_UNAUTHORIZED) and passes no TLS option over ldap://, where
+      ldapts would start TLS for any. A client built by hand skips the admin's
+      trusted certificates, or the check.
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              import { ..., Client, ... } from 'ldapts';
+              ...
+          - pattern: new Client(...)
+          - pattern-not: new Client(ldapClientOptions(...))
+      - patterns:
+          - pattern-inside: |
+              import { ..., Client as $C, ... } from 'ldapts';
+              ...
+          - pattern: new $C(...)
+          - pattern-not: new $C(ldapClientOptions(...))
+      - patterns:
+          - pattern-inside: |
+              import * as $L from 'ldapts';
+              ...
+          - pattern: new $L.Client(...)
+          - pattern-not: new $L.Client(ldapClientOptions(...))
+    paths:
+      exclude:
+        # Tests build clients by hand on purpose: to prove what the helper guards against.
+        - '/apps/api/test/'
+  - id: luke-tls-verification-off
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Never turn TLS certificate verification off. A server whose certificate is
+      not publicly issued is trusted through its certificate (LDAP: the trusted
+      certificates in Settings › LDAP, #281), never by accepting any
+      certificate. A test fixture that must, carries a reasoned
+      `// nosemgrep: luke-tls-verification-off -- <why>`.
+    pattern-either:
+      - pattern: '{..., rejectUnauthorized: false, ...}'
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = $X

@@ -23,6 +23,8 @@ const LDAP = {
   groupSearchBase: '',
   groupSearchFilter: '',
   roleMapping: '',
+  trustedCertificates: '',
+  trustedCertificateDetails: [],
   strategy: 'local-first',
   unreadable: ['url'],
 };
@@ -169,6 +171,8 @@ vi.mock('../../../../lib/trpc', () => {
           disconnectOAuth: idle,
         },
       },
+      // The reader zone, for the dates of the trusted certificates (`useFormatDate`).
+      me: { get: { useQuery: () => ({ data: { timezone: 'Europe/Rome' }, error: null }) } },
       storage: {
         getConfig: { useQuery: () => ({ data: STORAGE, isPending: false, error: null, refetch: vi.fn() }) },
         saveConfig: { useMutation: () => ({ mutateAsync: h.saveStorage, isPending: false }) },
@@ -428,4 +432,36 @@ test('an invalid stored role mapping is shown in its field, naming the group, an
   await expect.element(screen.getByLabelText(/^Role Mapping/)).toBeEnabled();
   await expect.element(screen.getByText(/Ruolo non valido per il gruppo "cn=admins"/)).toBeVisible();
   await expect.element(screen.getByText(/La mappatura salvata non è valida/)).toBeVisible();
+});
+
+// #281: the trusted certificates stored for LDAP over TLS.
+const CERTIFICATE = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+
+test('LDAP: each trusted certificate is listed with its subject, whether self-signed, and its expiry', async () => {
+  h.ldap = {
+    ...LDAP,
+    enabled: true,
+    url: 'ldaps://dc.test:636',
+    unreadable: [],
+    trustedCertificates: CERTIFICATE,
+    trustedCertificateDetails: [
+      { subject: 'CN=dc.test', validTo: '2046-01-15T10:00:00.000Z', expired: false, selfSigned: true },
+      { subject: 'CN=old.test', validTo: '2020-01-15T10:00:00.000Z', expired: true, selfSigned: false },
+    ],
+  };
+
+  const screen = await render(<LdapSettingsPage />);
+
+  await expect.element(screen.getByText('CN=dc.test · autofirmato · scade il 15/01/2046')).toBeVisible();
+  await expect.element(screen.getByText(/CN=old\.test · scade il 15\/01\/2020/)).toBeVisible();
+  await expect.element(screen.getByText('· scaduto')).toBeVisible();
+  expect(screen.getByText('Il certificato si usa solo con un URL ldaps://.').elements()).toHaveLength(0);
+});
+
+test('LDAP: a certificate with an ldap:// URL is said to be unused', async () => {
+  h.ldap = { ...LDAP, enabled: true, url: 'ldap://dc.test:389', unreadable: [], trustedCertificates: CERTIFICATE };
+
+  const screen = await render(<LdapSettingsPage />);
+
+  await expect.element(screen.getByText('Il certificato si usa solo con un URL ldaps://.')).toBeVisible();
 });

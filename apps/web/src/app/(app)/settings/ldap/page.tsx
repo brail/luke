@@ -47,6 +47,7 @@ import {
 import { Input } from '../../../../components/ui/input';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
@@ -90,6 +91,7 @@ export default function LdapSettingsPage() {
       groupSearchBase: '',
       groupSearchFilter: '',
       roleMapping: '',
+      trustedCertificates: '',
     },
   });
 
@@ -126,6 +128,8 @@ export default function LdapSettingsPage() {
   // With LDAP off the fields are locked, but one that has to be entered again must stay editable,
   // and stays so after a removal until the page is read again.
   const enabled = useWatch({ control: form.control, name: 'enabled' });
+  // A certificate is used over `ldaps://` only: with `ldap://` the page says so (#281).
+  const plainLdap = /^\s*ldap:\/\//i.test(useWatch({ control: form.control, name: 'url' }) ?? '');
   const fieldsLocked = !canUpdate || (!enabled && storedUnreadable.length === 0 && !roleMappingInvalid);
 
   // Update form when existing configuration arrives
@@ -141,6 +145,7 @@ export default function LdapSettingsPage() {
         groupSearchBase: existingConfig.groupSearchBase,
         groupSearchFilter: existingConfig.groupSearchFilter,
         roleMapping: existingConfig.roleMapping,
+        trustedCertificates: existingConfig.trustedCertificates,
       });
       // Names the group with the wrong role at once, not only after a refused save.
       if (existingConfig.roleMappingInvalid) void form.trigger('roleMapping');
@@ -326,13 +331,14 @@ export default function LdapSettingsPage() {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="ldap://server.example.com:389"
+                        placeholder="ldaps://dc.example.com:636"
                         disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
-                      URL del server LDAP (es. ldap://server.example.com:389)
+                      URL del server LDAP (es. ldaps://dc.example.com:636). Con ldaps:// usa il nome del server
+                      riportato nel certificato.
                     </FormDescription>
                     {unreadable.includes('url') && <UnreadableValueNotice {...removeAction('url')} />}
                     <FormMessage />
@@ -503,6 +509,40 @@ export default function LdapSettingsPage() {
               )}
             />
 
+            {/* Trusted certificates (#281) */}
+            <FormField
+              control={form.control}
+              name="trustedCertificates"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Certificati attendibili</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="-----BEGIN CERTIFICATE-----"
+                      disabled={fieldsLocked}
+                      // 120px: room for the start of a PEM block without scrolling; no exact scale match
+                      className="min-h-[120px] font-mono"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Certificato del server LDAP o della CA che lo ha emesso, in formato PEM. Serve solo se non è
+                    emesso da una CA pubblica.
+                  </FormDescription>
+                  {plainLdap && field.value && (
+                    <p className="text-sm text-muted-foreground">Il certificato si usa solo con un URL ldaps://.</p>
+                  )}
+                  {!!existingConfig?.trustedCertificateDetails.length && (
+                    <TrustedCertificateList certificates={existingConfig.trustedCertificateDetails} />
+                  )}
+                  {unreadable.includes('trustedCertificates') && (
+                    <UnreadableValueNotice {...removeAction('trustedCertificates')} />
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Test buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               <Button
@@ -639,5 +679,26 @@ export default function LdapSettingsPage() {
         isLoading={removeMutation.isPending}
       />
     </SettingsFormShell>
+  );
+}
+
+/** The stored trusted certificates: subject, whether self-signed, and expiry in the reader's zone (#281). */
+function TrustedCertificateList({
+  certificates,
+}: {
+  certificates: { subject: string; validTo: string; expired: boolean; selfSigned: boolean }[];
+}) {
+  const fmt = useFormatDate();
+  return (
+    <ul className="space-y-1 text-sm text-muted-foreground">
+      {certificates.map((certificate, index) => (
+        // The same certificate may be pasted twice: the position keeps each key unique.
+        <li key={`${index}-${certificate.subject}`}>
+          {certificate.subject}
+          {certificate.selfSigned && ' · autofirmato'} · scade il {fmt.date(certificate.validTo)}
+          {certificate.expired && <span className="text-status-critical"> · scaduto</span>}
+        </li>
+      ))}
+    </ul>
   );
 }

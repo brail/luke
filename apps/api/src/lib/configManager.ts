@@ -40,6 +40,7 @@ import {
 import { logAudit, type AuditContext } from './auditLog';
 import { toErrorMessage } from './error';
 import { acquireLastAdminLock } from './lastAdminGuard';
+import { assertTrustedCertificates } from './ldapTls';
 import { rootLogger } from './logger';
 
 const logger = rootLogger.child({ module: 'config' });
@@ -57,6 +58,8 @@ export interface LdapConfig {
   groupSearchBase: string;
   groupSearchFilter: string;
   roleMapping: RoleMapping;
+  /** PEM certificates trusted over `ldaps://` besides the public CAs (#281); `''` for none. */
+  trustedCertificates: string;
   /** `null` when no valid strategy is stored (`getAuthStrategy`). */
   strategy: LdapStrategy | null;
 }
@@ -289,7 +292,10 @@ function configNotFoundError(key: string): TRPCError {
   });
 }
 
-/** Throws `BAD_REQUEST` when `value` fails `key`'s registry schema. */
+/**
+ * Throws `BAD_REQUEST` when `value` fails `key`'s registry schema, or, for the trusted LDAP
+ * certificates, when a block is not a certificate (a check the browser-safe registry cannot make).
+ */
 function assertValidConfigValue(key: AppConfigKey, value: string): void {
   const validation = validateConfigValue(key, value);
   if (!validation.success) {
@@ -298,6 +304,7 @@ function assertValidConfigValue(key: AppConfigKey, value: string): void {
       message: `Valore non valido per '${key}': ${validation.message}`,
     });
   }
+  if (key === 'auth.ldap.trustedCertificates') assertTrustedCertificates(value);
 }
 
 /**
@@ -1078,6 +1085,7 @@ async function loadLdapConfig(
         groupSearchBase: '',
         groupSearchFilter: '',
         roleMapping: {},
+        trustedCertificates: '',
         strategy: null,
       },
     };
@@ -1099,6 +1107,7 @@ async function loadLdapConfig(
   const searchFilter = getConfigValue('searchFilter');
   const groupSearchBase = getConfigValue('groupSearchBase');
   const groupSearchFilter = getConfigValue('groupSearchFilter');
+  const trustedCertificates = getConfigValue('trustedCertificates');
   // `|| '{}'`: blank is what the form's reader makes of a row it cannot decrypt, not invalid JSON.
   const roleMappingStr = getConfigValue('roleMapping') || '{}';
   // The row read above, decrypted as sign-in reads it; one that does not decrypt shows as none
@@ -1130,6 +1139,7 @@ async function loadLdapConfig(
     groupSearchBase,
     groupSearchFilter,
     roleMapping,
+    trustedCertificates,
     strategy,
   };
 
