@@ -137,8 +137,8 @@ function pathResolves(token: string, skillDir: string, root: string, frames: str
  * Whether the symbol exists somewhere under apps/ or packages/.
  *
  * This checks **existence**, not exports: a skill may legitimately cite a
- * module-local function (`assertEnvPolicy()` in `server.ts` is not exported,
- * but the skill's assertion about it is true). What matters is catching a
+ * module-local function (a helper that is not exported, as long as the skill's
+ * assertion about it is true). What matters is catching a
  * reference to something that no longer exists.
  */
 function declaredSymbols(root: string): Set<string> {

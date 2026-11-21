@@ -33,6 +33,7 @@ import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
+import { assertEnvPolicy } from './lib/envPolicy';
 import { logTrpcError, setGlobalErrorHandler } from './lib/error';
 import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
 import { registerGoogleReaderScheduler } from './lib/googleReaderScheduler';
@@ -395,67 +396,6 @@ function setupTempFileCleanup() {
 }
 
 /**
- * POLICY: Bootstrap env guard (API server)
- *
- * Only infrastructure variables are allowed in process.env.
- * Any application configuration (credentials, secrets, external endpoints)
- * must live in AppConfig (database). If a forbidden variable is detected:
- *   - in production: the server exits with exit(1)
- *   - in development: an explicit warning is emitted
- *
- * Allowed variables (API):
- *   DATABASE_URL              — Prisma, needed before DB boot
- *   PORT, HOST                — server bind
- *   NODE_ENV                  — standard runtime
- *   APP_VERSION               — build-time release identity (Docker ARG/ENV from the git tag)
- *   LUKE_CORS_ALLOWED_ORIGINS — deploy CORS override (not a secret)
- *   LUKE_TRUSTED_PROXY_CIDR   — reverse-proxy range for `trustProxy`, read before any DB exists
- *   OTEL_*, LOG_LEVEL         — observability infra
- *
- * Web container exceptions (not touched by this guard):
- *   NEXTAUTH_SECRET, NEXTAUTH_URL — NextAuth framework constraint
- *   INTERNAL_API_URL              — Next.js rewrites, resolved at build time
- *   NEXT_PUBLIC_*                 — baked into the client bundle, impossible from DB
- *   COOKIE_SECURE                 — HTTP vs HTTPS deploy setting
- */
-const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
-  /^SMTP_/i,
-  /^LDAP_/i,
-  /^JWT_/i,
-  /^NEXTAUTH_/i,
-  /.*_SECRET$/i,
-  /.*_PASSWORD$/i,
-  /.*_API_KEY$/i,
-  /.*_TOKEN$/i,
-];
-
-const ALLOWED_ENV_EXCEPTIONS = new Set<string>([]);
-
-/**
- * Enforces the env-var policy: exits with code 1 in production (warns in development)
- * if any forbidden pattern (SMTP_*, LDAP_*, JWT_*, *_SECRET, *_PASSWORD, etc.) is found
- * in `process.env`. See the policy comment block above for the full allowed-list.
- */
-function assertEnvPolicy(): void {
-  const violations = Object.keys(process.env).filter(key =>
-    !ALLOWED_ENV_EXCEPTIONS.has(key) &&
-    FORBIDDEN_ENV_PATTERNS.some(p => p.test(key))
-  );
-
-  if (violations.length === 0) return;
-
-  const msg = `[env-policy] Application variables found in process.env — they must live in AppConfig: ${violations.join(', ')}`;
-
-  const bootLogger = rootLogger.child({ module: 'env-policy' });
-  if (isProduction()) {
-    bootLogger.error(msg);
-    process.exit(1);
-  } else {
-    bootLogger.warn(msg);
-  }
-}
-
-/**
  * Starts the Luke API server.
  *
  * Runs the full startup sequence: env-policy guard, DB connection, config validation,
@@ -464,8 +404,9 @@ function assertEnvPolicy(): void {
  */
 const start = async () => {
   try {
-    // Verify env var policy BEFORE everything else
-    assertEnvPolicy();
+    // Env var policy: the first step of the start, before any connection; a refusal throws to the
+    // catch below, which exits.
+    assertEnvPolicy(process.env, rootLogger.child({ module: 'env-policy' }));
 
     // Database, master key, JWT secret derivation — the tested function, not an inline copy of it.
     // A failure throws to the catch below, which exits.

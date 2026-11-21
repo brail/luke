@@ -47,6 +47,7 @@
 | [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Accepted |
 | [043](043-section-access-a-leaf-turns-on-only-with-its-permission.md) | Section Access: a Leaf Turns On Only With Its Permission | Accepted |
 | [044](044-pending-user-approval-in-one-transaction.md) | Pending-User Approval in One Transaction | Accepted |
+| [045](045-bootstrap-guard-refuses-tls-verification-switched-off.md) | Bootstrap Guard Refuses TLS Verification Switched Off | Accepted |
 
 _Last updated: 2026-11-18_
 <!-- luke-docs:end:adr-index -->

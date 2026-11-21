@@ -230,7 +230,7 @@ No relevant path after resolution → stop with
 1. Root `package.json` (workspaces, scripts, engines) + `turbo.json`
 2. For every workspace: `package.json`, `src/index.ts(x)`, existing `README.md`
 3. `.env.production.example` + env policy in `CLAUDE.md` — env var catalog
-   (enforcement is `assertEnvPolicy()` in `apps/api/src/server.ts`)
+   (enforcement is `assertEnvPolicy()` in `apps/api/src/lib/envPolicy.ts`)
 4. `packages/db/prisma/*.prisma` — model names only (multi-file schema, split by domain)
 5. `apps/api/src/routers/` — list of router files (names, not content)
 6. `apps/web/src/app/` — 2-level directory tree

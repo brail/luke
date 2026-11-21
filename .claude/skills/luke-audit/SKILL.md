@@ -98,7 +98,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 **Env policy:**
 
 - An app's `.env` or `.env.*` variables outside that app's permitted list in CLAUDE.md "Env Policy",
-  or an API variable matching `FORBIDDEN_ENV_PATTERNS` (`apps/api/src/server.ts`); the web list may
+  or an API variable matching `FORBIDDEN_ENV_PATTERNS` (`apps/api/src/lib/envPolicy.ts`); the web list may
   hold `NEXTAUTH_*`, and compose interpolation variables are out of scope
 
 **Dev patterns:**

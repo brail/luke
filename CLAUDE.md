@@ -532,8 +532,10 @@ root), e.g. `pnpm -C apps/web exec eslint --fix <files>` with paths relative to 
 from the git tag in CI — never read from AppConfig.
 
 **Forbidden in `.env`**: SMTP, LDAP, storage credentials, tokens, application passwords.
-`assertEnvPolicy()` in `apps/api/src/server.ts` blocks apps/api's boot in production on `SMTP_*`,
-`LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`.
+`assertEnvPolicy()` in `apps/api/src/lib/envPolicy.ts` blocks apps/api's boot in production on
+`SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`, or when
+`NODE_TLS_REJECT_UNAUTHORIZED` is `0`, which disables TLS certificate verification. Outside
+production, it logs a warning instead.
 
 ## Prisma Migration Workflow
 

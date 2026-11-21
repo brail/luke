@@ -467,7 +467,7 @@ The process exits with code 1 when any of these fails at startup:
 1. `createTrustProxy` while the Fastify instance is built — in production,
    `LUKE_TRUSTED_PROXY_CIDR` missing or invalid;
 2. `assertEnvPolicy()` — in production, a forbidden variable in the environment
-   (see the environment table below);
+   (see the environment table below), or `NODE_TLS_REJECT_UNAUTHORIZED=0`;
 3. `checkBootstrapDependencies` — `prisma.$connect()`, `validateMasterKey()` and
    `deriveSecret('api.jwt')`;
 4. `validateCriticalConfig` — in production, a key in `CRITICAL_CONFIG_KEYS`
@@ -598,7 +598,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `LOG_LEVEL` | enum | `warn` in production, `info` otherwise | Pino level of the root logger (`src/lib/logger.ts`): Fastify and every module logger. In production the modules' `info` lines (an LDAP login, a sent email) need `LOG_LEVEL=info`. The tracing bootstrap logger (`src/instrument.ts`) reads it too, with `info` as its default |
 | `APP_VERSION` | string | absent | Release identity injected at build time as a Docker `ARG`/`ENV` from the git tag in CI. Not a secret, and never read from AppConfig so a running image cannot disagree with itself about which release it is. Absent means "no release identity"; display surfaces fall back to `dev` (`src/lib/appVersion.ts`) |
 
-At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
+At boot, `assertEnvPolicy()` in `src/lib/envPolicy.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`) and that `NODE_TLS_REJECT_UNAUTHORIZED` is not `0`, the value with which Node skips TLS certificate verification by default. In production the server refuses to start (exit 1); elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
 <!-- luke-docs:end:env -->
 
 ### Local trace collector
