@@ -4,6 +4,12 @@
  * eliminating duplicated error-handling code across mutation callbacks.
  */
 
+import {
+  SERVICE_UNAVAILABLE_FALLBACK_MESSAGE,
+  SERVICE_UNAVAILABLE_MESSAGES,
+  isServiceUnavailableReason,
+} from '@luke/core';
+
 const HTTP_STATUS_TO_CODE: Record<number, string> = {
   400: 'BAD_REQUEST',
   401: 'UNAUTHORIZED',
@@ -18,20 +24,24 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   FORBIDDEN: 'Non hai i permessi per eseguire questa operazione',
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
   TOO_MANY_REQUESTS: 'Troppe richieste. Riprova tra qualche istante.',
-  // A 5xx, so production masks the server's text. Maintenance mode sends it to signed-in traffic;
-  // the screens that call a password check (sign-in, profile) override it for the directory's.
-  SERVICE_UNAVAILABLE: 'Sistema in manutenzione. Riprova più tardi.',
 };
 
 interface TrpcErrorLike {
   message?: string;
-  data?: { code?: string };
+  data?: { code?: string; unavailableReason?: unknown };
   status?: number;
 }
 
 /**
+ * Per-code overrides for `getTrpcErrorMessage`. `SERVICE_UNAVAILABLE` is not one: the server says
+ * why in `data.unavailableReason`, and that reason alone picks the text (#259).
+ */
+export type TrpcErrorOverrides = Record<string, string | true> & { SERVICE_UNAVAILABLE?: never };
+
+/**
  * Maps a tRPC or HTTP error to a localised user-facing message.
- * Resolution order: entity override → `BAD_REQUEST` (uses error message) →
+ * Resolution order: `SERVICE_UNAVAILABLE` (the text of its reason, or a neutral one when it gives
+ * none, a proxy's 503 included) → entity override → `BAD_REQUEST` (uses error message) →
  * shared default → raw error message → generic fallback.
  *
  * @param error - Unknown error value (internally cast to `TrpcErrorLike`).
@@ -45,7 +55,7 @@ interface TrpcErrorLike {
  */
 export function getTrpcErrorMessage(
   error: unknown,
-  entityMessages?: Record<string, string | true>
+  entityMessages?: TrpcErrorOverrides
 ): string {
   const e = error as TrpcErrorLike;
   const code: string | undefined =
@@ -53,6 +63,11 @@ export function getTrpcErrorMessage(
     (e.status != null ? HTTP_STATUS_TO_CODE[e.status] : undefined);
 
   if (!code) return e.message ?? "Errore durante l'operazione. Riprova.";
+
+  if (code === 'SERVICE_UNAVAILABLE') {
+    const reason = e.data?.unavailableReason;
+    return isServiceUnavailableReason(reason) ? SERVICE_UNAVAILABLE_MESSAGES[reason] : SERVICE_UNAVAILABLE_FALLBACK_MESSAGE;
+  }
 
   const override = entityMessages?.[code];
   if (override === true) return e.message ?? DEFAULT_MESSAGES[code] ?? "Errore durante l'operazione. Riprova.";

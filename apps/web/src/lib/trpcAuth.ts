@@ -10,6 +10,7 @@ import type { AppRouter } from '@luke/api';
 import { TRPC_MAX_BATCH_SIZE, getApiBaseUrl } from '@luke/core';
 
 import { forwardedFor } from './clientIp';
+import { trpcFetch } from './trpcFetch';
 
 const trpcUrl = `${getApiBaseUrl()}/trpc`;
 
@@ -30,6 +31,7 @@ export function createAuthedTrpcClient(
       httpBatchLink({
         url: trpcUrl,
         maxItems: TRPC_MAX_BATCH_SIZE,
+        fetch: trpcFetch,
         headers: () => ({
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',

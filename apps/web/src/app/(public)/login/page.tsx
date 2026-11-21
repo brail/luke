@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
-import { AUTH_UNAVAILABLE_MESSAGE, LDAP_EMAIL_IN_USE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+import {
+  AUTH_UNAVAILABLE_MESSAGE,
+  LDAP_EMAIL_IN_USE_MESSAGE,
+  SERVICE_UNAVAILABLE_FALLBACK_MESSAGE,
+  SIGN_IN_REFUSED_MESSAGE,
+} from '@luke/core';
 
 import LogoLockup from '../../../components/LogoLockup';
 import { Button } from '../../../components/ui/button';
@@ -56,7 +61,6 @@ export default function LoginPage() {
         getTrpcErrorMessage(err, {
           UNAUTHORIZED: true,
           PRECONDITION_FAILED: true,
-          SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE,
         })
       );
       setUnverified('offered');
@@ -78,14 +82,20 @@ export default function LoginPage() {
 
       if (result?.error) {
         // Auth.js v5 flattens every authorize() error to "CredentialsSignin"; `code` is the one
-        // thing that tells them apart. Every code but `credentials`, `throttled` and `unavailable`
-        // comes from an answer given once the password is proven; `unavailable` may come before.
+        // thing that tells them apart. Every code but `credentials`, `throttled`, `unavailable` and
+        // `service_unavailable` comes from an answer given once the password is proven. `unavailable`
+        // may come before or after; `service_unavailable` is the service down, the same for every
+        // account.
         if (result.code === 'maintenance') {
           setError('Sistema in manutenzione: accesso non disponibile. Riprova al termine.');
           return;
         }
         if (result.code === 'unavailable') {
           setError(AUTH_UNAVAILABLE_MESSAGE);
+          return;
+        }
+        if (result.code === 'service_unavailable') {
+          setError(SERVICE_UNAVAILABLE_FALLBACK_MESSAGE);
           return;
         }
         if (result.code === 'email_in_use') {

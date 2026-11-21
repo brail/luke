@@ -22,14 +22,25 @@ import { buildTrpcUrl } from '@luke/core';
 import { forwardedFor } from './clientIp';
 import { debugError } from './debug';
 import { markLoginThrottled } from './loginThrottleContext';
+import { GATEWAY_STATUSES } from './trpcFetch';
 
 /**
- * The API answered `SERVICE_UNAVAILABLE`: sign-in is unavailable for everyone (no valid strategy
- * stored, before any password check), or the directory verified the password and the login could
- * not be completed. Either way nothing here may rely on the password being proven.
+ * The API answered `SERVICE_UNAVAILABLE` with the reason `auth_unavailable`: sign-in is unavailable
+ * for everyone (no valid strategy stored, before any password check), or the directory verified the
+ * password and the login could not be completed. Either way nothing here may rely on the password
+ * being proven.
  */
 export class LoginUnavailable extends CredentialsSignin {
   code = 'unavailable';
+}
+
+/**
+ * The API could not be reached, or answered unavailable without saying it is sign-in (a proxy's
+ * gateway status, a 503 with no or another reason): the service is down for everyone, whatever the
+ * credentials, so it tells nothing about the account (#259).
+ */
+export class LoginServiceUnavailable extends CredentialsSignin {
+  code = 'service_unavailable';
 }
 
 /**
@@ -75,12 +86,13 @@ const PENDING_MESSAGES = new Set(['ACCOUNT_PENDING_APPROVAL', 'ACCOUNT_PENDING_A
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data, a
  * `{ pendingApproval, needsEmail }` object for accounts awaiting approval, `{ emailUnverified }`
  * for an email still to verify, `{ maintenance }` for maintenance, `{ emailInUse }` for a directory
- * mail another account holds, or `{ unavailable }` when the
- * API answers `SERVICE_UNAVAILABLE`. Returns `null` on any other error or non-OK response: every
- * refusal before the password is proven, which the page answers with one message.
+ * mail another account holds, `{ unavailable }` when the API answers `SERVICE_UNAVAILABLE` for sign-in,
+ * or `{ serviceUnavailable }` for a failed fetch, a gateway status or a 503 for another reason.
+ * Returns `null` on any other non-OK response: every refusal before the password is proven, which the
+ * page answers with one message.
  *
- * It returns the unavailable case instead of throwing it: the `catch` below is for a failed fetch,
- * and would swallow it.
+ * It returns the unavailable cases instead of throwing them: the outer `catch` of `authorizeLogin`
+ * would swallow them.
  *
  * The client IP in `incomingHeaders` is forwarded as `X-Forwarded-For` on this server-to-server call.
  * Without it, apps/api sees every login attempt (from every real user) as coming from this
@@ -123,9 +135,12 @@ async function callTRPCAuth(
       if (response.status === 403 && code === 'FORBIDDEN' && message === 'LDAP_EMAIL_IN_USE') {
         return { emailInUse: true };
       }
-      // Read from the code, never the message: production replaces the message of every 5xx.
-      if (code === 'SERVICE_UNAVAILABLE') {
-        return { unavailable: true };
+      // Read from the reason, never the message: production replaces the message of every 5xx. Only
+      // `auth_unavailable` is sign-in's; maintenance before a proof would be the same for everyone,
+      // and is not the post-proof `MAINTENANCE_ACTIVE` marker above.
+      if (code === 'SERVICE_UNAVAILABLE' || GATEWAY_STATUSES.has(response.status)) {
+        const reason: unknown = errorData?.error?.data?.unavailableReason;
+        return reason === 'auth_unavailable' ? { unavailable: true } : { serviceUnavailable: true };
       }
       // The caller's own per-IP bucket (the API's per-account one answers like a wrong password).
       // Signals it to the route wrapper ([...nextauth]/route.ts) through AsyncLocalStorage:
@@ -145,8 +160,10 @@ async function callTRPCAuth(
     const data = await response.json();
     return data.result?.data;
   } catch (error) {
+    // The API could not be reached, or answered something unreadable: the service is down for
+    // everyone, not a refusal (owner, #259).
     debugError('Auth API call error:', error);
-    return null;
+    return { serviceUnavailable: true };
   }
 }
 
@@ -154,7 +171,10 @@ async function callTRPCAuth(
  * `authorize()` for the credentials provider.
  *
  * @returns The user to open a session for, or `null` for a login that was refused.
- * @throws {LoginUnavailable} When the directory verified the password and the login could not complete.
+ * @throws {LoginUnavailable} When sign-in is unavailable (no valid strategy, or the directory verified
+ *   the password and the login could not complete).
+ * @throws {LoginServiceUnavailable} When the API cannot be reached, answers a gateway status, or a 503
+ *   for a reason other than sign-in's.
  * @throws {LoginMaintenance} When the password is right and maintenance is active.
  * @throws {LoginPending} When the password is right and the account awaits approval.
  * @throws {LoginEmailUnverified} When the password is right and the email is still to verify.
@@ -179,6 +199,9 @@ export async function authorizeLogin(
 
     if (authResult?.unavailable) {
       throw new LoginUnavailable();
+    }
+    if (authResult?.serviceUnavailable) {
+      throw new LoginServiceUnavailable();
     }
     if (authResult?.pendingApproval) {
       throw new LoginPending(authResult.needsEmail);

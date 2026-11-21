@@ -14,7 +14,6 @@
  * The body is compared without `data.stack`, which only a non-production server sends.
  */
 
-import { TRPCError } from '@trpc/server';
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from '@trpc/server/adapters/fastify';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +24,7 @@ import type { PrismaClient } from '@luke/db';
 import * as configManager from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import * as ldapAuth from '../src/lib/ldapAuth';
+import { LdapUnavailableError } from '../src/lib/ldapClient';
 import { createContext } from '../src/lib/trpc';
 import { appRouter, type AppRouter } from '../src/routers/index';
 
@@ -88,7 +88,7 @@ describe('every failure before proof is one answer', () => {
     // `ldap-only`: a correct local password that is not an administrator's.
     outcomes.localNotAllowed = await login({ username: editor.username, password: TEST_USER_PASSWORD });
 
-    ldap.mockRejectedValue(new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'LDAP service unavailable' }));
+    ldap.mockRejectedValue(new LdapUnavailableError());
     outcomes.ldapThrown = await login({ username: 'nobody-here', password: 'Wrong-password-1!' });
 
     ldap.mockResolvedValue({ user: null, reason: 'ldap_unavailable', errorCode: 'SERVICE_UNAVAILABLE' });
@@ -144,7 +144,21 @@ describe('after proof', () => {
     const unavailable = await login({ username: 'nobody-here', password: 'Wrong-password-1!' });
 
     expect(unavailable.status).toBe(503);
-    expect(unavailable.body.error.data).toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    expect(unavailable.body.error.data).toMatchObject({ code: 'SERVICE_UNAVAILABLE', unavailableReason: 'auth_unavailable' });
+  });
+
+  it('is answered like the 503 before any proof, so its reason tells nothing new', async () => {
+    await prisma.appConfig.deleteMany({ where: { key: 'auth.strategy' } });
+    const noStrategy = await login({ username: 'nobody-here', password: 'Wrong-password-1!' });
+
+    await useStrategy('ldap-first');
+    vi.spyOn(ldapAuth, 'authenticateViaLdap').mockRejectedValue(
+      new ldapAuth.LdapUserNotWrittenError(new Error('write failed')),
+    );
+    const afterProof = await login({ username: 'nobody-here', password: 'Wrong-password-1!' });
+
+    expect(noStrategy.status).toBe(503);
+    expect(noStrategy).toEqual(afterProof);
   });
 });
 

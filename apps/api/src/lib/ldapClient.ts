@@ -15,7 +15,7 @@ import pino from 'pino';
 
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
 
-import { toErrorMessage } from './error';
+import { ServiceUnavailableError, toErrorMessage } from './error';
 
 import type { LdapConfig } from './configManager';
 import type { SearchOptions, Entry } from 'ldapts';
@@ -23,11 +23,12 @@ import type { SearchOptions, Entry } from 'ldapts';
 /**
  * The directory gave no usable answer: nothing came back, or it kept answering busy/unavailable,
  * for every attempt of an operation — or the breaker refused the login before it was tried. The
- * error behind it, result code included, is the `cause`.
+ * error behind it, result code included, is the `cause`. Sign-in catches it before any answer; if
+ * one ever reached a client, it would read as the directory's unavailability, never maintenance.
  */
-export class LdapUnavailableError extends TRPCError {
+export class LdapUnavailableError extends ServiceUnavailableError {
   constructor(cause?: unknown, message = 'LDAP service unavailable') {
-    super({ code: 'SERVICE_UNAVAILABLE', message, cause });
+    super('auth_unavailable', { message, cause });
   }
 }
 

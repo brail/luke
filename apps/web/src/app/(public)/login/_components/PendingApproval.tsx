@@ -2,8 +2,6 @@
 
 import React, { useState } from 'react';
 
-import { AUTH_UNAVAILABLE_MESSAGE } from '@luke/core';
-
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
@@ -54,7 +52,6 @@ export function PendingApproval({
           UNAUTHORIZED: true,
           CONFLICT: true,
           PRECONDITION_FAILED: true,
-          SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE,
         })
       );
       setStatus('idle');

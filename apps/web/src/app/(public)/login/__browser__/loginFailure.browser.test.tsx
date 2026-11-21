@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, SERVICE_UNAVAILABLE_FALLBACK_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 
 import LoginPage from '../page';
 
@@ -90,6 +90,13 @@ describe('a sign-in that did not go through', () => {
     expect(maintenanceStatus).not.toHaveBeenCalled();
   });
 
+  test('a 503 that names no reason is the service being unavailable, not a refusal', async () => {
+    const screen = await signInRefusedWith('service_unavailable');
+
+    await expect.element(screen.getByText(SERVICE_UNAVAILABLE_FALLBACK_MESSAGE)).toBeVisible();
+    expect(screen.getByText(SIGN_IN_REFUSED_MESSAGE).query()).toBeNull();
+  });
+
   test('maintenance, answered after proof, is said to be maintenance', async () => {
     const screen = await signInRefusedWith('maintenance');
 
@@ -154,7 +161,9 @@ describe('a sign-in that did not go through', () => {
 
   test('a new link the directory could not complete says unavailable, not maintenance', async () => {
     resendVerification.mockRejectedValue(
-      Object.assign(new Error('Internal server error'), { data: { code: 'SERVICE_UNAVAILABLE' } }),
+      Object.assign(new Error('Internal server error'), {
+        data: { code: 'SERVICE_UNAVAILABLE', unavailableReason: 'auth_unavailable' },
+      }),
     );
     const screen = await signInRefusedWith('email_unverified');
 
@@ -235,7 +244,9 @@ describe('an account pending approval', () => {
 
   test('without an address, a save the directory could not complete says unavailable, not maintenance', async () => {
     submitPendingEmail.mockRejectedValue(
-      Object.assign(new Error('Internal server error'), { data: { code: 'SERVICE_UNAVAILABLE' } }),
+      Object.assign(new Error('Internal server error'), {
+        data: { code: 'SERVICE_UNAVAILABLE', unavailableReason: 'auth_unavailable' },
+      }),
     );
     const screen = await signInRefusedWith('pending_email');
 

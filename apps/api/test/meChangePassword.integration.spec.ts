@@ -8,7 +8,6 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { AUTH_UNAVAILABLE_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, setupTestDb, TEST_USER_PASSWORD } from './helpers';
@@ -48,7 +47,7 @@ const change = (session: Awaited<ReturnType<typeof createTestUser>>['session']) 
   });
 
 /** The answer when no valid sign-in strategy is stored. */
-const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE } as const;
+const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', reason: 'auth_unavailable' } as const;
 
 /**
  * Asserts that the profile flag and the change agree: `refusal` undefined → offered and accepted;

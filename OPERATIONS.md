@@ -234,13 +234,17 @@ message reaches the client:
   themselves, mapping only `BAD_REQUEST`, `NOT_FOUND` and `FORBIDDEN`.
 
 Clients and operators branch on `error.data.code` and `error.data.httpStatus`,
-never on the message text:
+never on the message text. A `SERVICE_UNAVAILABLE` also says why in
+`error.data.unavailableReason` (`maintenance` or `auth_unavailable`,
+`SERVICE_UNAVAILABLE_MESSAGES` in `@luke/core`); the web shows that reason's
+text, and a neutral one for a 503 without a reason, such as a proxy's page:
 
 | Condition | `error.data.code` | HTTP |
 |---|---|---|
 | Rate limit exceeded | `TOO_MANY_REQUESTS` | 429 |
 | Sign-in refused before the password is proven: wrong password, unknown user, full per-account bucket, a check LDAP could not complete — one text for all, the cause only in the audit row | `UNAUTHORIZED` | 401 |
-| Login whose password the directory verified and whose user record could not be written, or a signed-in password check LDAP could not complete — see the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
+| No valid sign-in strategy stored (the same answer for every account), a login whose password the directory verified and whose user record could not be written, or a signed-in password check LDAP could not complete — see the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback); reason `auth_unavailable` | `SERVICE_UNAVAILABLE` | 503 |
+| A signed-in call during maintenance, for a role that cannot bypass it; reason `maintenance` | `SERVICE_UNAVAILABLE` | 503 |
 | Login with a proven password during maintenance, for a role that cannot bypass it (message `MAINTENANCE_ACTIVE`) | `FORBIDDEN` | 403 |
 | Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |

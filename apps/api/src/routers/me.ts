@@ -7,7 +7,6 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
-  AUTH_UNAVAILABLE_MESSAGE,
   UserProfileSchema,
   ChangeEmailSchema,
   ChangePasswordSchema,
@@ -23,7 +22,7 @@ import type { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { acquireAppConfigWriteLock, getAuthStrategy, getRequireEmailVerification } from '../lib/configManager';
 import { lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
-import { isUniqueViolation } from '../lib/error';
+import { isUniqueViolation, ServiceUnavailableError } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
@@ -42,9 +41,11 @@ const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 /** The answer to a password change on an account without a local password. */
 const NO_LOCAL_PASSWORD = 'Cambio password non consentito per provider esterni';
 
-/** The answer to a password change whose local password could not sign in now (#275). */
+/**
+ * The answer to a password change whose local password could not sign in now (#275); no valid
+ * strategy stored is `ServiceUnavailableError`, which says why.
+ */
 const LOCAL_SIGN_IN_REFUSED = {
-  strategy_unavailable: { code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE },
   strategy: {
     code: 'FORBIDDEN',
     message: "Con l'accesso solo tramite LDAP la password locale di Luke non si usa e non si può cambiare",
@@ -63,7 +64,7 @@ const LOCAL_SIGN_IN_REFUSED = {
 async function localSignInRefusalFor(
   db: Prisma.TransactionClient,
   user: { role: Role; emailVerifiedAt: Date | null }
-): Promise<keyof typeof LOCAL_SIGN_IN_REFUSED | null> {
+): Promise<ReturnType<typeof localSignInRefusal>> {
   const strategy = await getAuthStrategy(db);
   const requireEmailVerification = await getRequireEmailVerification(db);
   return localSignInRefusal({ strategy, requireEmailVerification }, user);
@@ -75,9 +76,8 @@ async function assertLocalSignInNow(
   user: { role: Role; emailVerifiedAt: Date | null }
 ): Promise<void> {
   const refusal = await localSignInRefusalFor(db, user);
-  if (refusal) {
-    throw new TRPCError(LOCAL_SIGN_IN_REFUSED[refusal]);
-  }
+  if (refusal === 'strategy_unavailable') throw new ServiceUnavailableError('auth_unavailable');
+  if (refusal) throw new TRPCError(LOCAL_SIGN_IN_REFUSED[refusal]);
 }
 
 /**

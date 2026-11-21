@@ -5,8 +5,8 @@
  * function by other routes, and each has a way of getting lost. The answers given once the password
  * is proven — pending approval, email unverified, maintenance, unavailable, a directory mail
  * another account holds — travel as the `code`
- * of a thrown `CredentialsSignin` subclass, past two `catch` blocks that turn every other error
- * into a plain refusal. "Throttled" travels as a mark in `loginThrottleContext`.
+ * of a thrown `CredentialsSignin` subclass, past the `catch` of `authorizeLogin` that turns every
+ * other error into a plain refusal; an API that cannot be reached is the service being unavailable. "Throttled" travels as a mark in `loginThrottleContext`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,7 @@ import {
   LoginEmailUnverified,
   LoginMaintenance,
   LoginPending,
+  LoginServiceUnavailable,
   LoginUnavailable,
 } from '../loginAuthorize';
 import { loginThrottleContext } from '../loginThrottleContext';
@@ -81,13 +82,31 @@ describe('authorizeLogin', () => {
 
   it('a login the directory could not complete after proof leaves as an error Auth.js carries to the page', async () => {
     // Production replaces the message of every 5xx: only the code can be relied on.
-    apiAnswers(503, trpcError('SERVICE_UNAVAILABLE', 'Internal server error'));
+    apiAnswers(503, trpcError('SERVICE_UNAVAILABLE', 'Internal server error', { unavailableReason: 'auth_unavailable' }));
 
     const error = await authorizeLogin(credentials, request).catch(e => e);
 
     expect(error).toBeInstanceOf(LoginUnavailable);
     // What Auth.js puts in the sign-in URL, and `signIn()` hands to the page.
     expect(error.code).toBe('unavailable');
+  });
+
+  it.each([
+    ['a 503 without a reason', () => Response.json(trpcError('SERVICE_UNAVAILABLE', 'Internal server error'), { status: 503 })],
+    ['a 503 with a reason Luke does not send', () => Response.json(trpcError('SERVICE_UNAVAILABLE', 'x', { unavailableReason: 'x' }), { status: 503 })],
+    // Never the post-proof maintenance code: a 503 is answered before any proof.
+    ['a 503 for maintenance', () => Response.json(trpcError('SERVICE_UNAVAILABLE', 'x', { unavailableReason: 'maintenance' }), { status: 503 })],
+    ["a proxy's HTML 503", () => new Response('<html>503</html>', { status: 503, headers: { 'content-type': 'text/html' } })],
+    ["a proxy's 502 that is not JSON", () => new Response('Bad Gateway', { status: 502 })],
+    ['a gateway timeout', () => new Response('', { status: 504 })],
+    ['an API that cannot be reached', () => Promise.reject(new TypeError('fetch failed'))],
+  ])('%s is the service being unavailable, not a refusal', async (_name, answer) => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer()));
+
+    const error = await authorizeLogin(credentials, request).catch(e => e);
+
+    expect(error).toBeInstanceOf(LoginServiceUnavailable);
+    expect(error.code).toBe('service_unavailable');
   });
 
   // The API answers pending approval only after the password is proven: the page may show the
@@ -142,7 +161,6 @@ describe('authorizeLogin', () => {
     ['a 403 whose message only starts like a pending one', 403, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL_X')],
     ['an email-in-use answer on anything but a 403', 401, trpcError('FORBIDDEN', 'LDAP_EMAIL_IN_USE')],
     ['a 403 whose message only starts like an email-in-use one', 403, trpcError('FORBIDDEN', 'LDAP_EMAIL_IN_USE_X')],
-    ['an answer that is not JSON', 502, undefined],
   ])('%s is a plain refusal', async (_name, status, body) => {
     apiAnswers(status, body);
 
@@ -156,12 +174,6 @@ describe('authorizeLogin', () => {
     await loginThrottleContext.run(state, () => authorizeLogin(credentials, request));
 
     expect(state).toEqual({});
-  });
-
-  it('an API that cannot be reached is a plain refusal', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
-
-    expect(await authorizeLogin(credentials, request)).toBeNull();
   });
 
   it('a throttled login is a plain refusal that marks the request for the route wrapper', async () => {

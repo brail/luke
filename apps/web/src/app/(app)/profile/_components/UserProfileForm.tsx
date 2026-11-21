@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { AUTH_UNAVAILABLE_MESSAGE, UserProfileSchema, getSelfLockedFields, type UserProfileInput } from '@luke/core';
+import { UserProfileSchema, getSelfLockedFields, type UserProfileInput } from '@luke/core';
 
 import { TimeZoneSelect } from '../../../../components/TimeZoneSelect';
 import { Button } from '../../../../components/ui/button';
@@ -92,11 +92,10 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       onErrorMessage: 'Errore cambio email',
       // The password is proven as a login proves it, answered for a signed-in user: UNAUTHORIZED is a
       // wrong password (or an expired session) and TOO_MANY_REQUESTS the account's bucket, each with
-      // its own server text; SERVICE_UNAVAILABLE is the directory, its text masked.
+      // its own server text. SERVICE_UNAVAILABLE takes the text of the reason the server sends.
       entityMessages: {
         UNAUTHORIZED: true,
         TOO_MANY_REQUESTS: true,
-        SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE,
       },
     });
 

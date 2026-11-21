@@ -89,7 +89,7 @@ test('changing the email asks for the current password', async () => {
 });
 
 /** Fills the email form, submits it, and returns how the refusal was told. */
-async function refusedEmailChange(error: { message: string; data: { code: string } }) {
+async function refusedEmailChange(error: { message: string; data: { code: string; unavailableReason?: string } }) {
   changeEmailMock.mockRejectedValue(error);
   const screen = await render(<UserProfileForm user={USER} />);
   await screen.getByLabelText('Cambia Email').fill('nuova@example.com');
@@ -115,11 +115,17 @@ test("a full account bucket is told with the server's text, signed in", async ()
   expect(options).toEqual({ description: 'Troppi tentativi: riprova tra qualche minuto' });
 });
 
-test('an unreachable directory is told as an unavailable sign-in service, not as maintenance', async () => {
-  // A 5xx: production replaces its message, so the page cannot show the server's.
-  const [, options] = await refusedEmailChange({ message: 'Internal server error', data: { code: 'SERVICE_UNAVAILABLE' } });
+test.each([
+  ['auth_unavailable', 'Servizio di autenticazione non disponibile. Riprova più tardi.'],
+  ['maintenance', 'Sistema in manutenzione. Riprova più tardi.'],
+])('a SERVICE_UNAVAILABLE for %s is told with its own text', async (unavailableReason, description) => {
+  // A 5xx: production replaces its message, so the page shows the text of the reason the server sends.
+  const [, options] = await refusedEmailChange({
+    message: 'Internal server error',
+    data: { code: 'SERVICE_UNAVAILABLE', unavailableReason },
+  });
 
-  expect(options).toEqual({ description: 'Servizio di autenticazione non disponibile. Riprova più tardi.' });
+  expect(options).toEqual({ description });
 });
 
 // #230: the directory owns an LDAP account's address and rewrites it at every sign-in.

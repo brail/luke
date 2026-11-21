@@ -80,13 +80,22 @@ test('signs out when the API answers UNAUTHORIZED: the bearer is already revoked
 });
 
 test('stays signed in during maintenance, and says why', async () => {
-  h.answer = { data: { code: 'SERVICE_UNAVAILABLE' } };
+  h.answer = { data: { code: 'SERVICE_UNAVAILABLE', unavailableReason: 'maintenance' } };
 
   await pressSignOut();
 
   await vi.waitFor(() =>
     expect(h.toastError).toHaveBeenCalledWith('Uscita non disponibile durante la manutenzione: riprova al termine')
   );
+  expect(h.signOut).not.toHaveBeenCalled();
+});
+
+test('a SERVICE_UNAVAILABLE that is not maintenance is not called maintenance', async () => {
+  h.answer = { data: { code: 'SERVICE_UNAVAILABLE' } };
+
+  await pressSignOut();
+
+  await vi.waitFor(() => expect(h.toastError).toHaveBeenCalledWith('Uscita non riuscita: riprova'));
   expect(h.signOut).not.toHaveBeenCalled();
 });
 

@@ -2,11 +2,11 @@ import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { AUTH_UNAVAILABLE_MESSAGE } from '@luke/core';
+import { AUTH_UNAVAILABLE_MESSAGE, SERVICE_UNAVAILABLE_MESSAGES } from '@luke/core';
 
 import { ChangePasswordCard } from '../ChangePasswordCard';
 
-/** A change refused because sign-in is unavailable shows the sign-in text, not maintenance. */
+/** A change refused with SERVICE_UNAVAILABLE shows the text of the reason the server sends (#259). */
 
 const h = vi.hoisted((): { onError?: (error: unknown) => void } => ({}));
 
@@ -27,10 +27,13 @@ vi.mock('../../../../../components/PasswordValidationIndicators', () => ({ Passw
 vi.mock('next-auth/react', () => ({ signOut: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-test('SERVICE_UNAVAILABLE shows the sign-in unavailable text', async () => {
+test.each([
+  ['auth_unavailable', AUTH_UNAVAILABLE_MESSAGE],
+  ['maintenance', SERVICE_UNAVAILABLE_MESSAGES.maintenance],
+] as const)('SERVICE_UNAVAILABLE for %s shows its text', async (unavailableReason, text) => {
   await render(<ChangePasswordCard alsoLdap={false} />);
 
-  h.onError?.({ message: 'masked', data: { code: 'SERVICE_UNAVAILABLE' } });
+  h.onError?.({ message: 'masked', data: { code: 'SERVICE_UNAVAILABLE', unavailableReason } });
 
-  expect(toast.error).toHaveBeenCalledWith(expect.stringContaining(AUTH_UNAVAILABLE_MESSAGE));
+  expect(toast.error).toHaveBeenCalledWith(`Errore nel cambio password: ${text}`);
 });

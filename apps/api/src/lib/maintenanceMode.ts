@@ -11,12 +11,11 @@
  * transition (an admin ending maintenance should unblock users within seconds, not a full TTL).
  */
 
-import { TRPCError } from '@trpc/server';
-
 import { hasPermission, MaintenanceModeStateSchema, Roles, type MaintenanceModeState, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { UnreadableStoredConfigError, getConfig, saveConfig } from './configManager';
+import { ServiceUnavailableError } from './error';
 import { sseStore } from './sseStore';
 import { clearTokenVersionCache } from './tokenVersionCache';
 
@@ -95,12 +94,7 @@ export async function isBlockedByMaintenance(prisma: PrismaClient, role: string)
  * guard (`maintenanceGuard` in trpc.ts) for signed-in traffic.
  */
 export async function assertNotBlockedByMaintenance(prisma: PrismaClient, role: string): Promise<void> {
-  if (await isBlockedByMaintenance(prisma, role)) {
-    throw new TRPCError({
-      code: 'SERVICE_UNAVAILABLE',
-      message: 'Sistema in manutenzione. Riprova più tardi.',
-    });
-  }
+  if (await isBlockedByMaintenance(prisma, role)) throw new ServiceUnavailableError('maintenance');
 }
 
 /**

@@ -91,7 +91,7 @@ describe('maintenance mode, while active', () => {
   it.each(['editor', 'viewer'] as const)('answers %s that the service is unavailable', async role => {
     const { mode } = await modeAs(role);
 
-    await expect(mode.end()).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    await expect(mode.end()).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE', reason: 'maintenance' });
   });
 
   it('lets the admin end it', async () => {

@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUTH_UNAVAILABLE_MESSAGE, SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
+import { SIGN_IN_REFUSED_MESSAGE } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { encryptValue } from '../src/lib/configManager';
@@ -35,7 +35,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE };
+const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', reason: 'auth_unavailable' };
 const notices = () => prisma.notification.count({ where: { title: 'Strategia di accesso non disponibile' } });
 
 /** A login from a fresh address, so the per-IP bucket never answers for the account's. */

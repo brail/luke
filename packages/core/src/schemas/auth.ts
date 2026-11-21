@@ -23,11 +23,35 @@ export const SIGN_IN_REFUSED_MESSAGE =
   "Accesso non riuscito: controlla le credenziali o riprova tra qualche minuto. Se il problema continua, contatta l'amministratore.";
 
 /**
- * The text of a password check LDAP could not complete, where it may be told: after the password
- * is proven, or to a signed-in user. Shared because production masks the text of every 5xx, so the
- * web shows its own copy for the `SERVICE_UNAVAILABLE` code.
+ * The text of sign-in being unavailable: no valid strategy stored (the same for every account, before
+ * any proof), or a password check LDAP could not complete, where it may be told — after the password
+ * is proven, or to a signed-in user. The web shows it for the reason `auth_unavailable`
+ * (`SERVICE_UNAVAILABLE_MESSAGES`), since production masks the text of every 5xx.
  */
 export const AUTH_UNAVAILABLE_MESSAGE = 'Servizio di autenticazione non disponibile. Riprova più tardi.';
+
+/**
+ * Why the API answers `SERVICE_UNAVAILABLE`, sent as `data.unavailableReason` (#259) because
+ * production masks the text of every 5xx: the web shows the text of the reason, never one chosen per
+ * screen.
+ */
+export const SERVICE_UNAVAILABLE_MESSAGES = {
+  maintenance: 'Sistema in manutenzione. Riprova più tardi.',
+  auth_unavailable: AUTH_UNAVAILABLE_MESSAGE,
+} as const;
+
+export type ServiceUnavailableReason = keyof typeof SERVICE_UNAVAILABLE_MESSAGES;
+
+/** Whether `value` is a reason the API sends in `data.unavailableReason`. */
+export function isServiceUnavailableReason(value: unknown): value is ServiceUnavailableReason {
+  return typeof value === 'string' && Object.hasOwn(SERVICE_UNAVAILABLE_MESSAGES, value);
+}
+
+/**
+ * The text of a `SERVICE_UNAVAILABLE` without a reason the web knows: a proxy's or a probe's 503,
+ * or anything else the API did not explain. Never the maintenance text, which only maintenance sends.
+ */
+export const SERVICE_UNAVAILABLE_FALLBACK_MESSAGE = 'Servizio temporaneamente non disponibile. Riprova più tardi.';
 
 /**
  * The answer to an LDAP first sign-in whose directory mail already belongs to another Luke account

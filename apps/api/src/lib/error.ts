@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { ZodError } from 'zod';
 
-import { isProduction, toErrorMessage } from '@luke/core';
+import { isProduction, toErrorMessage, type ServiceUnavailableReason } from '@luke/core';
 import { Prisma } from '@luke/db';
 
 import { isRateLimitExceededCause } from './rateLimitError';
@@ -246,14 +246,36 @@ export interface ZodIssueData {
 }
 
 /**
+ * A `SERVICE_UNAVAILABLE` that says why (#259): the formatter sends `reason` as
+ * `data.unavailableReason`, which survives production's masking of every 5xx message, and the web
+ * shows that reason's text (`SERVICE_UNAVAILABLE_MESSAGES`). The message is for the logs only.
+ */
+export class ServiceUnavailableError extends TRPCError {
+  readonly reason: ServiceUnavailableReason;
+
+  constructor(
+    reason: ServiceUnavailableReason,
+    { message = `Service unavailable: ${reason}`, cause }: { message?: string; cause?: unknown } = {}
+  ) {
+    super({ code: 'SERVICE_UNAVAILABLE', message, cause });
+    this.reason = reason;
+  }
+}
+
+/**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
  * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
  *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it;
  * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
- *   and this keeps every issue with the field it belongs to.
+ *   and this keeps every issue with the field it belongs to;
+ * - `unavailableReason`, for a `ServiceUnavailableError`: why the service is unavailable.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
-  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number; zodIssues?: ZodIssueData[] };
+  data: TRPCDefaultErrorShape['data'] & {
+    retryAfterSeconds?: number;
+    zodIssues?: ZodIssueData[];
+    unavailableReason?: ServiceUnavailableReason;
+  };
 }
 
 /**
@@ -274,7 +296,8 @@ function clientMessage(shape: TRPCDefaultErrorShape, error: TRPCError): string {
 /**
  * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
  * Decides which message reaches the client (see `clientMessage`) and surfaces
- * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`).
+ * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`) and `unavailableReason` for a
+ * `ServiceUnavailableError`.
  */
 export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
   const retryAfterSeconds = isRateLimitExceededCause(error.cause)
@@ -294,6 +317,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
       ...shape.data,
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
       ...(zodIssues !== undefined && { zodIssues }),
+      ...(error instanceof ServiceUnavailableError && { unavailableReason: error.reason }),
     },
   };
 };

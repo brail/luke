@@ -39,6 +39,8 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
   vi.resetModules();
   const { t } = await import('../src/lib/t');
   const { buildRateLimitExceededError } = await import('../src/lib/rateLimitError');
+  // From the freshly loaded module, or the formatter's `instanceof` would see another class.
+  const { ServiceUnavailableError } = await import('../src/lib/error');
 
   const failWith = (err: Error) =>
     t.procedure.query(() => {
@@ -56,6 +58,8 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
     unavailable: failWith(
       new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'Sistema in manutenzione. Riprova più tardi.' })
     ),
+    maintenance: failWith(new ServiceUnavailableError('maintenance')),
+    authUnavailable: failWith(new ServiceUnavailableError('auth_unavailable')),
     rateLimited: failWith(buildRateLimitExceededError(60_000)),
     explicitWithZodCause: failWith(
       new TRPCError({
@@ -178,6 +182,22 @@ describe('trpcErrorFormatter in production', () => {
 
     expect(error.data.code).toBe('INTERNAL_SERVER_ERROR');
     expect(error.message).toBe('Internal server error');
+  });
+
+  it.each([
+    ['maintenance', 'maintenance'],
+    ['authUnavailable', 'auth_unavailable'],
+  ])('keeps why the service is unavailable (%s) while masking the message', async (path, reason) => {
+    const error = await callError(await loadRouter('production'), path);
+
+    expect(error.message).toBe('Internal server error');
+    expect(error.data).toMatchObject({ code: 'SERVICE_UNAVAILABLE', unavailableReason: reason });
+  });
+
+  it('sends no reason for a SERVICE_UNAVAILABLE that gives none', async () => {
+    const error = await callError(await loadRouter('production'), 'unavailable');
+
+    expect(error.data).not.toHaveProperty('unavailableReason');
   });
 
   it('keeps retryAfterSeconds on a rate-limit error', async () => {

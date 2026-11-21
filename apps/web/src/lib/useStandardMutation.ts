@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
-import { getTrpcErrorMessage } from './trpcErrorMessages';
+import { getTrpcErrorMessage, type TrpcErrorOverrides } from './trpcErrorMessages';
 
 /** Options for `useStandardMutation`. */
 type Options<TInput, TResult> = {
@@ -18,7 +18,7 @@ type Options<TInput, TResult> = {
   onErrorMessage?: string;
 
   /** Per-error-code overrides forwarded to `getTrpcErrorMessage` (see its docs for the `true` sentinel). */
-  entityMessages?: Record<string, string | true>;
+  entityMessages?: TrpcErrorOverrides;
 
   /** Additional success callback invoked after the toast and cache invalidation. */
   onSuccess?: (result: TResult) => void;

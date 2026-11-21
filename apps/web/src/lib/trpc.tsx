@@ -9,6 +9,8 @@ import React, { useState } from 'react';
 import type { AppRouter } from '@luke/api';
 import { TRPC_MAX_BATCH_SIZE } from '@luke/core';
 
+import { trpcFetch } from './trpcFetch';
+
 /**
  * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
  *
@@ -68,6 +70,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
             // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
             url: '/trpc',
             maxItems: TRPC_MAX_BATCH_SIZE,
+            fetch: trpcFetch,
             // Headers for authentication, Content-Type and trace correlation
             headers() {
               // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back

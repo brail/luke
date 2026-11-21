@@ -7,7 +7,6 @@ import { createHash } from 'crypto';
 import { TRPCError } from '@trpc/server';
 
 import {
-  AUTH_UNAVAILABLE_MESSAGE,
   hasPermission,
   isSyntheticLdapEmail,
   SIGN_IN_REFUSED_MESSAGE,
@@ -21,7 +20,7 @@ import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getAuthStrategy, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
 import { issueUserToken, lockUserEmail, type IssuedUserToken } from '../lib/emailHelpers';
-import { toErrorCode, toErrorMessage } from '../lib/error';
+import { ServiceUnavailableError, toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, LdapUserNotWrittenError, type LdapRefusal } from '../lib/ldapAuth';
 import { sendPasswordResetEmail } from '../lib/mailer';
 import { isBlockedByMaintenance } from '../lib/maintenanceMode';
@@ -274,7 +273,7 @@ export async function verifyCredentials(
       metadata: { username, reason: 'strategy_unavailable' },
     });
     await notifyStrategyUnavailable(ctx);
-    throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE });
+    throw new ServiceUnavailableError('auth_unavailable');
   }
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
@@ -408,7 +407,7 @@ export async function verifyCredentials(
       throw new TRPCError({ code: 'FORBIDDEN', message: 'LDAP_EMAIL_IN_USE' });
     }
     if (ldap.failure?.afterProof || (mode === 'signedIn' && ldapUnavailable)) {
-      throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE });
+      throw new ServiceUnavailableError('auth_unavailable');
     }
     if (mode === 'public') throw credentialsRefused();
     throw new TRPCError({ code: 'UNAUTHORIZED', message: WRONG_CURRENT_PASSWORD });

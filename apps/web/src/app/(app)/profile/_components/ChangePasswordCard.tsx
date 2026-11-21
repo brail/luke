@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { AUTH_UNAVAILABLE_MESSAGE, ChangePasswordSchema, type ChangePasswordInput } from '@luke/core';
+import { ChangePasswordSchema, type ChangePasswordInput } from '@luke/core';
 
 import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -93,11 +93,8 @@ export function ChangePasswordCard({
         signOut({ callbackUrl: '/login' });
         return;
       }
-      // FORBIDDEN here is a refusal the server words itself, not a missing permission;
-      // SERVICE_UNAVAILABLE is sign-in being unavailable, its text masked in production.
-      toast.error(
-        `Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true, SERVICE_UNAVAILABLE: AUTH_UNAVAILABLE_MESSAGE })}`
-      );
+      // FORBIDDEN here is a refusal the server words itself, not a missing permission.
+      toast.error(`Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true })}`);
     },
   });
 

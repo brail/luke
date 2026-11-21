@@ -16,8 +16,9 @@ export function useLogout() {
         void signOut({ callbackUrl: '/login' });
         return;
       }
+      // Maintenance only when the server says so: any other 503 is not maintenance (#259).
       toast.error(
-        error.data?.code === 'SERVICE_UNAVAILABLE'
+        error.data?.unavailableReason === 'maintenance'
           ? 'Uscita non disponibile durante la manutenzione: riprova al termine'
           : 'Uscita non riuscita: riprova'
       );
