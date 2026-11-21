@@ -218,8 +218,13 @@ packages/
    in `MAP_VALUED_KEYS`. Pre-session flows (login, email verification, password reset) write
    `actorId: null` and must still set `targetId` to the `User.id`
 5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`, CREATE →
-   `entity:create`, etc.; never `update` for a read-only query. An endpoint that works only on the
-   caller's own data uses `selfProcedure` (`apps/api/src/lib/trpc.ts`); one whose check
+   `entity:create`, etc.; never `update` for a read-only query except for the dialog-only reads
+   below. A read serving only an administration create/edit dialog or one of its tabs requires
+   that dialog's or tab's permission, which may belong to another resource. A picker shared by
+   create and edit accepts either permission. Each such read must carry a code comment naming
+   its sole consumer and explaining the permission choice; general-purpose reads stay on `read`.
+   An endpoint that works only on the caller's own data uses `selfProcedure`
+   (`apps/api/src/lib/trpc.ts`); one whose check
    `requirePermission` cannot express, or that is open to every signed-in user by design, carries a
    reasoned `// nosemgrep`. `sessionProcedure` requires a valid session only: no maintenance guard,
    no permission, never writes. Use it only for reads every signed-in user needs during maintenance;
@@ -366,6 +371,9 @@ Two distinct layers that must stay in sync.
   (ADR-029, ADR-038, ADR-042)
 - Exception: permanent removal of pricing parameter sets requires `pricing:delete` (#130).
   Only admin currently holds it, through `*:*`; editor and viewer retain read-only pricing access.
+- A person reference in another record exposes only `id`, `username`, `firstName`, `lastName`:
+  use `PERSON_REFERENCE_SELECT` (`apps/api/src/lib/personReference.ts`). Reading another user's
+  email, last login, presence or account status requires `users:read`.
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 
@@ -379,14 +387,20 @@ Two distinct layers that must stay in sync.
   least one mapped leaf visible in `SECTION_ACCESS_DEFAULTS`; every default-visible leaf must
   have its mapped permission granted. `sectionHierarchy.test.ts` enforces this static invariant;
   runtime section overrides never grant resource permissions (ADR-038, ADR-042).
-  `sectionAccess.set` and `sectionAccess.setRoleDefaults` reject leaf overrides `true` and role
-  defaults `enabled` with `BAD_REQUEST` unless the target user's role or the configured role holds
-  the mapped permission (`sectionPermissionHeld`, `packages/core/src/rbac/effectiveAccess.ts`).
+  `applySectionOverride` (`apps/api/src/services/sectionAccess.service.ts`) is the shared path
+  for `sectionAccess.set` and `users.approvePending`. It rejects leaf overrides `true` with
+  `BAD_REQUEST` unless the target user's role holds the mapped permission
+  (`sectionPermissionHeld`, `packages/core/src/rbac/effectiveAccess.ts`).
+  `sectionAccess.setRoleDefaults` likewise rejects role defaults `enabled` without that permission.
   Disabling or reverting to auto needs no mapped permission; recovery guards still apply.
   Stored violations are logged at every API start, never automatically changed (ADR-043).
   The writers enforce this: when turning a leaf on, `setOverride` holds a `FOR SHARE` lock on
   the target user's row until commit; `setRbacSectionDefaultsTx` throws
   `SectionPermissionMissingError` before writing a refused map.
+- Every role's non-mutating grant (`read`, `read_all`, `view_revisions`, `export`) must have a
+  leaf on the same resource visible in `SECTION_ACCESS_DEFAULTS`, or a typed role/permission
+  entry with a consumer reason in `READ_GRANT_EXCEPTIONS` in `sectionHierarchy.test.ts`.
+  The administrator's `*:*` is declared there separately.
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
 - Dedicated RBAC writers: `saveSectionsDisabled` saves `app.sections.disabled` with its
@@ -404,6 +418,10 @@ Two distinct layers that must stay in sync.
 - Four strategies via `auth.strategy`: `local-first` | `ldap-first` | `local-only` | `ldap-only` —
   never hardcode
 - Circuit breaker active (`auth.ldap.resilience.*`) — don't bypass the resilience wrapper
+- Build every ldapts `Client` with `ldapClientOptions` (`apps/api/src/lib/ldapTls.ts`); never
+  disable TLS certificate verification (a test fixture that must carries a reasoned `// nosemgrep`).
+  Enforced by `luke-ldap-client-options` and `luke-tls-verification-off` in
+  `.semgrep/rules/ldap-client-tls-options.yml`.
 - `auth.ldap.roleMapping`: JSON string mapping LDAP groups → Luke roles
 
 ## Pricing Engine
@@ -483,14 +501,19 @@ NAV table details and sync decisions: `docs/nav-integration.md`
 **Permission hooks**: `usePermission`: `can()`, `isAuthenticated()` — YES parentheses. There is no
 role helper on purpose: check a permission, never a role name.
 
-**Error handling**: `getTrpcErrorMessage(error, entityOverrides?)` from `lib/trpcErrorMessages.ts`
+**Error handling**: `getTrpcErrorMessage(error, entityOverrides?)` from `lib/trpcErrorMessages.ts`.
+For `SERVICE_UNAVAILABLE`, it selects the text from the server's `data.unavailableReason`,
+with a neutral fallback for a missing or unknown reason; per-code overrides cannot replace it
+(`TrpcErrorOverrides`).
 
 **i18n (future)**: don't block current work on it, but keep dates, numbers and UI strings
 extractable — no hardcoded strings deep in nested components.
 
 **Import order**: groups builtin, external, internal (`@luke/**`, `@/**`), parent, sibling, index,
 type — a blank line between groups, alphabetical within each. Enforced by `import-x/order` in
-`eslint.config.mjs`; run `pnpm exec eslint --fix <files>`.
+`eslint.config.mjs`. Run it from the package that owns the files (root-owned files from the
+root), e.g. `pnpm -C apps/web exec eslint --fix <files>` with paths relative to it: ESLint reads
+`apps/web`'s accepted debt (`eslint-suppressions.json`) only from the working directory.
 
 ## Env Policy — Firm Architectural Rule
 

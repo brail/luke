@@ -129,7 +129,11 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
   `apps/api/src/lib/trpc.ts`, a `sessionProcedure` use that writes or is not listed in ADR-042, a
   `nosemgrep: luke-procedure-requires-permission` whose reason does not hold, a permission that
   does not match the operation
-- tRPC read-only procedures using `requirePermission('entity:update')` instead of `entity:read`
+- Read-only procedures gated on a non-read permission (`update`, `create`, `configure`, ...)
+  outside CLAUDE.md rule 5's dialog-only exception; for each exception, verify the sole
+  consumer, its permission and the code comment
+- Person references exposing fields beyond CLAUDE.md's "RBAC & Section Access" contract;
+  another user's email, last login, presence or account status returned without `users:read`
 - Missing `withAuditLog` or `logAudit()` on procedures named `create`, `update`, `delete`, `remove`, `restore`, `unlink`
 
 **Section system — cross-reference these three sources:**
@@ -144,6 +148,9 @@ Check:
 2. Every `sectionEnum` value has an entry in `SECTION_ACCESS_DEFAULTS` for all 3 roles
 3. Every `SECTION_TO_PERMISSION` value maps to a valid `resource:action` in `VALID_RESOURCE_ACTIONS`
 4. Any frontend route/nav item referencing a section string not in `sectionEnum`
+5. Role read grants follow CLAUDE.md's "RBAC & Section Access" invariant, enforced by
+   `sectionHierarchy.test.ts`; review whether each `READ_GRANT_EXCEPTIONS` reason still
+   identifies a real consumer available to that role
 
 **LDAP:**
 

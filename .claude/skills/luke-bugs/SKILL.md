@@ -138,6 +138,9 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 - `useMutation` with `onMutate` optimistic update missing `onError` rollback — failed mutation leaves UI in incorrect state permanently
 - Lists rendered with index as key when items can be reordered/filtered — causes React to reuse wrong component instances
 - Mutations that modify data without calling `utils.entity.invalidate()` — sibling components show stale data
+- Dialog-only reads enabled without the permission required by their endpoint (CLAUDE.md
+  rule 5), or disabled for an authorized dialog user: trace the query gate and report the
+  resulting FORBIDDEN request or missing picker data
 
 **Check-then-act across a permission boundary:**
 
