@@ -8,7 +8,8 @@ deliverability, the reverse proxy's network and the release build's repository
 variables. Security headers and
 the health and readiness probes are documented in the
 [API documentation](apps/api/README.md); session revocation is decided in
-[ADR-039](docs/decisions/039-session-revocation-tokenversion-and-absolute-lifetime.md).
+[ADR-048](docs/decisions/048-session-revocation-signing-out-always-ends-the-browser-session.md),
+which supersedes ADR-039.
 
 ## Contents
 
@@ -359,7 +360,10 @@ A maintenance window never ends by itself. During one, a signed-out visitor
 sees no maintenance screen at all — the state needs a session (ADR-042) — and
 reaches the login form and the password reset page as usual; a signed-in user
 who cannot bypass maintenance sees the lock screen, which links to the form
-(`Accesso amministratori`). An administrator signs in there and ends the window
+(`Accesso amministratori`) and signs out (`Esci`). Signing out works in every
+state, maintenance included: `/logout` is the address to give a user stuck on
+any page, and it clears the browser session even when the API refuses to end
+the sessions on the server (ADR-048). An administrator signs in there and ends the window
 from the banner. When no browser reaches the form — the web container
 down, the proxy misrouted — end it through the API from inside its container:
 

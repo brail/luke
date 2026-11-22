@@ -4,6 +4,7 @@ import { ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 
 import LogoLockup from '../LogoLockup';
+import { LogoutForm } from '../system/LogoutForm';
 
 interface MaintenanceLockScreenProps {
   message: string | null;
@@ -12,8 +13,9 @@ interface MaintenanceLockScreenProps {
 /**
  * Full-screen block shown to non-admin users while maintenance mode is `ACTIVE`.
  * Covers the app (fixed overlay, high z-index) rather than unmounting it, so the app tree
- * stays intact and simply reappears once the state flips back to `INACTIVE`. Its one control
- * leads an administrator signed out during the window to the login form, which it never covers.
+ * stays intact and simply reappears once the state flips back to `INACTIVE`. `Esci` signs the
+ * user out (#238); the link leads an administrator signed out during the window to the login form,
+ * which it never covers.
  */
 export function MaintenanceLockScreen({ message }: MaintenanceLockScreenProps) {
   return (
@@ -26,6 +28,7 @@ export function MaintenanceLockScreen({ message }: MaintenanceLockScreenProps) {
         <p className="text-sm text-muted-foreground">
           {message || 'Il sistema è temporaneamente non disponibile per manutenzione. Riprova tra qualche minuto.'}
         </p>
+        <LogoutForm />
         <Link href="/login" className="text-xs text-muted-foreground underline-offset-4 hover:underline">
           Accesso amministratori
         </Link>

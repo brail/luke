@@ -5,6 +5,7 @@ import React, { useEffect } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { ErrorState } from '../components/system/ErrorState';
+import { LogoutForm } from '../components/system/LogoutForm';
 import { RetryButton } from '../components/system/RetryButton';
 import { debugError } from '../lib/debug';
 
@@ -35,7 +36,12 @@ export default function GlobalError({
             <ErrorState
               title="Qualcosa è andato storto"
               description="Riprova l'azione. Se l'errore persiste, contatta il supporto."
-              actionSlot={<RetryButton onRetry={retry} autoFocus />}
+              actionSlot={
+                <div className="flex gap-3">
+                  <RetryButton onRetry={retry} autoFocus />
+                  <LogoutForm />
+                </div>
+              }
             />
           </SectionCard>
         </div>

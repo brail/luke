@@ -5,6 +5,7 @@ import React, { useEffect } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { ErrorState } from '../components/system/ErrorState';
+import { LogoutForm } from '../components/system/LogoutForm';
 import { ReportIssueButton } from '../components/system/ReportIssueButton';
 import { RetryButton } from '../components/system/RetryButton';
 import { debugError } from '../lib/debug';
@@ -38,6 +39,7 @@ export default function Error({
             <div className="flex gap-3">
               <RetryButton onRetry={retry} autoFocus />
               <ReportIssueButton />
+              <LogoutForm />
             </div>
           }
         />

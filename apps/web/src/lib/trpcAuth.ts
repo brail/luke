@@ -32,9 +32,9 @@ export function createAuthedTrpcClient(
         url: trpcUrl,
         maxItems: TRPC_MAX_BATCH_SIZE,
         fetch: trpcFetch,
+        // No `Content-Type`: tRPC sets it on a POST, and a second one would be joined to it (415).
         headers: () => ({
           Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
           ...forwardedFor(incomingHeaders),
         }),
       }),

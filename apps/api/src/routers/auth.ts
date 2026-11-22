@@ -129,9 +129,9 @@ export const authRouter = router({
 
   /**
    * Ends every API session of the caller, the bearer it is called with included (`tokenVersion`).
-   * The web's sign-out button calls it before Auth.js `signOut()`, and signs out only once it
-   * succeeded or answered UNAUTHORIZED (nothing left to end). Like every own-data endpoint it is
-   * blocked by an active maintenance window for whoever cannot bypass it.
+   * The web's one sign-out path (`serverLogout`, ADR-048) calls it, then clears the browser session
+   * whatever it answered. Like every own-data endpoint it is blocked by an active maintenance window
+   * for whoever cannot bypass it.
    *
    * @auth {authenticated — own account}
    * @input {none}

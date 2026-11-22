@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 
 import {
   AUTH_UNAVAILABLE_MESSAGE,
@@ -28,6 +28,20 @@ import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
 
 import { PendingApproval } from './_components/PendingApproval';
+
+/**
+ * After a sign-out whose server-side end failed (`/login?signout=incomplete`, ADR-048): this
+ * browser is signed out, but the sessions on other devices stay open until they expire.
+ */
+function SignoutIncompleteNotice() {
+  if (useSearchParams().get('signout') !== 'incomplete') return null;
+  return (
+    <p role="status" className="mb-4 text-center text-sm text-muted-foreground">
+      Sei uscito da questo browser, ma il server non ha potuto chiudere le tue sessioni: quelle aperte su
+      altri dispositivi restano attive fino alla loro scadenza.
+    </p>
+  );
+}
 
 /**
  * Login page with the form and Auth.js integration.
@@ -152,6 +166,10 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* A boundary for the search params, so the rest of the page still prerenders. */}
+          <Suspense fallback={null}>
+            <SignoutIncompleteNotice />
+          </Suspense>
           {pending ? (
             <PendingApproval
               username={username}

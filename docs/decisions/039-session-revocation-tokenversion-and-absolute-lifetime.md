@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [048 — Session Revocation: Signing Out Always Ends the Browser Session](048-session-revocation-signing-out-always-ends-the-browser-session.md)
 
 ## Context
 

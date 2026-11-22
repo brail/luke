@@ -21,10 +21,11 @@ import { MaintenanceBanner } from './MaintenanceBanner';
 import { MaintenanceLockScreen } from './MaintenanceLockScreen';
 
 /**
- * The pages that come before a session, never covered: an administrator signed out during a window
- * must reach the login form to end it, and the recovery link (`/auth/reset?token=…`) must work.
+ * The pages never covered: an administrator signed out during a window must reach the login form to
+ * end it, the recovery link (`/auth/reset?token=…`) must work, and signing out stays reachable as a
+ * plain address (`/logout`, #238).
  */
-const PRE_SESSION_PATHS = ['/login', '/auth/reset'];
+const UNCOVERED_PATHS = ['/login', '/auth/reset', '/logout'];
 
 /**
  * Global maintenance-mode UI, mounted once at the root provider tree (before `{children}`,
@@ -33,8 +34,8 @@ const PRE_SESSION_PATHS = ['/login', '/auth/reset'];
  * - `SCHEDULED`: persistent top banner with a live countdown, plus a blocking "Ho capito"
  *   alert dialog re-shown at each `warningLeadMinutes` threshold the backend confirms crossed.
  * - `ACTIVE`, signed-in non-admin: full-screen lock via `MaintenanceLockScreen` on every page but
- *   the pre-session ones (`PRE_SESSION_PATHS`): there the API itself refuses a login from whoever
- *   cannot bypass maintenance, and a reset link still works.
+ *   `UNCOVERED_PATHS`: there the API itself refuses a login from whoever cannot bypass maintenance,
+ *   a reset link still works, and the sign-out confirmation stays reachable.
  * - `ACTIVE`, admin: discrete top banner only, never locked out.
  *
  * Signed out, it shows nothing: the state needs a session (ADR-042, `useMaintenanceStatus`), and the
@@ -94,7 +95,7 @@ export function MaintenanceGate() {
           msRemaining={msRemaining}
         />
       )}
-      {state.status === 'ACTIVE' && !bypasses && !PRE_SESSION_PATHS.includes(pathname) && (
+      {state.status === 'ACTIVE' && !bypasses && !UNCOVERED_PATHS.includes(pathname) && (
         <MaintenanceLockScreen message={state.message} />
       )}
 

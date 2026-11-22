@@ -47,7 +47,7 @@ test.describe('smoke: authentication', () => {
     // does not give it role="button", so no getByRole; and `[data-sidebar="footer"]` is
     // not enough to tell them apart, because AppSidebar has two of them nested.
     await page.locator('div[aria-haspopup="menu"]').click();
-    await page.getByRole('menuitem', { name: 'Logout' }).click();
+    await page.getByRole('menuitem', { name: 'Esci' }).click();
 
     await expect(page).toHaveURL(/\/login$/);
 

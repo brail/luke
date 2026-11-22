@@ -3,15 +3,16 @@ import { render } from 'vitest-browser-react';
 
 import type { MaintenanceModeView } from '@luke/core';
 
+import { expectSubmitsSignOut } from '../../system/__browser__/expectSubmitsSignOut';
 import { MaintenanceGate } from '../MaintenanceGate';
 
 import type { ReactNode } from 'react';
 
 /**
  * During an active window the lock screen covers every page for a signed-in user who cannot bypass
- * maintenance, except the two that come before a session: the login form and the password reset
- * link. The lock screen links to the login form. Signed out, no state reaches the gate
- * (`useMaintenanceStatus`, tested on its own).
+ * maintenance, except the login form, the password reset link and the sign-out confirmation. The
+ * lock screen links to the login form and signs out with `Esci` (#238). Signed out, no state
+ * reaches the gate (`useMaintenanceStatus`, tested on its own).
  */
 
 const h = vi.hoisted(() => ({ pathname: '/dashboard' }));
@@ -51,9 +52,15 @@ test('covers an ordinary page, with a link to the login form for administrators'
   await expect.element(screen.getByRole('link', { name: 'Accesso amministratori' })).toHaveAttribute('href', '/login');
 });
 
-test.each(['/login', '/auth/reset'])('leaves %s uncovered', async pathname => {
+test.each(['/login', '/auth/reset', '/logout'])('leaves %s uncovered', async pathname => {
   h.pathname = pathname;
   const screen = await render(<MaintenanceGate />);
 
   expect(screen.getByRole('heading', { name: 'Sistema in manutenzione' }).query()).toBeNull();
+});
+
+test('signs out from the lock screen', async () => {
+  const screen = await render(<MaintenanceGate />);
+
+  await expectSubmitsSignOut(screen.getByRole('button', { name: 'Esci' }));
 });

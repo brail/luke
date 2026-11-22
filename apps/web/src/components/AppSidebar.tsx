@@ -43,12 +43,12 @@ import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 
-import { useLogout } from '../hooks/useLogout';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
 import { FeedbackDialog } from './FeedbackDialog';
 import LogoLockup from './LogoLockup';
+import { LogoutForm } from './system/LogoutForm';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import {
@@ -88,8 +88,6 @@ export default function AppSidebar() {
   const { menuStates, toggleMenu } = useMenuPreferences();
   const isActive = (href: string) => pathname.startsWith(href);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-
-  const logout = useLogout();
 
   // Build the initials from firstName and lastName
   const getUserInitials = (firstName?: string, lastName?: string) => {
@@ -533,13 +531,19 @@ export default function AppSidebar() {
               <span>Segnala / Suggerisci</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => logout.mutate()}
-              className="text-red-600 focus:text-red-600"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Logout</span>
-            </DropdownMenuItem>
+            <LogoutForm>
+              {/* Kept open on select: closing would unmount the form before the browser submits it. */}
+              <DropdownMenuItem
+                asChild
+                onSelect={event => event.preventDefault()}
+                className="w-full text-red-600 focus:text-red-600"
+              >
+                <button type="submit">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Esci</span>
+                </button>
+              </DropdownMenuItem>
+            </LogoutForm>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>

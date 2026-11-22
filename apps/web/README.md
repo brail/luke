@@ -54,10 +54,19 @@ Public group `(public)/`:
 - `/auth/reset` — password reset through an emailed token
 - `/auth/verify` — email address verification
 
+Outside both groups:
+
+- `/logout` — sign-out confirmation (`Esci`, `Annulla`), reachable in every state; the maintenance
+  lock never covers it (ADR-048)
+
 Route handlers:
 
 - `/api/auth/[...nextauth]` — NextAuth handler
 - `/api/auth/force-logout` — server-side session teardown for a stale or revoked cookie, then redirect to `/login`
+- `/api/auth/logout` — `POST` only, the one sign-out path: every `Esci` posts a native form here.
+  It checks the request's origin, ends the API sessions within 5 seconds, always clears the browser
+  session, and redirects (303) to `/login`, or `/login?signout=incomplete` when the API sessions
+  could not be ended (ADR-048)
 - `/api/google/oauth/callback` — Google OAuth 2.0 callback
 - `/api/uploads/[...path]` — authenticated proxy that streams stored files from the API, with per-segment path validation
 - `/upload/[...path]` — streams every browser upload to the same API path, which authenticates it (`lib/uploadProxy.ts` says why it is not a rewrite)
@@ -116,8 +125,8 @@ The smoke suite runs against a running stack — `localhost` by default, a deplo
 `PLAYWRIGHT_BASE_URL`, which also stops it from starting `pnpm dev` — and signs in as
 `E2E_USERNAME`/`E2E_PASSWORD` (default: the seeded `admin`). Against a deployed stack a test waits
 for the next window when the API's per-IP limit is close, so specs import `test` from
-`tests/support/smoke.ts`. The login limits are not waited for: a run logs in four times, `admin`
-twice, against 5 a minute per IP and 10 in 15 minutes per username, so leave a minute between two
+`tests/support/smoke.ts`. The login limits are not waited for: a run logs in five times — `admin`
+twice, the logout account twice, one wrong password — against 5 a minute per IP and 10 in 15 minutes per username, so leave a minute between two
 runs and run at most five times in 15 minutes.
 The logout test needs its own account
 (`E2E_LOGOUT_USERNAME`/`E2E_LOGOUT_PASSWORD`; logout revokes all of that user's sessions): create

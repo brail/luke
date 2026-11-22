@@ -55,7 +55,7 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
 | [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Superseded by [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) |
-| [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Accepted |
+| [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Superseded by [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) |
 | [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
 | [041](041-calendar-visibility-function-and-brand-from-one-team.md) | Calendar Visibility: Function and Brand from One Team | Accepted |
 | [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Accepted |
@@ -64,6 +64,7 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [045](045-bootstrap-guard-refuses-tls-verification-switched-off.md) | Bootstrap Guard Refuses TLS Verification Switched Off | Accepted |
 | [046](046-web-server-refuses-tls-verification-switched-off.md) | Web Server Refuses TLS Verification Switched Off | Accepted |
 | [047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md) | Documentation Architecture: Decisions in Force per Area, an Index by Area and Short Records | Accepted |
+| [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) | Session Revocation: Signing Out Always Ends the Browser Session | Accepted |
 
 _Last updated: 2026-11-22_
 <!-- luke-docs:end:adr-index -->

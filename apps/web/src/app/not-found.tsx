@@ -4,6 +4,7 @@ import React from 'react';
 import LogoLockup from '../components/LogoLockup';
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
+import { LogoutForm } from '../components/system/LogoutForm';
 import { ReportIssueButton } from '../components/system/ReportIssueButton';
 import { Button } from '../components/ui/button';
 
@@ -29,6 +30,7 @@ export default function NotFound() {
               <Button>Torna alla Dashboard</Button>
             </Link>
             <ReportIssueButton />
+            <LogoutForm />
           </div>
         </div>
       </SectionCard>

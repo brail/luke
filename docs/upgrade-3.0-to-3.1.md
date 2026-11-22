@@ -34,6 +34,11 @@ What 3.1 changes for the operator so far:
   the old username, so the user could no longer sign in with it. 3.1 moves it with the rename, and
   the migration moves the ones left behind where the owner is unambiguous; step 2 lists any it
   leaves.
+- **Signing out always works.** Every page offers `Esci` — error pages and the maintenance lock
+  screen included — as a plain form post that needs no JavaScript, and `/logout` signs out from
+  any state. When the API cannot end the sessions (maintenance, a request limit, an error), the
+  browser session is cleared anyway and the login page says that other devices stay signed in
+  until their sessions expire (ADR-048). Nothing to run.
 - **Google Calendar sync failures are visible.** The `Google Workspace` settings page shows each
   sync operation's last success and last failure, and a failure notifies the administrators. In
   production, step 5 moves the sync to a dedicated mailbox.

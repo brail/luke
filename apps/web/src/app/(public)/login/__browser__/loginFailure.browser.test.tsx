@@ -25,8 +25,10 @@ import type { ReactNode } from 'react';
  */
 
 // Hoisted and stable: a fresh object per render would re-run every effect that depends on it.
-const { signIn, router, submitPendingEmail, resendVerification, maintenanceStatus } = vi.hoisted(() => ({
+const { signIn, router, submitPendingEmail, resendVerification, maintenanceStatus, url } = vi.hoisted(() => ({
   signIn: vi.fn(),
+  /** The page's query string. */
+  url: { search: '' },
   router: { push: vi.fn() },
   submitPendingEmail: vi.fn(),
   resendVerification: vi.fn(),
@@ -34,7 +36,7 @@ const { signIn, router, submitPendingEmail, resendVerification, maintenanceStatu
 }));
 
 vi.mock('next-auth/react', () => ({ signIn }));
-vi.mock('next/navigation', () => ({ useRouter: () => router }));
+vi.mock('next/navigation', () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams(url.search) }));
 // `__esModule`: `next/link` is CommonJS, and once pre-bundled its default import goes through an
 // interop that would otherwise hand the page this whole object as the component.
 vi.mock('next/link', () => ({
@@ -76,6 +78,7 @@ async function backToLogin(screen: Awaited<ReturnType<typeof render>>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  url.search = '';
   submitPendingEmail.mockResolvedValue({ success: true });
   resendVerification.mockResolvedValue({ success: true });
   maintenanceStatus.mockResolvedValue({ status: 'INACTIVE' });
@@ -262,5 +265,29 @@ describe('an account pending approval', () => {
     await expect.element(screen.getByLabelText('Indirizzo email')).toBeVisible();
     await backToLogin(screen);
     expect(submitPendingEmail).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A sign-out whose server-side end failed lands on `/login?signout=incomplete` (ADR-048): the page
+ * says this browser is signed out but the other devices' sessions stay open until they expire.
+ */
+describe('after a sign-out', () => {
+  test('tells the user when the server could not end the sessions', async () => {
+    url.search = 'signout=incomplete';
+    const screen = await render(<LoginPage />);
+
+    await expect
+      .element(screen.getByRole('status'))
+      .toHaveTextContent(
+        'Sei uscito da questo browser, ma il server non ha potuto chiudere le tue sessioni: quelle aperte su altri dispositivi restano attive fino alla loro scadenza.'
+      );
+  });
+
+  test('says nothing after an ordinary sign-out', async () => {
+    const screen = await render(<LoginPage />);
+
+    await expect.element(screen.getByRole('button', { name: 'Accedi' })).toBeVisible();
+    expect(screen.getByRole('status').query()).toBeNull();
   });
 });
