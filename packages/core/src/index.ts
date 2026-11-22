@@ -88,6 +88,7 @@ export {
   isDevelopment,
   isProduction,
 } from './runtime/env.js';
+export { tlsVerificationOffProblem } from './runtime/tlsVerification.js';
 
 // Re-export network URL utilities
 export {

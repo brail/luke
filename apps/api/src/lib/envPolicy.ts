@@ -1,3 +1,5 @@
+import { tlsVerificationOffProblem } from '@luke/core';
+
 import type { FastifyBaseLogger } from 'fastify';
 
 /**
@@ -54,13 +56,8 @@ export function assertEnvPolicy(env: NodeJS.ProcessEnv, logger: Pick<FastifyBase
     );
   }
 
-  // A value check: Node turns default verification off for exactly '0' (`getAllowUnauthorized`).
-  if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
-    problems.push(
-      'NODE_TLS_REJECT_UNAUTHORIZED=0 disables TLS certificate verification by default. ' +
-        'Remove it and configure trusted certificates instead.'
-    );
-  }
+  const tlsProblem = tlsVerificationOffProblem(env);
+  if (tlsProblem) problems.push(tlsProblem);
 
   if (problems.length === 0) return;
 

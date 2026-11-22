@@ -533,9 +533,13 @@ from the git tag in CI — never read from AppConfig.
 
 **Forbidden in `.env`**: SMTP, LDAP, storage credentials, tokens, application passwords.
 `assertEnvPolicy()` in `apps/api/src/lib/envPolicy.ts` blocks apps/api's boot in production on
-`SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`, or when
-`NODE_TLS_REJECT_UNAUTHORIZED` is `0`, which disables TLS certificate verification. Outside
-production, it logs a warning instead.
+`SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, or `*_TOKEN`;
+outside production, it logs a warning instead.
+
+Both apps/api and the apps/web Node.js server refuse to start in production when
+`NODE_TLS_REJECT_UNAUTHORIZED` is exactly `0`, which disables TLS certificate verification
+by default; outside production, they log a warning instead. The value check and diagnostic
+are shared through `@luke/core`. The API's name-based denylist does not apply to apps/web.
 
 ## Prisma Migration Workflow
 

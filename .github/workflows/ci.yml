@@ -291,6 +291,24 @@ jobs:
           docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
           luke-${{ matrix.image }}:ci /check/check-image-runtime.ts ${{ matrix.image }}
 
+      # The web server refuses a production start with TLS verification switched off
+      # (apps/web/src/instrumentation.ts, ADR-046). Exit 1 with its message is the only accepted
+      # outcome: a server still running at the timeout (124) means the guard is gone, and any other
+      # code is a failure of its own. `timeout` stops the docker client, not the container, hence
+      # the explicit removal.
+      - name: Refuse a start with TLS verification off
+        if: ${{ matrix.image == 'web' }}
+        shell: bash
+        run: |
+          set +e
+          docker rm -f web-tls-guard >/dev/null 2>&1
+          out=$(timeout 30 docker run --name web-tls-guard -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e NEXTAUTH_SECRET=ci-not-a-secret luke-web:ci 2>&1)
+          code=$?
+          docker rm -f web-tls-guard >/dev/null 2>&1
+          echo "$out"
+          echo "exit=$code"
+          [ "$code" -eq 1 ] && grep -q '\[env-policy\] NODE_TLS_REJECT_UNAUTHORIZED=0' <<<"$out"
+
   # The aggregate gate: the one context `main`'s ruleset requires in place of
   # the individual job names, a list it could not keep in step with this file.
   # Its `needs` is what lets one name stand for all of them, and

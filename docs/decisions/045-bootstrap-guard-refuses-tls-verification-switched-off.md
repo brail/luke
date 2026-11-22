@@ -40,3 +40,9 @@ Owner decision #103 a, 2026-11-21: refuse at boot, over a log warning or leaving
   follow-up is tracked in #283.
 - `apps/api/test/envPolicy.spec.ts` covers the function; `apps/api/test/envPolicyBoot.spec.ts` starts
   the server in production with the variable set and expects exit 1.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-11-22 — Decision, the value check, and Consequences, "apps/web runs no equivalent check".** As of the commit that adds this entry, the check and its message are `tlsVerificationOffProblem` in `@luke/core` (`packages/core/src/runtime/tlsVerification.ts`), which `assertEnvPolicy` calls; apps/api's behaviour is unchanged. apps/web now refuses the same value at its server start ([ADR-046](046-web-server-refuses-tls-verification-switched-off.md)).

@@ -49,6 +49,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 | Storage | `IStorageProvider`, `APP_STORAGE_BUCKETS`, `isValidBucket`, local and S3 configuration schemas, asset kinds and variants |
 | Sanitisation | `sanitizeFileName`, `isPathSafe`, text and Zod helpers |
 | Error text | `toErrorMessage` (a readable message from any caught value), `withoutQueryArguments` (a Prisma error's text without the query values it renders) |
+| Runtime | `isDevelopment`, `isProduction`, `getApiBaseUrl`, `tlsVerificationOffProblem` (the boot-time refusal of `NODE_TLS_REJECT_UNAUTHORIZED=0` that apps/api and apps/web share, ADR-046) |
 
 ### Additional entry points
 

@@ -86,6 +86,8 @@ Every other API path (`/trpc`, `/download`, `/api/sse`) is proxied to `apps/api`
 | `NEXT_PUBLIC_LUKE_DEBUG_UI` | Build-time flag: `true` turns on `debugLog`/`debugWarn`/`debugError` output (`src/lib/debug.ts`) in a production build; outside production they always log | No |
 
 Everything else — SMTP, LDAP, storage, NAV, Google — lives in AppConfig in the database, never in environment variables.
+
+In production the server refuses to start (exit 1) when `NODE_TLS_REJECT_UNAUTHORIZED` is `0`, which turns TLS certificate verification off by default; elsewhere it warns. The check runs in `src/instrumentation.ts`, Next's server-start hook (ADR-046).
 <!-- luke-docs:end:env -->
 
 ## Local Development

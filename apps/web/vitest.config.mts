@@ -2,7 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Unit tier of `apps/web`, deliberately restricted to **pure** modules under `src/lib/`:
- * formatting, style calculations, error mapping. They run in `node`, without jsdom.
+ * formatting, style calculations, error mapping — plus the server-start hook `src/instrumentation.ts`,
+ * which runs in Node by definition. They run in `node`, without jsdom.
  *
  * Components and hooks are tested elsewhere: in a real Chromium by the browser tier
  * (`vitest.browser.config.mts`, `*.browser.test.tsx`), and end to end by the Playwright smoke
@@ -16,6 +17,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/lib/**/*.test.ts'],
+    include: ['src/lib/**/*.test.ts', 'src/instrumentation.test.ts'],
   },
 });
