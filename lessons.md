@@ -1050,6 +1050,21 @@ code may already be in a plan.
 
 ---
 
+### Re-read the hub's outbox before committing anything that takes a shared number (2026-11-22)
+
+**What happened.** A unit's plan allocated the next ADR number. While the plan waited for review,
+the hub approved a documentation design that counted on the same number and announced it in the
+outbox. The unit was committed and pushed without re-reading the outbox, so the published ADR took
+the number; the design had to move to the next one.
+
+**Why it slipped.** The outbox was read when the plan was written, as the hand-off asks, but a
+number chosen at plan time is a claim that can go stale before the commit.
+
+**Rule.** Before committing a change that takes the next free number of a shared sequence — an ADR,
+a migration folder, any number others plan on — re-read the outbox and check the number against
+the files on the remote branch (`git ls-tree origin/<branch> docs/decisions/`) and any approved
+design that names it.
+
 ## React & UI
 
 ### A Radix close-button cannot double as a form's submit button
