@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [047 — Documentation Architecture: Decisions in Force per Area, an Index by Area and Short Records](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md)
 
 ## Context
 

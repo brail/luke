@@ -1,5 +1,19 @@
 # Architectural Decisions
 
+Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md)):
+
+- [Permissions](in-force/permissions.md)
+- [Section access](in-force/section-access.md)
+- [Sessions and accounts](in-force/sessions-and-accounts.md)
+- [Secrets and sensitive data](in-force/secrets-and-sensitive-data.md)
+- [Runtime configuration](in-force/runtime-configuration.md)
+- [Storage](in-force/storage.md)
+- [Dates and time](in-force/dates-and-time.md)
+- [Calendar](in-force/calendar.md)
+- [Release and deployment](in-force/release-and-deployment.md)
+- [Documentation](in-force/documentation.md)
+- [Platform](in-force/platform.md)
+
 <!-- luke-docs:start:adr-index -->
 | # | Title | Status |
 |---|--------|--------|
@@ -32,7 +46,7 @@
 | [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
 | [028](028-runtime-images-carry-runtime-dependencies-only.md) | Runtime Images Carry Runtime Dependencies Only, and Prove It | Accepted |
 | [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Superseded by [038](038-resource-action-permissions-grants-follow-section-visibility.md) |
-| [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Accepted |
+| [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Superseded by [047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md) |
 | [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) | Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets | Accepted |
 | [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Superseded by [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) |
 | [033](033-release-identity-versioning-contract-and-release-trains.md) | Release Identity, Versioning Contract and Release Trains | Accepted |
@@ -49,6 +63,7 @@
 | [044](044-pending-user-approval-in-one-transaction.md) | Pending-User Approval in One Transaction | Accepted |
 | [045](045-bootstrap-guard-refuses-tls-verification-switched-off.md) | Bootstrap Guard Refuses TLS Verification Switched Off | Accepted |
 | [046](046-web-server-refuses-tls-verification-switched-off.md) | Web Server Refuses TLS Verification Switched Off | Accepted |
+| [047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md) | Documentation Architecture: Decisions in Force per Area, an Index by Area and Short Records | Accepted |
 
 _Last updated: 2026-11-22_
 <!-- luke-docs:end:adr-index -->
