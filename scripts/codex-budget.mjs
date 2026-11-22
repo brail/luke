@@ -19,9 +19,18 @@
  * assumed to have dropped because its reset time has passed. `offerWait` marks an `insufficient`
  * verdict caused by the 5-hour window alone when that window resets within 60 minutes: offer the
  * owner a wait and a new check. The script itself never waits.
+ *
+ * Before the read, `checkInstall` looks for the two broken local installs that made rounds fail
+ * after a Homebrew upgrade of the Codex cask (#288): a helper link left pointing at the removed
+ * version, and a process of another version still running — one under another version's directory,
+ * or a `codex` started before the installed version was. Either one answers `unknown` with a `fix`
+ * naming the step; the repair itself is not the probe's job. A failure of the check itself only
+ * skips it.
  */
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { accessSync, constants, lstatSync, realpathSync, statSync } from 'node:fs';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 const BUCKET = 'codex';
 const FIVE_HOUR_MINS = 300;
@@ -32,6 +41,8 @@ const WAIT_OFFER_SECS = 3600;
 const DEADLINE_MS = 30_000;
 const MAX_BUFFER = 1_000_000;
 const EXIT = { go: 0, insufficient: 1, unknown: 2 };
+
+const HELPER = 'codex-code-mode-host';
 
 const EMPTY = { bucket: null, ordinaryUsageAllowed: null, rateLimitReachedType: null, fiveHour: null, week: null };
 const unknown = reason => ({ status: 'unknown', reason, ...EMPTY, offerWait: false });
@@ -73,6 +84,75 @@ export function decide(result, nowSecs) {
   // The schema: a null permission is unavailable, never inferred from percentages or reset times.
   if (allowed !== true) return verdict('unknown', 'permission_unavailable');
   return verdict('go', 'within_thresholds');
+}
+
+/**
+ * Finds a broken local install, or returns `null`. Pure: the filesystem, the install time and the
+ * current user's processes are passed in. A missing helper link is not a finding (an install that
+ * does not link one), nor a link the installed version could not replace.
+ */
+export function checkInstall({ codexOnPath, realpath, lexists, installedAt, processes }) {
+  if (!codexOnPath) return null; // the app-server spawn reports it with its own reason
+  const binDir = dirname(realpath(codexOnPath));
+  const helperLink = join(dirname(codexOnPath), HELPER);
+  const installedHelper = join(binDir, HELPER);
+  if (lexists(helperLink) && lexists(installedHelper)) {
+    let target = null;
+    try {
+      target = realpath(helperLink);
+    } catch {
+      // a dangling link: its version directory was removed
+    }
+    if (target !== installedHelper) {
+      return { reason: 'helper_link_broken', fix: `ln -sf ${installedHelper} ${helperLink}` };
+    }
+  }
+  // ponytail: Homebrew Caskroom layout only (<root>/codex/<version>/bin); other installs skip this check.
+  const versionDir = dirname(binDir);
+  const root = dirname(versionDir);
+  if (basename(root) !== 'codex') return null;
+  // `ps` shows argv[0]: a `codex` run through PATH carries no version, only its start time does.
+  const viaPath = command => command === 'codex' || command.startsWith('codex ') || command.startsWith(`${codexOnPath} `);
+  const stale = processes.filter(
+    p =>
+      (p.command.startsWith(`${root}/`) && !p.command.startsWith(`${versionDir}/`)) ||
+      (viaPath(p.command) && p.startedAt < installedAt)
+  );
+  if (stale.length === 0) return null;
+  return { reason: 'stale_codex_process', fix: `stop the processes of another Codex version: kill ${stale.map(p => p.pid).join(' ')}` };
+}
+
+/** The real filesystem, `PATH` and the current user's processes for `checkInstall`. */
+function localInstall() {
+  const isExecutable = path => {
+    try {
+      accessSync(path, constants.X_OK);
+      return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const codexOnPath =
+    (process.env.PATH ?? '')
+      .split(delimiter)
+      .filter(dir => dir.startsWith('/'))
+      .map(dir => join(dir, 'codex'))
+      .find(isExecutable) ?? null;
+  const lexists = path => lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+  let installedAt = Infinity;
+  if (codexOnPath) {
+    const versionDir = dirname(dirname(realpathSync(codexOnPath)));
+    const { birthtimeMs, mtimeMs } = statSync(versionDir);
+    installedAt = birthtimeMs > 0 ? birthtimeMs : mtimeMs;
+  }
+  // `-x`: this user's processes only, with or without a terminal. `lstart` is a fixed-format date.
+  const ps = execFileSync('ps', ['-xo', 'pid=,lstart=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const processes = ps
+    .split('\n')
+    .map(line => line.trim().match(/^(\d+)\s+(\w{3} \w{3} +\d+ [\d:]{8} \d{4})\s+(.*)$/))
+    .filter(Boolean)
+    .map(([, pid, started, command]) => ({ pid: Number(pid), startedAt: Date.parse(started), command }));
+  return { codexOnPath, realpath: realpathSync, lexists, installedAt, processes };
 }
 
 /** Runs the request sequence against `command args`; resolves to the read's result or rejects. */
@@ -194,6 +274,52 @@ async function selfTest() {
     await assert.rejects(readLimits(process.execPath, fake(body), 1000), message, name);
   }
   await assert.rejects(readLimits('codex-budget-no-such-binary', [], 1000), /spawn failed/);
+
+  // Install check (#288) against a fake Homebrew layout: 0.171.0 installed, 0.170.0 removed.
+  const cask = '/opt/homebrew/Caskroom/codex';
+  const installedAt = Date.parse('Sat Nov 21 15:20:54 2026');
+  const before = installedAt - 3 * 86_400_000;
+  const after = installedAt + 3_600_000;
+  // `helper: null` leaves the helper unlinked.
+  const install = ({ helper = `${cask}/0.171.0/bin/codex-code-mode-host`, processes = [], bin = `${cask}/0.171.0/bin` } = {}) => {
+    const links = { '/opt/homebrew/bin/codex': `${bin}/codex` };
+    if (helper !== null) links['/opt/homebrew/bin/codex-code-mode-host'] = helper;
+    const files = new Set([`${bin}/codex`, `${bin}/codex-code-mode-host`]);
+    return {
+      installedAt,
+      codexOnPath: '/opt/homebrew/bin/codex',
+      realpath: path => {
+        const target = links[path] ?? path;
+        if (!files.has(target)) throw new Error(`ENOENT ${target}`);
+        return target;
+      },
+      lexists: path => path in links || files.has(path),
+      processes,
+    };
+  };
+  assert.equal(checkInstall(install()), null);
+  assert.equal(checkInstall(install({ helper: null })), null, 'no helper link: not a Homebrew-linked helper');
+  const proc = (pid, command, startedAt = after) => ({ pid, command, startedAt });
+  assert.equal(checkInstall(install({ processes: [proc(7, `${cask}/0.171.0/bin/codex-code-mode-host --listen`, before)] })), null);
+  assert.equal(checkInstall(install({ processes: [proc(8, 'codex app-server')] })), null, 'started after the install');
+  assert.equal(checkInstall(install({ processes: [proc(9, '/Users/x/.vscode/extensions/openai/bin/codex app-server', before)] })), null);
+  const dangling = checkInstall(install({ helper: `${cask}/0.170.0/bin/codex-code-mode-host` }));
+  assert.equal(dangling?.reason, 'helper_link_broken');
+  assert.match(dangling.fix, /ln -sf \/opt\/homebrew\/Caskroom\/codex\/0\.171\.0\/bin\/codex-code-mode-host/);
+  const stale = checkInstall(install({ processes: [proc(12996, `${cask}/0.170.0/bin/codex-code-mode-host --listen`)] }));
+  assert.equal(stale?.reason, 'stale_codex_process');
+  assert.match(stale.fix, /12996/);
+  const oldServer = checkInstall(install({ processes: [proc(12398, 'codex app-server', before)] }));
+  assert.equal(oldServer?.reason, 'stale_codex_process', 'a codex run through PATH before the upgrade');
+  assert.match(oldServer.fix, /12398/);
+  const npm = '/usr/local/lib/node_modules/@openai/codex/bin';
+  assert.equal(
+    checkInstall(install({ bin: npm, helper: null, processes: [proc(5, '/usr/local/lib/node_modules/@openai/other/x', before)] })),
+    null,
+    'a non-Caskroom layout skips the process check'
+  );
+  assert.equal(checkInstall({ ...install(), codexOnPath: null }), null, 'codex not on PATH: the spawn reports it');
+
   process.stdout.write('self-test passed\n');
 }
 
@@ -202,7 +328,18 @@ if (process.argv.includes('--self-test')) {
 } else {
   let verdict;
   try {
-    verdict = decide(await readLimits(), Math.floor(Date.now() / 1000));
+    let broken = null;
+    try {
+      broken = checkInstall(localInstall());
+    } catch (error) {
+      process.stderr.write(`codex-budget: install check skipped (${error.message})\n`);
+    }
+    if (broken) {
+      process.stderr.write(`codex-budget: the local Codex install is broken; fix: ${broken.fix}\n`);
+      verdict = { ...unknown(broken.reason), fix: broken.fix };
+    } else {
+      verdict = decide(await readLimits(), Math.floor(Date.now() / 1000));
+    }
   } catch (error) {
     process.stderr.write(`codex-budget: ${error.message}\n`);
     verdict = unknown('probe_failed');
