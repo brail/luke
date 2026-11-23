@@ -65,6 +65,7 @@ export const phaseAlertRouter = router({
    */
   completionPreview: protectedProcedure
     .use(requirePermission('collection_layout:update'))
+    // Rule 5: preview of collectionLayout.rows.setCompleted: it lists the phases concluding would skip.
     .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);

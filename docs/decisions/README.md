@@ -58,13 +58,14 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Superseded by [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) |
 | [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
 | [041](041-calendar-visibility-function-and-brand-from-one-team.md) | Calendar Visibility: Function and Brand from One Team | Accepted |
-| [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Accepted |
+| [042](042-resource-action-permissions-session-only-builder-for-maintenance-reads.md) | Resource:Action Permissions: a Session-Only Builder for Reads the Maintenance Window Needs | Superseded by [049](049-resource-action-permissions-previews-dialog-reads-and-the-phase-catalog-on-read.md) |
 | [043](043-section-access-a-leaf-turns-on-only-with-its-permission.md) | Section Access: a Leaf Turns On Only With Its Permission | Accepted |
 | [044](044-pending-user-approval-in-one-transaction.md) | Pending-User Approval in One Transaction | Accepted |
 | [045](045-bootstrap-guard-refuses-tls-verification-switched-off.md) | Bootstrap Guard Refuses TLS Verification Switched Off | Accepted |
 | [046](046-web-server-refuses-tls-verification-switched-off.md) | Web Server Refuses TLS Verification Switched Off | Accepted |
 | [047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md) | Documentation Architecture: Decisions in Force per Area, an Index by Area and Short Records | Accepted |
 | [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) | Session Revocation: Signing Out Always Ends the Browser Session | Accepted |
+| [049](049-resource-action-permissions-previews-dialog-reads-and-the-phase-catalog-on-read.md) | Resource:Action Permissions: Previews, Dialog Reads and the Phase Catalog on Read | Accepted |
 
-_Last updated: 2026-11-22_
+_Last updated: 2026-11-23_
 <!-- luke-docs:end:adr-index -->

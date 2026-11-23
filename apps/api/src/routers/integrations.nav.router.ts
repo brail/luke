@@ -371,9 +371,8 @@ const navBrandsRouter = router({
    * @output {Array<{ navCode, description }>}
    */
   list: protectedProcedure
-    // A read that serves only the brand create/edit dialog's NAV link picker: it asks that dialog's
-    // permissions.
     .use(requirePermission(['brands:create', 'brands:update']))
+    // Rule 5: dialog-only read, brand create/edit dialog NAV link picker: either dialog's permission.
     .input(z.object({ excludeLinkedTo: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const linkedCodes = await ctx.prisma.brand.findMany({
@@ -406,9 +405,8 @@ const navSeasonsRouter = router({
    * @output {Array<{ navCode, description, startingDate, endingDate }>}
    */
   list: protectedProcedure
-    // A read that serves only the season create/edit dialog's NAV link picker: it asks that dialog's
-    // permissions.
     .use(requirePermission(['seasons:create', 'seasons:update']))
+    // Rule 5: dialog-only read, season create/edit dialog NAV link picker: either dialog's permission.
     .input(z.object({ excludeLinkedTo: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const linkedCodes = await ctx.prisma.season.findMany({

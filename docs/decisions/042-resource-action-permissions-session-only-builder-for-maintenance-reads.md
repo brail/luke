@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [049 — Resource:Action Permissions: Previews, Dialog Reads and the Phase Catalog on Read](049-resource-action-permissions-previews-dialog-reads-and-the-phase-catalog-on-read.md)
 
 ## Context
 

@@ -130,8 +130,11 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
   `nosemgrep: luke-procedure-requires-permission` whose reason does not hold, a permission that
   does not match the operation
 - Read-only procedures gated on a non-read permission (`update`, `create`, `configure`, ...)
-  outside CLAUDE.md rule 5's dialog-only exception; for each exception, verify the sole
-  consumer, its permission and the code comment
+  outside CLAUDE.md rule 5's two exceptions, a preview of the mutation it precedes and a
+  dialog-only read (ADR-049). `.semgrep/rules/query-mutating-permission.yml` requires their
+  `// Rule 5:` marker on a literal permission; review what it cannot see — a check made in the
+  handler, `*:*` — and, for each marked query, that the named mutation or sole consumer is real
+  and its permission is the one the marker claims
 - Person references exposing fields beyond CLAUDE.md's "RBAC & Section Access" contract;
   another user's email, last login, presence or account status returned without `users:read`
 - Missing `withAuditLog` or `logAudit()` on procedures named `create`, `update`, `delete`, `remove`, `restore`, `unlink`

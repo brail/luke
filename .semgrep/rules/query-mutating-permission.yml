@@ -1,0 +1,27 @@
+rules:
+  - id: luke-query-mutating-permission
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      A query gated by a non-read permission needs an in-chain `// Rule 5:` marker
+      right after its permission middleware (a preview of a mutation, or a dialog-only
+      read: CLAUDE.md rule 5, ADR-049), or moves to `<resource>:read`. A check made in
+      the handler is invisible to this rule.
+    patterns:
+      - pattern-either:
+          - pattern: 'protectedProcedure. ... .use(requirePermission($PERM)). ... .query($H)'
+          - pattern: 'protectedProcedure. ... .use(requirePermission<$T>($PERM)). ... .query($H)'
+      # A quoted `<resource>:<action>` anywhere in the argument (`metavariable-regex`
+      # is anchored at the start, hence `.*`), the action not a non-mutating grant; a
+      # resource wildcard (`brands:*`) counts. `*:*` has no named resource, so it
+      # never matches.
+      - metavariable-regex:
+          metavariable: $PERM
+          regex: '(?s).*[''"][a-z0-9_]+:(?!(?:read|read_all|view_revisions|export)[''"])[a-z0-9_*]+[''"]'
+      # The marker, on the line right after the middleware closes: the argument may
+      # hold one level of parentheses (an arrow resolver). A marker elsewhere in the
+      # chain or in the handler, or text in a string, does not count.
+      - pattern-not-regex: 'requirePermission(?:<[^>]*>)?\((?:[^()]|\([^()]*\))*\)\s*\)[ \t]*\n[ \t]*// Rule 5:'
+    paths:
+      include:
+        - '/apps/api/src/routers/**'

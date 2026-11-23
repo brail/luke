@@ -46,12 +46,10 @@ export const phaseRouter = router({
   /**
    * Lists active phases, used to populate frontend selects.
    *
-   * `includeInactive` exists to resolve historical **labels**, not to populate pickers: a
-   * retired phase stays referenced by the rows that passed through it, and without it the drawer
-   * would show `Current phase: —` on data that actually exists. Consumers must keep filtering
-   * on `isActive` for the selectable options (see `usePhaseCatalog`).
-   *
-   * Distinct from `listAll`, which serves catalog management and requires the write permission.
+   * `includeInactive` returns retired phases too, on the read permission (ADR-049): a retired
+   * phase stays referenced by the rows that passed through it, and without it the drawer would
+   * show `Current phase: —` on data that actually exists. The catalog page reads the same list.
+   * Consumers must keep filtering on `isActive` for the selectable options (see `usePhaseCatalog`).
    *
    * @auth {phase_catalog:read}
    * @input {{ includeInactive?: boolean }} — optional, default: active only.
@@ -63,21 +61,6 @@ export const phaseRouter = router({
     .query(async ({ input, ctx }) => {
       return ctx.prisma.phase.findMany({
         where: input?.includeInactive ? {} : { isActive: true },
-        orderBy: [{ label: 'asc' }, { id: 'asc' }],
-      });
-    }),
-
-  /**
-   * Lists all phases including inactive ones, for admin management.
-   *
-   * @auth {phase_catalog:update}
-   * @input {none}
-   * @output {Phase[]} — all phases, by label, then id.
-   */
-  listAll: protectedProcedure
-    .use(requirePermission('phase_catalog:update'))
-    .query(async ({ ctx }) => {
-      return ctx.prisma.phase.findMany({
         orderBy: [{ label: 'asc' }, { id: 'asc' }],
       });
     }),

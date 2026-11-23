@@ -122,6 +122,7 @@ export const holidaysRouter = router({
    */
   previewImport: protectedProcedure
     .use(requirePermission('config:update'))
+    // Rule 5: preview of holidays.confirmImport: it shows what the import would write.
     .input(NagerImportInputSchema)
     .query(({ input }) => fetchAllNagerHolidays(input.countryCodes, input.year)),
 
@@ -224,8 +225,8 @@ export const holidaysRouter = router({
    * @output {VendorClosurePeriod[]} — sorted by startDate ascending.
    */
   listVendorClosures: protectedProcedure
-    // Serves only the vendor dialog's closures tab, whose every action asks this permission.
     .use(requirePermission('season_calendar:configure'))
+    // Rule 5: dialog-only read, vendor dialog closures tab: every action there asks this permission.
     .input(z.object({
       vendorId: z.uuid(),
       seasonId: z.uuid(),

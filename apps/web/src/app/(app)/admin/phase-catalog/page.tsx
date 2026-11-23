@@ -66,12 +66,10 @@ export default function PhaseCatalogPage() {
   const [deletingItem, setDeletingItem] = useState<PhaseItem | null>(null);
 
   const utils = trpc.useUtils();
-  const invalidate = () => {
-    void utils.phase.listAll.invalidate();
-    void utils.phase.list.invalidate();
-  };
+  const invalidate = () => void utils.phase.list.invalidate();
 
-  const { data: items = [], isLoading } = trpc.phase.listAll.useQuery(undefined, {
+  // The whole catalog, retired phases included, on the read permission (ADR-049).
+  const { data: items = [], isLoading } = trpc.phase.list.useQuery({ includeInactive: true }, {
     staleTime: 30 * 1000,
   });
 

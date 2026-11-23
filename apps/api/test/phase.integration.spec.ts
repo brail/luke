@@ -11,7 +11,6 @@
  * editor's other permissions.
  */
 
-import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
@@ -30,12 +29,20 @@ describe('Phase Router', () => {
 
   const caller = (ctx: Context) => appRouter.createCaller(ctx).phase;
 
+  /** One active phase and one retired one, to distinguish the two sets. */
+  async function seedActiveAndRetired() {
+    const active = await caller(adminContext).create({ value: 'LIST_ACTIVE', label: 'Active' });
+    const retired = await caller(adminContext).create({ value: 'LIST_RITIRATA', label: 'Ritirata' });
+    await caller(adminContext).remove({ id: retired.id });
+    return { active, retired };
+  }
+
   describe('create', () => {
     it('gives a phase no position: the catalog lists by label', async () => {
       await caller(adminContext).create({ value: 'SOURCING', label: 'Sourcing' });
       await caller(adminContext).create({ value: 'DESIGN', label: 'Design' });
 
-      expect((await caller(adminContext).listAll()).map(p => p.label)).toEqual(['Design', 'Sourcing']);
+      expect((await caller(adminContext).list({ includeInactive: true })).map(p => p.label)).toEqual(['Design', 'Sourcing']);
     });
 
     it('rejects a duplicate value with CONFLICT', async () => {
@@ -107,14 +114,6 @@ describe('Phase Router', () => {
   });
 
   describe('list — includeInactive', () => {
-    /** One active phase and one retired one, to distinguish the two sets. */
-    async function seedActiveAndRetired() {
-      const active = await caller(adminContext).create({ value: 'LIST_ACTIVE', label: 'Active' });
-      const retired = await caller(adminContext).create({ value: 'LIST_RITIRATA', label: 'Ritirata' });
-      await caller(adminContext).remove({ id: retired.id });
-      return { active, retired };
-    }
-
     it('with no input it returns only active phases', async () => {
       const { active, retired } = await seedActiveAndRetired();
       const ids = (await caller(adminContext).list()).map(p => p.id);
@@ -134,21 +133,6 @@ describe('Phase Router', () => {
       const { retired } = await seedActiveAndRetired();
       const ids = (await caller(adminContext).list({ includeInactive: false })).map(p => p.id);
       expect(ids).not.toContain(retired.id);
-    });
-
-    it('stays behind the read permission, not the write one like listAll', async () => {
-      // The point of the change: historical labels are needed by anyone reading the layout, while
-      // `listAll` (catalog management) stays admin-only.
-      const viewer = await adminContext.prisma.user.create({
-        data: { timezone: 'Europe/Rome', email: 'viewer-list@example.com', username: 'viewer-list', firstName: 'V', lastName: 'U', role: 'viewer', isActive: true },
-      });
-      const viewerCtx: Context = {
-        ...adminContext,
-        session: { user: { id: viewer.id, email: viewer.email, username: viewer.username, role: viewer.role, tokenVersion: viewer.tokenVersion } },
-      };
-
-      await expect(caller(viewerCtx).list({ includeInactive: true })).resolves.toBeInstanceOf(Array);
-      await expect(caller(viewerCtx).listAll()).rejects.toBeInstanceOf(TRPCError);
     });
   });
 
@@ -299,12 +283,11 @@ describe('Phase Router', () => {
     const phaseAs = (role: Role | null) =>
       caller(role ? contexts[role] : { ...adminContext, session: null });
 
-    it.each(ROLES)('%s can read the catalog (list and listAll)', async role => {
-      await expect(phaseAs(role).list()).resolves.toBeInstanceOf(Array);
-      // listAll is reserved to phase_catalog:update -- only admin reaches it here.
-      if (role === 'admin') {
-        await expect(phaseAs(role).listAll()).resolves.toBeInstanceOf(Array);
-      }
+    it.each(ROLES)('%s reads the whole catalog with includeInactive, only the active phases without', async role => {
+      const { active, retired } = await seedActiveAndRetired();
+
+      expect((await phaseAs(role).list({ includeInactive: true })).map(p => p.id)).toEqual([active.id, retired.id]);
+      expect((await phaseAs(role).list()).map(p => p.id)).toEqual([active.id]);
     });
 
     it('only admin can create a phase — editor is denied although the rest of its domains are :*', async () => {
@@ -341,11 +324,6 @@ describe('Phase Router', () => {
           expectUnauthorized(() => invoke(null), 'UNAUTHORIZED'),
         ])
       );
-    });
-
-    it('listAll (admin-only) denies editor and viewer', async () => {
-      await expect(phaseAs('editor').listAll()).rejects.toBeInstanceOf(TRPCError);
-      await expect(phaseAs('viewer').listAll()).rejects.toBeInstanceOf(TRPCError);
     });
   });
 });

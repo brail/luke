@@ -218,18 +218,24 @@ packages/
    in `MAP_VALUED_KEYS`. Pre-session flows (login, email verification, password reset) write
    `actorId: null` and must still set `targetId` to the `User.id`
 5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`, CREATE →
-   `entity:create`, etc.; never `update` for a read-only query except for the dialog-only reads
-   below. A read serving only an administration create/edit dialog or one of its tabs requires
-   that dialog's or tab's permission, which may belong to another resource. A picker shared by
-   create and edit accepts either permission. Each such read must carry a code comment naming
-   its sole consumer and explaining the permission choice; general-purpose reads stay on `read`.
+   `entity:create`, etc. General-purpose reads stay on `read`. A preview of the mutation it
+   precedes requires that mutation's permission. A read serving only an administration
+   create/edit dialog or one of its tabs requires that dialog's or tab's permission, which may
+   belong to another resource. A picker shared by create and edit accepts either permission.
+   Each preview and dialog-only read carries an in-chain `// Rule 5:` comment immediately
+   after its permission middleware, naming the mutation or sole consumer and explaining the
+   permission choice. `.semgrep/rules/query-mutating-permission.yml` checks for the marker on
+   `protectedProcedure` queries gated by a literal permission whose action is not `read`,
+   `read_all`, `view_revisions` or `export`; `*:*` is excluded. Other permission forms and the
+   exception's justification are reviewed (`luke-audit`).
    An endpoint that works only on the caller's own data uses `selfProcedure`
    (`apps/api/src/lib/trpc.ts`); one whose check
    `requirePermission` cannot express, or that is open to every signed-in user by design, carries a
    reasoned `// nosemgrep`. `sessionProcedure` requires a valid session only: no maintenance guard,
    no permission, never writes. Use it only for reads every signed-in user needs during maintenance;
-   each use carries a reasoned `// nosemgrep` and is listed in ADR-042 (a further use is a new ADR
-   that supersedes it). `.semgrep/rules/procedure-requires-permission.yml` checks for permission
+   each use carries a reasoned `// nosemgrep` and is listed in ADR-042 (a further use is a new
+   ADR superseding the permissions record in force, `docs/decisions/in-force/permissions.md`).
+   `.semgrep/rules/procedure-requires-permission.yml` checks for permission
    middleware on both builders unless suppressed; `.semgrep/rules/session-procedure-read-only.yml`
    rejects `sessionProcedure` mutations and subscriptions. Suppression reasons, writes inside queries
    and the remaining procedure contracts are reviewed (`luke-audit`)
@@ -270,7 +276,8 @@ packages/
 ### Soft delete pattern
 
 - `remove()`: `isActive=false` — never hard delete; `restore()`: `isActive=true`
-- `list()`: filters `isActive=true` by default; `includeInactive=true` for admin
+- `list()`: filters `isActive=true` by default; `includeInactive=true` for admin (the phase catalog
+  returns its retired phases on `read`: they label history, ADR-049)
 - Inactive row in a table: `className={!item.isActive ? 'opacity-50' : undefined}`
 
 ## Dates & Time Zones

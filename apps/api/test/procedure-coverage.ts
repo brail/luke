@@ -120,7 +120,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phase: {
     reason:
-      'list, listAll, create, update and remove covered by phase.integration.spec.ts (the alphabetical catalog, the catalog fields, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
+      'list, create, update and remove covered by phase.integration.spec.ts (the alphabetical catalog, the catalog fields, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
     uncovered: 1,
   },
   phaseAlert: {
