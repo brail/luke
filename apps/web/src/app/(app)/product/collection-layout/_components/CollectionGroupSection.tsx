@@ -869,7 +869,7 @@ export function CollectionGroupSection({
                       )}
                       {show('progress') && (
                         <TableCell>
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="flex flex-col items-start gap-0.5">
                             {rowPhase && <PhaseBadge label={rowPhase.label} color={rowPhase.color} />}
                             {(() => {
                               const criticality = criticalityByRowId.get(row.id);
