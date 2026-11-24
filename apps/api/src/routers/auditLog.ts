@@ -17,6 +17,7 @@ import {
 
 import { auditActorName, auditSubjectOf, buildAuditLogWhere, maskAuditAddresses, resolveAuditSubjects } from '../lib/auditLog';
 import { can, requirePermission } from '../lib/permissions';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getUserTimeZone } from '../lib/userTimeZone';
 import {
@@ -114,7 +115,7 @@ export const auditLogRouter = router({
         select: {
           action: true,
           createdAt: true,
-          actor: { select: { firstName: true, lastName: true, username: true } },
+          actor: { select: PERSON_REFERENCE_SELECT },
         },
       });
       if (!entry) return null;

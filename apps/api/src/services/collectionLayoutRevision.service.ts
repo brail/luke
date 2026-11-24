@@ -11,13 +11,17 @@ import {
 } from '@luke/db';
 
 import { imageFetchLimiter } from '../lib/export/concurrency.js';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference.js';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
 /** The author of a revision as its pages show it: the name, nothing that identifies the account. */
 export type RevisionAuthor = { firstName: string; lastName: string };
 
-const REVISION_AUTHOR = { select: { firstName: true, lastName: true } } as const;
+/** The person reference narrowed to `RevisionAuthor`. */
+const REVISION_AUTHOR = {
+  select: { firstName: PERSON_REFERENCE_SELECT.firstName, lastName: PERSON_REFERENCE_SELECT.lastName },
+} as const;
 const REVISION_OMIT = { createdByUserId: true } as const;
 
 export type RevisionSummary = Pick<

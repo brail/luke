@@ -46,6 +46,7 @@ import { getConfigOrDefault } from '../lib/configManager.js';
 import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey, refuseOnInactiveFunction } from '../lib/error.js';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { sseStore } from '../lib/sseStore.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
@@ -1094,7 +1095,7 @@ export const seasonCalendarRouter = router({
         if (rejectedIds.length > 0) {
           const rejectedUsers = await tx.user.findMany({
             where: { id: { in: rejectedIds } },
-            select: { username: true },
+            select: PERSON_REFERENCE_SELECT,
           });
           throw new TRPCError({
             code: 'BAD_REQUEST',

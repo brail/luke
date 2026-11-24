@@ -6,6 +6,7 @@ import { resolveEventAudience, resolveEventAudienceOne } from '../services/calen
 
 import { APPROVED_ADMIN_WHERE, APPROVED_USER_WHERE } from './approvedUsers';
 import { isUniqueViolation } from './error';
+import { PERSON_REFERENCE_SELECT } from './personReference';
 import { sseStore } from './sseStore';
 
 
@@ -251,7 +252,7 @@ export async function notifyCalendarChange(
   const [actor, calendar] = await Promise.all([
     prisma.user.findUnique({
       where: { id: params.actorId },
-      select: { firstName: true, lastName: true, username: true },
+      select: PERSON_REFERENCE_SELECT,
     }),
     params.calendarId
       ? prisma.seasonCalendar.findUnique({

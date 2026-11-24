@@ -61,6 +61,7 @@ import { toErrorMessage } from './error';
 import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { brandSeasonLabel, recipientsOf } from './notifications';
+import { PERSON_REFERENCE_SELECT } from './personReference';
 import { withSchedulerLock } from './schedulerLock';
 import { groupByTimeZone, resolveUserTimeZone } from './userTimeZone';
 
@@ -283,7 +284,7 @@ export async function buildDigestTasks(
       result: 'SUCCESS',
       createdAt: { gte: range.start, lt: range.end },
     },
-    include: { actor: { select: { id: true, firstName: true, lastName: true, username: true } } },
+    include: { actor: { select: PERSON_REFERENCE_SELECT } },
     orderBy: { createdAt: 'asc' },
   });
 
