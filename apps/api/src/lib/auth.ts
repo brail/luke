@@ -140,11 +140,14 @@ export function createUserSession(token: string): UserSession | null {
 }
 
 /**
- * Rate limiter key: the user id if the bearer token is valid, otherwise the IP.
+ * Rate limiter key of the four upload routes: `u:<user id>` if the bearer's signature and expiry
+ * hold, otherwise `ip:<address>`.
  *
  * **Not an authentication check.** It's only the bucket key: an expired,
  * missing, or tampered token falls back to the IP, and rejecting the request
- * is the handler's job. Verifying the signature here costs one HMAC and no query.
+ * is the handler's job. Verifying the signature here costs one HMAC and no query;
+ * a revoked token that has not expired still keys its user's upload bucket (accepted:
+ * the handler refuses it). The global limiter keys on `sessionFromBearer` instead.
  *
  * Needed because the four upload routes had a `keyGenerator` that read
  * `req.session?.user?.id` — which **nobody ever assigns**: the limiter is an
@@ -154,9 +157,38 @@ export function createUserSession(token: string): UserSession | null {
  */
 export function rateLimitKeyFromRequest(request: FastifyRequest): string {
   const token = extractTokenFromRequest(request);
-  if (!token) return request.ip;
+  const userId = token ? verifyToken(token)?.userId : undefined;
+  // Prefixed so a user id and an address can never name the same bucket.
+  return userId ? `u:${userId}` : `ip:${request.ip}`;
+}
 
-  return verifyToken(token)?.userId ?? request.ip;
+/**
+ * The session a bearer stands for, or `null`: signature, expiry and absolute lifetime
+ * (`createUserSession`), then revocation (`verifyTokenVersion`, cached).
+ */
+async function sessionFromBearer(token: string, prisma: PrismaClient): Promise<UserSession | null> {
+  const session = createUserSession(token);
+  if (!session) return null;
+  const stillValid = await verifyTokenVersion(session.user.id, session.user.tokenVersion, prisma);
+  return stillValid ? session : null;
+}
+
+const sessionsByRequest = new WeakMap<FastifyRequest, Promise<UserSession | null>>();
+
+/**
+ * The session of a request's bearer, checked once per request: the global rate limiter's key
+ * (`globalRateLimit.ts`) and `authenticateRequest` share the answer, so a token that cannot
+ * authenticate never chooses a user's bucket, and neither the verification nor its log line nor a
+ * failing database read happens twice.
+ */
+export function requestSession(request: FastifyRequest, prisma: PrismaClient): Promise<UserSession | null> {
+  let session = sessionsByRequest.get(request);
+  if (!session) {
+    const token = extractTokenFromRequest(request);
+    session = token ? sessionFromBearer(token, prisma) : Promise.resolve(null);
+    sessionsByRequest.set(request, session);
+  }
+  return session;
 }
 
 /**
@@ -178,28 +210,15 @@ export async function authenticateRequest(
   reply: FastifyReply,
   prisma: PrismaClient
 ): Promise<UserSession | null> {
-  const token = extractTokenFromRequest(request);
-
-  if (!token) {
+  if (!extractTokenFromRequest(request)) {
     return null;
   }
 
-  const session = createUserSession(token);
+  const session = await requestSession(request, prisma);
   if (!session) {
-    // Invalid token, remove the cookie if present
+    // Invalid or revoked token, remove the legacy cookie if present
     reply.clearCookie('luke_session');
-    return null;
   }
-
-  const stillValid = await verifyTokenVersion(
-    session.user.id,
-    session.user.tokenVersion,
-    prisma
-  );
-  if (!stillValid) {
-    return null;
-  }
-
   return session;
 }
 

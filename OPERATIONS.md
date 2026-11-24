@@ -151,18 +151,29 @@ account.
 
 ### Global limiter
 
-A second limiter runs before tRPC on every route but one: `@fastify/rate-limit`
-in `apps/api/src/server.ts`, 100 requests per minute per IP — 2,000 in
-development, where the loopback addresses (`127.0.0.1`, `::1`,
-`::ffff:127.0.0.1`) are exempt. File serving, `GET /uploads/:bucket/*`, is out
+A second limiter runs before tRPC on every route but file serving and the
+season-calendar exports, which have their own: `@fastify/rate-limit`
+with `apps/api/src/lib/globalRateLimit.ts` ([ADR-051](docs/decisions/051-request-limits-per-user-and-per-address-in-three-lanes.md)).
+A request whose bearer authenticates counts for its user, in one of three lanes:
+`essential` (profile, token refresh, sign-out: 60 a minute), `background`
+(heartbeat, SSE ticket: 30) and everything else (300); any other request counts
+for its address (100). The numbers are the `rateLimit.global` AppConfig key;
+development multiplies them by 20 and exempts the loopback addresses
+(`127.0.0.1`, `::1`, `::ffff:127.0.0.1`). File serving, `GET /uploads/:bucket/*`, is out
 of it: every picture on a page is one request, and a photo-heavy collection
 layout spent the whole budget on one uncached load. The only caller of that
 route is the web's authenticated `/api/uploads` proxy, and responses carry a
 private, immutable one-year cache; the residual is that a signed-in user can
-download files without a rate ceiling. It is not configurable through the
-`rateLimit` key, and `skipOnError` lets requests through when the limiter itself
-fails. Its 429 has its own body — `{ statusCode, error, message, retryAfter }` —
-and no `error.data.code`.
+download files without a rate ceiling. An invalid `rateLimit.global` falls back to the
+defaults; the limits are read in the background (the defaults until the first
+read, the last values read when a read fails), and a revocation check slower
+than one second keys the request by its signed identity; and `skipOnError` lets requests through when the
+limiter's store fails. Its 429 carries `Retry-After` and its own body —
+`{ error, message, code: 'TOO_MANY_REQUESTS', retryAfterSeconds, traceId }`,
+`retryAfterSeconds` being the time left in the window — and no `error.data.code`.
+Each refusal is one `warn` line, `Global rate limit exceeded`, with the lane, the
+user id or address, the method and the procedures. `retryAfterSeconds` of a
+per-procedure limit is the whole window instead.
 
 A tRPC batch is one request to this limiter, whatever the number of calls in
 it. The tRPC adapter refuses a batch of more than `TRPC_MAX_BATCH_SIZE` calls
@@ -292,8 +303,8 @@ denied` warning, with `traceId`, `userId`, `userRole` and either
 `requestedPermissions`/`deniedPermissions` or `section`. Brand-scope, ownership and
 last-admin refusals do not write it.
 
-The [global limiter](#global-limiter)'s 429 has its own body and no
-`error.data.code`.
+The [global limiter](#global-limiter)'s 429 has its own body, code
+`TOO_MANY_REQUESTS`, and no `error.data.code`.
 
 ---
 

@@ -10,7 +10,7 @@ import { ZodError } from 'zod';
 import { isProduction, toErrorMessage, type ServiceUnavailableReason } from '@luke/core';
 import { Prisma } from '@luke/db';
 
-import { isRateLimitExceededCause } from './rateLimitError';
+import { isRateLimitExceededCause, type RateLimitExceededCause } from './rateLimitError';
 
 import type { Context } from './context';
 import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from '@trpc/server';
@@ -179,11 +179,21 @@ function safeMessage(err: unknown, status: number): string {
   return 'Internal server error';
 }
 
+/**
+ * Whether a Fastify-level error is the global limiter's refusal: tRPC procedures handle their own
+ * rate-limit errors, so only the `onRequest` limiter's reaches this handler with that cause.
+ */
+function isGlobalRateLimitRefusal(err: unknown): err is TRPCError & { cause: RateLimitExceededCause } {
+  return err instanceof TRPCError && isRateLimitExceededCause(err.cause);
+}
+
 function toResponseBody(err: unknown, status: number, traceId?: string) {
   const base: Record<string, unknown> = {
     error: true,
     message: safeMessage(err, status),
     code: err instanceof TRPCError ? err.code : 'INTERNAL_SERVER_ERROR',
+    // The global limiter's refusal (`globalRateLimit.ts`): the seconds of its `Retry-After` header.
+    retryAfterSeconds: isGlobalRateLimitRefusal(err) ? err.cause.retryAfterSeconds : undefined,
     traceId,
   };
   if (!isProd) {
@@ -202,7 +212,10 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
     (err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
       const traceId = getTraceId(req);
       const status = mapHttpStatus(err);
-      req.log.error({ err, traceId, method: req.method, url: req.url, ip: req.ip }, 'request failed');
+      // A global rate-limit refusal is logged once, at warn, by the limiter's `onExceeded`.
+      if (!isGlobalRateLimitRefusal(err)) {
+        req.log.error({ err, traceId, method: req.method, url: req.url, ip: req.ip }, 'request failed');
+      }
       if (reply.sent) return;
       reply
         .code(status)
@@ -265,7 +278,8 @@ export class ServiceUnavailableError extends TRPCError {
 /**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
  * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
- *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it;
+ *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it
+ *   (the global limiter's 429, outside tRPC, carries the time left: `toResponseBody`);
  * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
  *   and this keeps every issue with the field it belongs to;
  * - `unavailableReason`, for a `ServiceUnavailableError`: why the service is unavailable.

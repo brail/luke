@@ -11,21 +11,28 @@ import { dailyGreetingSeenKey } from '../../src/lib/dailyGreetingKey';
 const MIN_RATE_LIMIT_REMAINING = 50;
 
 /**
- * The `test` of every smoke spec. A deployed stack limits requests per IP (`apps/api/src/server.ts`)
- * and the full suite sends more than a window allows, so each test first reads the server's own
- * `x-ratelimit-*` counter, server-side calls included, and waits out the window when too little is
- * left.
+ * The `test` of every smoke spec. A deployed stack limits requests per signed-in user and, without a
+ * session, per address (`apps/api/src/lib/globalRateLimit.ts`), and the full suite sends more than a
+ * window allows, so each test first reads the server's own `x-ratelimit-*` counters — the address's
+ * and, through the stored session's token, the smoke user's — and waits out the window when too
+ * little is left in either.
  */
 export const test = base.extend<{ rateLimitHeadroom: void }>({
   rateLimitHeadroom: [
     async ({ request }, use) => {
-      const response = await request.get('/trpc/public.ping');
-      const headers = response.headers();
-      const remaining = Number(headers['x-ratelimit-remaining']);
-      // The local dev stack sends no such headers: `NaN` compares false and nothing waits.
-      if (remaining < MIN_RATE_LIMIT_REMAINING) {
-        await sleep((Number(headers['x-ratelimit-reset']) + 1) * 1000);
+      const session = await (await request.get('/api/auth/session')).json().catch(() => null);
+      const token: unknown = session?.accessToken;
+      const pings = [request.get('/trpc/public.ping')];
+      if (typeof token === 'string') {
+        pings.push(request.get('/trpc/public.ping', { headers: { authorization: `Bearer ${token}` } }));
       }
+      // Each bucket has its own window: wait for the latest reset among the low ones. The local dev
+      // stack sends no such headers: `NaN` compares false and nothing waits.
+      const waits = (await Promise.all(pings))
+        .map(response => response.headers())
+        .filter(headers => Number(headers['x-ratelimit-remaining']) < MIN_RATE_LIMIT_REMAINING)
+        .map(headers => (Number(headers['x-ratelimit-reset']) + 1) * 1000);
+      if (waits.length > 0) await sleep(Math.max(...waits));
       await use();
     },
     // Its own timeout: a full window's wait does not fit in a test's 30 seconds.

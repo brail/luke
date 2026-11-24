@@ -7,7 +7,7 @@
  *                               `/api/uploads/[...path]` route authenticates upstream, and this
  *                               route relies on the API being unreachable from outside.
  *
- * Out of the global per-IP rate limiter (`config: { rateLimit: false }`): every picture on a page
+ * Out of the global rate limiter (`config: { rateLimit: false }`): every picture on a page
  * is one request, and a photo-heavy collection layout spent the whole budget on one uncached load,
  * leaving every other request from that browser to a 429. Safe because the only caller is the
  * authenticated web route and responses carry an immutable one-year browser cache (`private`: no

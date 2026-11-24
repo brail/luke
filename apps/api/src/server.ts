@@ -36,6 +36,7 @@ import { buildCorsAllowedOrigins } from './lib/cors';
 import { assertEnvPolicy } from './lib/envPolicy';
 import { logTrpcError, setGlobalErrorHandler } from './lib/error';
 import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
+import { globalRateLimitOptions } from './lib/globalRateLimit';
 import { registerGoogleReaderScheduler } from './lib/googleReaderScheduler';
 import { setupGracefulShutdown } from './lib/gracefulShutdown';
 import { buildHelmetConfig } from './lib/helmet';
@@ -113,21 +114,8 @@ async function registerSecurityPlugins(): Promise<string[]> {
     secret: deriveSecret(HKDF_INFO_COOKIE),
   });
 
-  // Global rate limiting (permissive)
-  await fastify.register(rateLimit, {
-    max: isDevelopment() ? 2000 : 100,
-    timeWindow: '1 minute',
-    cache: 10000,
-    skipOnError: true,
-    // In dev, bypass rate limiting for localhost to avoid dev friction
-    allowList: isDevelopment() ? ['127.0.0.1', '::1', '::ffff:127.0.0.1'] : [],
-    errorResponseBuilder: (request: any, context: any) => ({ // Fastify rate-limit internals lack exported types
-      statusCode: 429,
-      error: 'Rate limit exceeded',
-      message: `Too many requests from ${request.ip}`,
-      retryAfter: Math.round(context.ttl / 1000),
-    }),
-  });
+  // Global rate limit: per user in three lanes, per address without a session (lib/globalRateLimit.ts)
+  await fastify.register(rateLimit, globalRateLimitOptions(prisma));
 
   const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
 
@@ -181,7 +169,7 @@ async function registerSecurityPlugins(): Promise<string[]> {
   fastify.addHook('onRequest', pinoTraceMiddleware);
 
   // Per-procedure rate limits (login, config mutations, ...) are applied on top of the
-  // permissive global limit above by the `withRateLimit` tRPC middleware (lib/ratelimit.ts)
+  // global limit above by the `withRateLimit` tRPC middleware (lib/ratelimit.ts)
 
   // Idempotency is handled at the tRPC middleware level for specific procedures
 

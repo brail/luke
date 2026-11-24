@@ -43,8 +43,8 @@ function apiAnswers(status: number, body: unknown) {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })));
 }
 
-/** The body `server.ts` gives the global Fastify limiter's 429 (`errorResponseBuilder`). */
-const GLOBAL_LIMITER_429 = { statusCode: 429, error: 'Rate limit exceeded', message: 'Too many requests from 203.0.113.7', retryAfter: 60 };
+/** The body of the global Fastify limiter's 429 (`globalRateLimit.ts`, through `setGlobalErrorHandler`). */
+const GLOBAL_LIMITER_429 = { error: true, message: 'Troppe richieste. Riprova più tardi.', code: 'TOO_MANY_REQUESTS', retryAfterSeconds: 60, traceId: 't' };
 
 const trpcError = (code: string, message: string, data: object = {}) => ({
   error: { message, data: { code, ...data } },

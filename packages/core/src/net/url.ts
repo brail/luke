@@ -171,6 +171,44 @@ export function buildTrpcUrl(procedure: string): string {
 export const TRPC_MAX_BATCH_SIZE = 20;
 
 /**
+ * Procedures that must keep working when a user's other traffic is past its limit: the profile, the
+ * token refresh and the sign-out. The API counts them in their own per-user lane, and the web sends
+ * them unbatched so a batch never mixes them with other calls.
+ */
+export const ESSENTIAL_PROCEDURES = ['me.get', 'auth.refreshToken', 'auth.logout'] as const;
+
+/** Procedures the web calls on its own timers (presence, SSE ticket), counted in their own lane. */
+export const BACKGROUND_PROCEDURES = ['users.heartbeat', 'notifications.getSseTicket'] as const;
+
+const LANE_PROCEDURES = { essential: ESSENTIAL_PROCEDURES, background: BACKGROUND_PROCEDURES } as const;
+
+/** The request-limit lane of a signed-in user's request: a listed lane, or `normal` for the rest. */
+export type TrpcLane = keyof typeof LANE_PROCEDURES | 'normal';
+
+/**
+ * The lane of a request path (no query string): a `/trpc/` path whose procedures all belong to one
+ * lane's list is in that lane; anything else — a batch mixing lanes, an unknown or empty name, an
+ * encoded separator, a path outside tRPC — is `normal`, so an odd path never reaches a reserve.
+ */
+export function trpcLaneOf(pathname: string): TrpcLane {
+  if (!pathname.startsWith('/trpc/')) return 'normal';
+  const procedures = pathname.slice('/trpc/'.length).split(',');
+  for (const lane of ['essential', 'background'] as const) {
+    const names: readonly string[] = LANE_PROCEDURES[lane];
+    if (procedures.every(name => names.includes(name))) return lane;
+  }
+  return 'normal';
+}
+
+/**
+ * Whether a client sends a procedure (dotted path) alone: one in a listed lane, so a batch never
+ * mixes it with calls the API counts in the normal lane.
+ */
+export function sendsUnbatched(procedure: string): boolean {
+  return trpcLaneOf(`/trpc/${procedure}`) !== 'normal';
+}
+
+/**
  * Builds the export download URL for a season calendar.
  *
  * Authenticated with a Bearer token by the caller (`fetch`), not a signed query token — these

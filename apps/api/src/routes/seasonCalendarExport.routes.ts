@@ -536,7 +536,8 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
    * scope and become the server's global limit — the same incident documented
    * in `brandLogo.routes.ts`. The per-route option only tightens these three.
    *
-   * The global default (100 req/min per IP) is too generous for PDF
+   * A route `config.rateLimit` replaces the global limit for these routes (`rateLimit.global` does not
+   * count them): its own, per user, because the global one is too generous for PDF
    * generation, which holds the entire document in memory.
    */
   const exportRateLimit = {

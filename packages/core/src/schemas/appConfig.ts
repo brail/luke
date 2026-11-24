@@ -33,6 +33,27 @@ export const RateLimitPolicySchema = z.object({
 });
 
 /**
+ * The global request limits of the API, stored under the `rateLimit.global` AppConfig key: requests
+ * per **one-minute** window (fixed, so every bound is a plain rate). Authenticated traffic is
+ * counted per user in three lanes — essential calls (profile, token refresh, sign-out), background
+ * calls (heartbeat, SSE ticket) and everything else — and unauthenticated traffic per client
+ * address. The minimums keep a stored value from locking every user out; strict, so a field that
+ * means nothing here (`keyBy`, `timeWindow`) is refused rather than ignored.
+ */
+export const GlobalRateLimitSchema = z.strictObject({
+  /** Requests per minute per signed-in user, outside the essential and background lanes. */
+  perUser: z.number().int().min(60).max(10_000),
+  /** Requests per minute per client address, for requests without a valid session. */
+  perIp: z.number().int().min(30).max(10_000),
+  /** Requests per minute per user for the essential procedures (`ESSENTIAL_PROCEDURES`). */
+  essentialPerUser: z.number().int().min(30).max(1_000),
+  /** Requests per minute per user for the background procedures (`BACKGROUND_PROCEDURES`). */
+  backgroundPerUser: z.number().int().min(10).max(1_000),
+});
+
+export type GlobalRateLimit = z.infer<typeof GlobalRateLimitSchema>;
+
+/**
  * Full rate limiting configuration, with optional per-category policies.
  * Stored as a JSON blob under the `rateLimit` AppConfig key.
  */

@@ -32,7 +32,7 @@ import type { FastifyInstance } from 'fastify';
  * the rate limiter below confined to these two routes. With `fp()` the limiter
  * ended up in the root scope and became the server's global limit — 30 req/min
  * per user on every route in production, tRPC batches included, instead of the
- * 100 per IP configured in `server.ts`. Same reason `specsheetImage` and
+ * global limit (`lib/globalRateLimit.ts`). Same reason `specsheetImage` and
  * `collectionRowPicture` are plain async functions.
  */
 export default async function brandLogoRoutes(

@@ -32,7 +32,7 @@ describe('rateLimitKeyFromRequest', () => {
       tokenVersion: 0,
     }, Math.floor(Date.now() / 1000));
 
-    expect(rateLimitKeyFromRequest(req(`Bearer ${token}`))).toBe('user-42');
+    expect(rateLimitKeyFromRequest(req(`Bearer ${token}`))).toBe('u:user-42');
   });
 
   it('an expired bearer falls back to the IP', () => {
@@ -49,14 +49,14 @@ describe('rateLimitKeyFromRequest', () => {
       { expiresIn: '-1h' }
     );
 
-    expect(rateLimitKeyFromRequest(req(`Bearer ${expired}`))).toBe('203.0.113.7');
+    expect(rateLimitKeyFromRequest(req(`Bearer ${expired}`))).toBe('ip:203.0.113.7');
   });
 
   it('without Authorization it falls back to the IP', () => {
-    expect(rateLimitKeyFromRequest(req())).toBe('203.0.113.7');
+    expect(rateLimitKeyFromRequest(req())).toBe('ip:203.0.113.7');
   });
 
   it('a malformed header falls back to the IP', () => {
-    expect(rateLimitKeyFromRequest(req('Bearer non-un-jwt'))).toBe('203.0.113.7');
+    expect(rateLimitKeyFromRequest(req('Bearer non-un-jwt'))).toBe('ip:203.0.113.7');
   });
 });

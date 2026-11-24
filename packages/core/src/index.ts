@@ -104,7 +104,12 @@ export {
   buildBackupImportUrl,
   buildAuditLogExportUrl,
   buildTrpcUrl,
+  BACKGROUND_PROCEDURES,
+  ESSENTIAL_PROCEDURES,
   TRPC_MAX_BATCH_SIZE,
+  sendsUnbatched,
+  trpcLaneOf,
+  type TrpcLane,
   buildSeasonCalendarExportUrl,
 } from './net/url.js';
 

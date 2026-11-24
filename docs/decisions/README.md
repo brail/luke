@@ -67,6 +67,7 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) | Session Revocation: Signing Out Always Ends the Browser Session | Accepted |
 | [049](049-resource-action-permissions-previews-dialog-reads-and-the-phase-catalog-on-read.md) | Resource:Action Permissions: Previews, Dialog Reads and the Phase Catalog on Read | Accepted |
 | [050](050-outbound-boundary-audit-addresses-only-with-users-read.md) | Outbound Boundary: Audit Addresses Only With users:read | Accepted |
+| [051](051-request-limits-per-user-and-per-address-in-three-lanes.md) | Request Limits: Per User and Per Address, in Three Lanes | Accepted |
 
 _Last updated: 2026-11-24_
 <!-- luke-docs:end:adr-index -->

@@ -7,7 +7,7 @@ import type { PrismaClient } from '@luke/db';
 import { storagePlugin } from '../src/plugins/storageUpload';
 
 /**
- * File serving stays out of the global per-IP limiter. Every picture of a collection layout is one
+ * File serving stays out of the global rate limiter. Every picture of a collection layout is one
  * `GET /uploads/...`: counted, a hard reload of a photo-heavy layout spent the whole budget and
  * every other request from that browser got 429 (rc.1). The opt-out is per route: the limiter
  * still applies to the rest of the API.

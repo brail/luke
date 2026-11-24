@@ -426,8 +426,8 @@ pnpm --filter @luke/api build   # dist/ and dist-scripts/ (never while pnpm dev 
 `tsx watch --env-file=.env --import ./src/instrument.ts`; nothing sets the variable for you, `apps/api/.env`
 is gitignored, and `isDevelopment()` compares with `'development'` exactly. Left
 unset, the local API runs as neither development nor production: CSP on, `info`
-logs without pino-pretty, and the global rate limit at 100 requests per minute
-with no loopback exemption. The symptom is not a clear error but sporadic 429s,
+logs without pino-pretty, and the global rate limits at their production values
+(100 requests per minute per address, 300 per user) with no loopback exemption. The symptom is not a clear error but sporadic 429s,
 which the browser shows as failed requests and the end-to-end suite as failed
 logins.
 

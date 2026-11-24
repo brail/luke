@@ -25,7 +25,8 @@ async function probe(label: string, url: string): Promise<void> {
     throw new Error(
       `${label} is answering 429 (rate limit) on ${url}. Wait a minute ` +
         'before running again: with NODE_ENV other than "development" the ' +
-        '100 req/min per IP limit applies, to localhost too.'
+        'production limits apply (rateLimit.global: 100 req/min per address ' +
+        'without a session), to localhost too.'
     );
   }
 

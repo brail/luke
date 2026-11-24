@@ -4,10 +4,10 @@
 
 import 'server-only';
 
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink, httpLink, splitLink } from '@trpc/client';
 
 import type { AppRouter } from '@luke/api';
-import { TRPC_MAX_BATCH_SIZE, getApiBaseUrl } from '@luke/core';
+import { TRPC_MAX_BATCH_SIZE, getApiBaseUrl, sendsUnbatched } from '@luke/core';
 
 import { forwardedFor } from './clientIp';
 import { trpcFetch } from './trpcFetch';
@@ -28,14 +28,21 @@ export function createAuthedTrpcClient(
 ) {
   return createTRPCClient<AppRouter>({
     links: [
-      httpBatchLink({
-        url: trpcUrl,
-        maxItems: TRPC_MAX_BATCH_SIZE,
-        fetch: trpcFetch,
-        // No `Content-Type`: tRPC sets it on a POST, and a second one would be joined to it (415).
-        headers: () => ({
-          Authorization: `Bearer ${accessToken}`,
-          ...forwardedFor(incomingHeaders),
+      // Essential and background calls go alone: the API's limiter counts a batch that mixes them
+      // with other calls in the normal lane (ADR-051). Each link carries its headers inline (rule 13).
+      // No `Content-Type`: tRPC sets it on a POST, and a second one would be joined to it (415).
+      splitLink({
+        condition: op => sendsUnbatched(op.path),
+        true: httpLink({
+          url: trpcUrl,
+          fetch: trpcFetch,
+          headers: () => ({ Authorization: `Bearer ${accessToken}`, ...forwardedFor(incomingHeaders) }),
+        }),
+        false: httpBatchLink({
+          url: trpcUrl,
+          maxItems: TRPC_MAX_BATCH_SIZE,
+          fetch: trpcFetch,
+          headers: () => ({ Authorization: `Bearer ${accessToken}`, ...forwardedFor(incomingHeaders) }),
         }),
       }),
     ],

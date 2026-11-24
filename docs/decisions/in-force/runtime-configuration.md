@@ -2,7 +2,7 @@
 
 > Current guidance, kept up to date; not a decision record. The ADRs linked here decide: where this page and an Accepted ADR disagree, the ADR holds.
 
-_Last reviewed: 2026-11-22_
+_Last reviewed: 2026-11-24_
 
 ## Rules in force
 
@@ -30,6 +30,9 @@ _Last reviewed: 2026-11-22_
 - Three writes bypass `saveAuthConfig`: the seed's `auth.strategy`; a full restore, whose `pg_restore --clean` leaves both keys as the backup holds them, unchecked; and `scripts/refresh-rc-db.sh`, which deletes `auth.ldap.enabled` with SQL. [ADR-018](../018-runtime-configuration-and-bootstrap-environment.md#errata)
 - Every AppConfig mutation records an audit row when it succeeds — the `config.*` writers, the integration, storage and maintenance settings procedures, `phaseAlert.updateThresholds` and `sectionAccess.setRoleDefaults` — except the maintenance scheduler's state writes (`markActivated`, `recordWarningsSent`), an open gap, and the seeds and scripts under `apps/api/prisma` and `apps/api/scripts`, which run outside the API. [ADR-018](../018-runtime-configuration-and-bootstrap-environment.md#errata)
 - `CRITICAL_CONFIG_KEYS` names the keys apps/api cannot start without: the API exits when it cannot reach the database and, in production only, when a critical key is missing or invalid; elsewhere it warns. [ADR-018](../018-runtime-configuration-and-bootstrap-environment.md)
+- The API's global request limit counts a request for its user when its bearer authenticates (`requestSession`, revocation included, checked once per request) and for its client address otherwise; a user's requests fall in three lanes by path — `essential` (`ESSENTIAL_PROCEDURES`), `background` (`BACKGROUND_PROCEDURES`) and `normal`, a mixed batch or unrecognised path included. [ADR-051](../051-request-limits-per-user-and-per-address-in-three-lanes.md)
+- Its numbers are `rateLimit.global` (`perUser`, `perIp`, `essentialPerUser`, `backgroundPerUser`, a one-minute window, bounds in `GlobalRateLimitSchema`); an invalid value falls back to the defaults, the defaults apply until the first background read and the last values read when a read fails, a revocation check that fails or exceeds one second keys by the signed identity, development multiplies them by 20 and exempts loopback, and the key has no product writer. [ADR-051](../051-request-limits-per-user-and-per-address-in-three-lanes.md)
+- A refusal is a 429 with `Retry-After` and a body `{ error, message, code: 'TOO_MANY_REQUESTS', retryAfterSeconds, traceId }` without the address, logged once at `warn` with lane, user or address and procedures, never the query string. [ADR-051](../051-request-limits-per-user-and-per-address-in-three-lanes.md)
 - Reading a decrypted value through the config router requires `config:update`; `config:read` returns stored and masked values only. [ADR-034](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) (Secrets and sensitive data)
 
 ## Records
@@ -39,4 +42,5 @@ _Last reviewed: 2026-11-22_
 | [018](../018-runtime-configuration-and-bootstrap-environment.md) ([errata](../018-runtime-configuration-and-bootstrap-environment.md#errata)) | in force |
 | [045](../045-bootstrap-guard-refuses-tls-verification-switched-off.md) ([errata](../045-bootstrap-guard-refuses-tls-verification-switched-off.md#errata)) | in force |
 | [046](../046-web-server-refuses-tls-verification-switched-off.md) | in force |
+| [051](../051-request-limits-per-user-and-per-address-in-three-lanes.md) | in force |
 | [034](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) ([errata](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md#errata)) | related — carried by 050 under Secrets and sensitive data |

@@ -159,11 +159,12 @@ describe('Session Hardening — revocation across the whole surface', () => {
       tokenVersion: 0,
     }, Math.floor(Date.now() / 1000));
 
-    const req = { headers: { authorization: `Bearer ${token}` } } as any;
+    // A new request each time: one request is checked once (`requestSession`).
+    const req = () => ({ headers: { authorization: `Bearer ${token}` } }) as any;
     const reply = { clearCookie: () => {} } as any;
 
     // Before revocation the token is good.
-    await expect(authenticateRequest(req, reply, prisma)).resolves.not.toBeNull();
+    await expect(authenticateRequest(req(), reply, prisma)).resolves.not.toBeNull();
 
     // Explicit revocation: this is what `users.revokeUserSessions` does in production.
     await prisma.user.update({
@@ -176,7 +177,7 @@ describe('Session Hardening — revocation across the whole surface', () => {
     // live only in the tRPC middleware, and every Fastify route (logo upload, calendar
     // export, backup restore) accepted revoked tokens for the entire JWT
     // lifetime — up to 7 days.
-    await expect(authenticateRequest(req, reply, prisma)).resolves.toBeNull();
+    await expect(authenticateRequest(req(), reply, prisma)).resolves.toBeNull();
   });
 
   it('authenticateRequest rejects a deactivated user', async () => {

@@ -39,6 +39,11 @@ What 3.1 changes for the operator so far:
   any state. When the API cannot end the sessions (maintenance, a request limit, an error), the
   browser session is cleared anyway and the login page says that other devices stay signed in
   until their sessions expire (ADR-048). Nothing to run.
+- **Request limits count per user.** The API's global limit counts a signed-in user's requests for
+  that user — profile, token refresh and sign-out in their own lane — and only requests without a
+  session per address (ADR-051). The numbers are the optional `rateLimit.global` key; without it the
+  defaults apply. A refused request answers `TOO_MANY_REQUESTS` with the seconds to wait
+  (`retryAfterSeconds`; the old `statusCode`/`retryAfter` body is gone). Nothing to run.
 - **Google Calendar sync failures are visible.** The `Google Workspace` settings page shows each
   sync operation's last success and last failure, and a failure notifies the administrators. In
   production, step 5 moves the sync to a dedicated mailbox.

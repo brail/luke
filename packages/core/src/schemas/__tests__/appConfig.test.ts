@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import {
   AlertBandSchema,
   CollectionAlertThresholdsSchema,
+  GlobalRateLimitSchema,
   RateLimitPolicySchema,
   rateLimitWindowMs,
 } from '../appConfig.js';
@@ -102,5 +103,32 @@ describe('RateLimitPolicySchema — timeWindow', () => {
   it('converts each unit to milliseconds', () => {
     expect([rateLimitWindowMs('30s'), rateLimitWindowMs('01m'), rateLimitWindowMs('2h')]).toEqual([30_000, 60_000, 7_200_000]);
     expect(rateLimitWindowMs(`${'9'.repeat(400)}h`)).toBeNull();
+  });
+});
+
+describe('GlobalRateLimitSchema', () => {
+  const VALID = { perUser: 300, perIp: 100, essentialPerUser: 60, backgroundPerUser: 30 };
+  const BOUNDS = {
+    perUser: [60, 10_000],
+    perIp: [30, 10_000],
+    essentialPerUser: [30, 1_000],
+    backgroundPerUser: [10, 1_000],
+  } as const;
+
+  it('accepts every field at its bounds and refuses one step outside', () => {
+    for (const [field, [min, max]] of Object.entries(BOUNDS)) {
+      for (const value of [min, max]) {
+        expect(GlobalRateLimitSchema.safeParse({ ...VALID, [field]: value }).success, `${field}=${value}`).toBe(true);
+      }
+      for (const value of [min - 1, max + 1, min + 0.5]) {
+        expect(GlobalRateLimitSchema.safeParse({ ...VALID, [field]: value }).success, `${field}=${value}`).toBe(false);
+      }
+    }
+  });
+
+  it('refuses a missing field and a field it does not define', () => {
+    const { perIp: _omitted, ...missing } = VALID;
+    expect(GlobalRateLimitSchema.safeParse(missing).success).toBe(false);
+    expect(GlobalRateLimitSchema.safeParse({ ...VALID, keyBy: 'ip' }).success).toBe(false);
   });
 });

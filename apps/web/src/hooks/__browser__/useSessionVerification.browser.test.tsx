@@ -28,7 +28,7 @@ vi.mock('../../lib/trpc', () => ({
 const ME = { id: 'user-1' };
 const UNAUTHORIZED = { data: { code: 'UNAUTHORIZED' } };
 // What `httpBatchStreamLink` builds from the global limiter's 429 body: no `data.code`.
-const RATE_LIMITED = { message: 'Too many requests from 10.0.0.1', data: undefined };
+const RATE_LIMITED = { message: 'Troppe richieste. Riprova più tardi.', data: undefined };
 
 async function mountWithChecks(...results: CheckResult[]): Promise<void> {
   for (const result of results) refetch.mockResolvedValueOnce(result);

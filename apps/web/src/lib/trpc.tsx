@@ -1,13 +1,13 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchStreamLink } from '@trpc/client';
+import { httpBatchStreamLink, httpLink, splitLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
-import { TRPC_MAX_BATCH_SIZE } from '@luke/core';
+import { TRPC_MAX_BATCH_SIZE, sendsUnbatched } from '@luke/core';
 
 import { trpcFetch } from './trpcFetch';
 
@@ -61,36 +61,35 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
       })
   );
 
-  const trpcClient = React.useMemo(
-    () =>
-      trpc.createClient({
-        links: [
-          httpBatchStreamLink({
-            // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
-            // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
-            url: '/trpc',
-            maxItems: TRPC_MAX_BATCH_SIZE,
-            fetch: trpcFetch,
-            // Headers for authentication, Content-Type and trace correlation
-            headers() {
-              // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
-              // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
-              const headers: Record<string, string> = {
-                'x-luke-trace-id':
-                  crypto.randomUUID?.() ||
-                  Math.random().toString(36).substring(2) + Date.now().toString(36),
-              };
-
-              // Add the JWT token if available
-              if (accessToken) {
-                headers.authorization = `Bearer ${accessToken}`;
-              }
-
-              return headers;
-            },
-          }),
-        ],
-      }),
+  const trpcClient = React.useMemo(() => {
+    // Headers for authentication and trace correlation, on every request.
+    const headers = () => {
+      // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
+      // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
+      const values: Record<string, string> = {
+        'x-luke-trace-id':
+          crypto.randomUUID?.() ||
+          Math.random().toString(36).substring(2) + Date.now().toString(36),
+      };
+      if (accessToken) values.authorization = `Bearer ${accessToken}`;
+      return values;
+    };
+    // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
+    // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
+    const url = '/trpc';
+    return trpc.createClient({
+      links: [
+        // Essential and background calls (profile, refresh, sign-out, heartbeat, SSE ticket) go
+        // alone: the API's limiter counts a batch that mixes them with other calls in the normal
+        // lane, so the profile would share the page's budget (ADR-051).
+        splitLink({
+          condition: op => sendsUnbatched(op.path),
+          true: httpLink({ url, fetch: trpcFetch, headers }),
+          false: httpBatchStreamLink({ url, maxItems: TRPC_MAX_BATCH_SIZE, fetch: trpcFetch, headers }),
+        }),
+      ],
+    });
+  },
     [accessToken]
   );
 

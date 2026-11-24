@@ -8,6 +8,7 @@ import {
 } from '../storage/config.js';
 
 import {
+  GlobalRateLimitSchema,
   RateLimitConfigSchema,
   LdapResilienceSchema,
   CollectionAlertThresholdsSchema,
@@ -158,6 +159,7 @@ export const AppConfigRegistry = {
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': jsonConfigSchema(RateLimitConfigSchema),
+  'rateLimit.global': jsonConfigSchema(GlobalRateLimitSchema),
 
   // ── Collection Control — motore alert (JSON object) ──────────────────────
   'collectionControl.alertThresholds': jsonConfigSchema(CollectionAlertThresholdsSchema),
@@ -318,6 +320,8 @@ export const APP_CONFIG_DEFAULTS = {
   'backup.notifyOnFailure':    'true',
   'backup.retentionDays':      '30',
   'backup.retentionMinCount':  '3',
+
+  'rateLimit.global': '{"perUser":300,"perIp":100,"essentialPerUser":60,"backgroundPerUser":30}',
 
   'security.tokenVersionCacheTTL': '60000',
   'editLock.ttlMs':                '900000',

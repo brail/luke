@@ -32,15 +32,16 @@ export function isRateLimitExceededCause(
 }
 
 /**
- * Builds a `TOO_MANY_REQUESTS` TRPCError with `retryAfterSeconds` attached as `cause`.
- * Called only by `enforceRateLimit()`, which logs the route and the limit before throwing.
+ * Builds a `TOO_MANY_REQUESTS` TRPCError with `retryAfterSeconds` attached as `cause`. Called by
+ * `enforceRateLimit()` with the whole window (an upper bound), and by the global limiter
+ * (`globalRateLimit.ts`) with the time left; each logs the refusal itself.
  *
  * The message names neither the route nor the limit: a 4xx reaches every client, and the
- * budget of `auth.login` is exactly what a password sprayer would pace itself by. No number either — `retryAfterSeconds` is the whole window, not the time left.
+ * budget of `auth.login` is exactly what a password sprayer would pace itself by.
  */
-export function buildRateLimitExceededError(windowMs: number): TRPCError {
+export function buildRateLimitExceededError(retryAfterMs: number): TRPCError {
   const cause: RateLimitExceededCause = {
-    retryAfterSeconds: Math.ceil(windowMs / 1000),
+    retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
   };
 
   return new TRPCError({
