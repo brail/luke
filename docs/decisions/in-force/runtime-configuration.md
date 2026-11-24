@@ -39,4 +39,4 @@ _Last reviewed: 2026-11-22_
 | [018](../018-runtime-configuration-and-bootstrap-environment.md) ([errata](../018-runtime-configuration-and-bootstrap-environment.md#errata)) | in force |
 | [045](../045-bootstrap-guard-refuses-tls-verification-switched-off.md) ([errata](../045-bootstrap-guard-refuses-tls-verification-switched-off.md#errata)) | in force |
 | [046](../046-web-server-refuses-tls-verification-switched-off.md) | in force |
-| [034](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) ([errata](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md#errata)) | related — in force under Secrets and sensitive data |
+| [034](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) ([errata](../034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md#errata)) | related — carried by 050 under Secrets and sensitive data |

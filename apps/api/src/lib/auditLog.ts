@@ -273,7 +273,8 @@ const SAFE_KEY_LIST = [
   'newTimezone',
 
   // Identity of the affected account. PII, deliberately kept: an audit trail that cannot say
-  // *who* was deleted or reset is not an audit trail. Audit reads require `audit:read_all`.
+  // *who* was deleted or reset is not an audit trail. Audit reads require `audit:read_all`, and
+  // an address in them `users:read` too (`maskAuditAddresses`, ADR-050).
   'userEmail',
   'deletedUsername',
   'deletedEmail',
@@ -375,6 +376,26 @@ function scrubFreeText(value: string): string {
     .replace(/(\w+:\/\/)[^/\s:@]+:[^/\s@]+@/g, '$1***:***@')
     .replace(/\b(password|passwd|pwd|secret|token|apikey|api_key)\b(\s*[=:]\s*)\S+/gi, '$1$2***')
     .slice(0, FREE_TEXT_MAX_LENGTH);
+}
+
+/** What a masked address reads as: the redaction family `isRedactedValue` knows, naming the permission. */
+export const ADDRESS_MASK = '[REDACTED: users:read]';
+
+/** An address anywhere in a text: a dedicated field, a username typed as one, an SMTP error. */
+const ADDRESS_PATTERN = /[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[^\s@<>"'(),;:]+/g;
+
+/**
+ * A copy of stored audit metadata with every address replaced by `ADDRESS_MASK`, in any string at
+ * any depth: dedicated keys (`email`, `userEmail`, `deletedEmail`), free text, objects, arrays and
+ * map values alike. By value, not by key name, so an address under any key is caught. A read-time
+ * filter for a caller without `users:read` (ADR-050); the stored row is not touched.
+ */
+export function maskAuditAddresses(value: unknown): unknown {
+  // `includes` first: the pattern backtracks on a long run with no `@`.
+  if (typeof value === 'string') return value.includes('@') ? value.replace(ADDRESS_PATTERN, ADDRESS_MASK) : value;
+  if (Array.isArray(value)) return value.map(maskAuditAddresses);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, maskAuditAddresses(inner)]));
 }
 
 /** Returns true if the value was produced by the sanitizer's redaction logic. */

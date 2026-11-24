@@ -50,7 +50,7 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) | Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets | Accepted |
 | [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Superseded by [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) |
 | [033](033-release-identity-versioning-contract-and-release-trains.md) | Release Identity, Versioning Contract and Release Trains | Accepted |
-| [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) | Outbound Boundary for Sensitive Data and Masked Configuration Reads | Accepted |
+| [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) | Outbound Boundary for Sensitive Data and Masked Configuration Reads | Superseded by [050](050-outbound-boundary-audit-addresses-only-with-users-read.md) |
 | [035](035-date-and-time-model-calendar-days-instants-and-two-zone-roles.md) | Date and Time Model: Calendar Days, Instants and Two Zone Roles | Superseded by [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) |
 | [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
@@ -66,6 +66,7 @@ Decisions in force, by area ([ADR-047](047-documentation-architecture-decisions-
 | [047](047-documentation-architecture-decisions-in-force-index-by-area-and-short-records.md) | Documentation Architecture: Decisions in Force per Area, an Index by Area and Short Records | Accepted |
 | [048](048-session-revocation-signing-out-always-ends-the-browser-session.md) | Session Revocation: Signing Out Always Ends the Browser Session | Accepted |
 | [049](049-resource-action-permissions-previews-dialog-reads-and-the-phase-catalog-on-read.md) | Resource:Action Permissions: Previews, Dialog Reads and the Phase Catalog on Read | Accepted |
+| [050](050-outbound-boundary-audit-addresses-only-with-users-read.md) | Outbound Boundary: Audit Addresses Only With users:read | Accepted |
 
-_Last updated: 2026-11-23_
+_Last updated: 2026-11-24_
 <!-- luke-docs:end:adr-index -->

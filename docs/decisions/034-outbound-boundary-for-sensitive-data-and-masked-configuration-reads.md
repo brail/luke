@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [050 — Outbound Boundary: Audit Addresses Only With users:read](050-outbound-boundary-audit-addresses-only-with-users-read.md)
 
 ## Context
 

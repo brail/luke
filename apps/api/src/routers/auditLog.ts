@@ -15,8 +15,8 @@ import {
   type Permission,
 } from '@luke/core';
 
-import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
-import { requirePermission } from '../lib/permissions';
+import { auditActorName, auditSubjectOf, buildAuditLogWhere, maskAuditAddresses, resolveAuditSubjects } from '../lib/auditLog';
+import { can, requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getUserTimeZone } from '../lib/userTimeZone';
 import {
@@ -132,7 +132,9 @@ export const auditLogRouter = router({
    * @auth {audit:read_all}
    * @input {AuditLogListInputSchema} — filters (actor, action, targetType, result, date range)
    *   plus page/limit.
-   * @output {AuditLogListOutput} — paginated audit log entries with resolved actor name/email.
+   * @output {AuditLogListOutput} — paginated audit log entries with resolved actor name/email. The
+   *   addresses (actor, subject, and those recorded in `metadata`) only for a caller who also holds
+   *   `users:read`; otherwise `null` and masked (ADR-050).
    */
   list: protectedProcedure
     .use(requirePermission('audit:read_all'))
@@ -154,24 +156,28 @@ export const auditLogRouter = router({
       // Attributes the actor-less rows (login/verify/reset) in one extra batched query
       // instead of leaving the whole pre-auth trail rendered as an anonymous "Sistema".
       const subjects = await resolveAuditSubjects(ctx.prisma, items);
+      // Another user's address needs `users:read` beside the audit (ADR-050); the caller's own too.
+      const withAddresses = can(ctx, 'users:read');
 
       return {
         items: items.map(entry => {
-          const subject = auditSubjectOf(entry, subjects);
+          // Masked before the subject is read from it: a username typed as an address stays masked there too.
+          const metadata = withAddresses ? entry.metadata : maskAuditAddresses(entry.metadata);
+          const subject = auditSubjectOf({ ...entry, metadata }, subjects);
           return {
             id: entry.id,
             action: entry.action,
             targetType: entry.targetType,
             targetId: entry.targetId,
             result: entry.result,
-            metadata: entry.metadata,
+            metadata,
             ip: entry.ip,
             createdAt: entry.createdAt,
             actorId: entry.actorId,
             actorName: auditActorName(entry.actor),
-            actorEmail: entry.actor?.email ?? null,
+            actorEmail: withAddresses ? (entry.actor?.email ?? null) : null,
             subjectName: subject.name,
-            subjectEmail: subject.email,
+            subjectEmail: withAddresses ? subject.email : null,
           };
         }),
         total,
@@ -195,7 +201,13 @@ export const auditLogRouter = router({
     .mutation(async ({ ctx, input }) => {
       // The zone is fixed when the link is made: the export reads the days as the page does.
       const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
-      const token = signAuditLogExportToken({ filters: input, timeZone });
+      // The requester, whom the download reads again: a permission lost meanwhile counts (ADR-050).
+      const token = signAuditLogExportToken({
+        filters: input,
+        timeZone,
+        userId: ctx.session.user.id,
+        tokenVersion: ctx.session.user.tokenVersion,
+      });
       return { token };
     }),
 });

@@ -15,12 +15,13 @@ import {
   AuditLogExportFormatSchema,
   getAuditActionLabel,
   calendarDateIn,
+  hasPermission,
   type AuditLogExportFormat,
   type AuditLogFilters,
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
+import { auditActorName, auditSubjectOf, buildAuditLogWhere, maskAuditAddresses, resolveAuditSubjects } from '../lib/auditLog';
 import { applyStreamingHeaderStyle, createStreamingWorkbook } from '../lib/export/xlsxStreaming';
 import { verifyAuditLogExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
@@ -49,7 +50,12 @@ export function csvEscape(value: string): string {
 }
 
 /** Yields one row of `EXPORT_COLUMNS` per event, read in batches rather than the whole audit trail at once. */
-async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters, timeZone: string): AsyncGenerator<string[]> {
+async function* auditLogRows(
+  prisma: PrismaClient,
+  filters: AuditLogFilters,
+  timeZone: string,
+  withAddresses: boolean
+): AsyncGenerator<string[]> {
   const whereClause = buildAuditLogWhere(filters, timeZone);
   // Keyset, not offset: each batch starts after the last row read, so events written at the top or
   // rows retention deletes at the bottom while a long export runs neither repeat nor skip a row.
@@ -76,12 +82,14 @@ async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters, tim
       // identify their subject. Both land in the same columns so the export stays one shape;
       // `Attribuzione` is what tells an auditor whether the identity is a proven actor or an
       // inferred subject.
-      const subject = auditSubjectOf(entry, subjects);
+      // Masked before the subject is read from it: a username typed as an address stays masked (ADR-050).
+      const subject = auditSubjectOf(withAddresses ? entry : { ...entry, metadata: maskAuditAddresses(entry.metadata) }, subjects);
       const attribution = entry.actorId ? 'utente' : subject.name ? 'soggetto' : 'sistema';
       yield [
         entry.createdAt.toISOString(),
         auditActorName(entry.actor) ?? subject.name ?? '',
-        entry.actor?.email ?? subject.email ?? '',
+        // Another user's address only for a requester who holds `users:read` (ADR-050).
+        withAddresses ? (entry.actor?.email ?? subject.email ?? '') : '',
         attribution,
         getAuditActionLabel(entry.action),
         entry.targetType,
@@ -97,12 +105,17 @@ async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters, tim
 }
 
 /** Streams the export as CSV. */
-export async function* generateAuditLogCsv(prisma: PrismaClient, filters: AuditLogFilters, timeZone: string) {
+export async function* generateAuditLogCsv(
+  prisma: PrismaClient,
+  filters: AuditLogFilters,
+  timeZone: string,
+  withAddresses: boolean
+) {
   // Leading BOM (explicit escape, not a literal character, so it doesn't trip no-irregular-whitespace):
   // makes Excel recognize UTF-8, otherwise it mangles accented characters.
   const BOM = '\uFEFF';
   yield `${BOM}${EXPORT_COLUMNS.join(',')}\n`;
-  for await (const row of auditLogRows(prisma, filters, timeZone)) yield `${row.map(csvEscape).join(',')}\n`;
+  for await (const row of auditLogRows(prisma, filters, timeZone, withAddresses)) yield `${row.map(csvEscape).join(',')}\n`;
 }
 
 /** Resolves once `stream` drains or closes, whichever comes first. */
@@ -125,6 +138,7 @@ export async function writeAuditLogXlsx(
   prisma: PrismaClient,
   filters: AuditLogFilters,
   timeZone: string,
+  withAddresses: boolean,
   out: PassThrough
 ): Promise<void> {
   const workbook = createStreamingWorkbook(out, { title: 'Audit Log' });
@@ -132,7 +146,7 @@ export async function writeAuditLogXlsx(
   const header = sheet.addRow(EXPORT_COLUMNS);
   applyStreamingHeaderStyle(header, 'report');
   header.commit();
-  for await (const row of auditLogRows(prisma, filters, timeZone)) {
+  for await (const row of auditLogRows(prisma, filters, timeZone, withAddresses)) {
     if (out.writableNeedDrain) await drainedOrClosed(out);
     if (out.destroyed) return;
     sheet.addRow(row).commit();
@@ -156,6 +170,19 @@ export async function registerAuditLogExportDownloadRoute(
         return;
       }
 
+      // The requester's permissions as they are now, not as they were when the link was made (ADR-050).
+      const requester = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { role: true, isActive: true, tokenVersion: true },
+      });
+      // A revocation since the link was made (sign-out, password change, forced logout) ends it too.
+      const revoked = requester?.tokenVersion !== payload.tokenVersion;
+      if (!requester?.isActive || revoked || !hasPermission(requester, 'audit:read_all')) {
+        reply.code(403).send({ error: 'Forbidden', message: 'Non hai più accesso al registro attività' });
+        return;
+      }
+      const withAddresses = hasPermission(requester, 'users:read');
+
       const format = AuditLogExportFormatSchema.safeParse(request.query.format ?? 'csv');
       if (!format.success) {
         reply.code(400).send({ error: 'Bad Request', message: 'Formato di export non valido' });
@@ -165,7 +192,7 @@ export async function registerAuditLogExportDownloadRoute(
       const xlsx = format.data === 'xlsx' ? new PassThrough() : undefined;
       streamRawResponse(
         reply,
-        xlsx ?? Readable.from(generateAuditLogCsv(prisma, payload.filters, payload.timeZone)),
+        xlsx ?? Readable.from(generateAuditLogCsv(prisma, payload.filters, payload.timeZone, withAddresses)),
         {
           'Content-Type': CONTENT_TYPES[format.data],
           'Content-Disposition': `attachment; filename="audit-log-${calendarDateIn(new Date(), payload.timeZone)}.${format.data}"`,
@@ -174,7 +201,7 @@ export async function registerAuditLogExportDownloadRoute(
         err => fastify.log.error({ err }, 'Audit log export stream failed')
       );
       // The writer's failure reaches the response through the stream's error handler.
-      if (xlsx) writeAuditLogXlsx(prisma, payload.filters, payload.timeZone, xlsx).catch((err: Error) => xlsx.destroy(err));
+      if (xlsx) writeAuditLogXlsx(prisma, payload.filters, payload.timeZone, withAddresses, xlsx).catch((err: Error) => xlsx.destroy(err));
     }
   );
 }

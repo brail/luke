@@ -496,7 +496,7 @@ authentication models:
 | --- | --- |
 | `POST /upload/brand-logo/temp`, `/upload/brand-logo/:brandId`, `/upload/company-logo`, `/upload/collection-row-picture/temp`, `/upload/collection-row-picture/:rowId`, `/upload/specsheet-image/:specsheetId`, `/upload/backup-import` | Bearer API token plus the route's permission (`requireSessionWithPermission` in `src/lib/auth.ts`) |
 | `GET /download/season-calendar/{ical,pdf,xlsx}` | Bearer API token (`authenticateRequest`), then the caller's brand and function scope |
-| `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header |
+| `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header; `/download/audit-log` reads its requester again before streaming (ADR-050) |
 | `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, carrying the caller's session; the stream re-checks that session before every heartbeat and ends when it is revoked, or 12 hours after its login ([ADR-039](../../docs/decisions/039-session-revocation-tokenversion-and-absolute-lifetime.md)) |
 
 Upload routes stop keeping a file at the size in `ASSET_KINDS` for their asset
@@ -533,7 +533,7 @@ values in the environment table below, and no configuration file is read. Ration
 <!-- luke-docs:start:trpc-routers -->
 | Namespace | Description |
 |-----------|-------------|
-| `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
+| `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page; other users' addresses only with `users:read` (ADR-050) |
 | `auth.*` | Login, API token refresh, logout (ends every session of the caller), password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
 | `brand.*` | Brand management (CRUD, soft delete, logo upload, hard delete, purge of an inactive test brand with its data) |
 | `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |

@@ -11,7 +11,12 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-import { collectUnlistedAuditKeys, sanitizeMetadata } from '../src/lib/auditLog';
+import {
+  ADDRESS_MASK,
+  collectUnlistedAuditKeys,
+  maskAuditAddresses,
+  sanitizeMetadata,
+} from '../src/lib/auditLog';
 
 /**
  * Narrows the result of `sanitizeMetadata`, which is `unknown` by construction:
@@ -465,6 +470,45 @@ describe('sanitizeMetadata', () => {
       const sanitized = asRecord(sanitizeMetadata({ error: 'x'.repeat(500) }));
 
       expect(sanitized.error).toHaveLength(200);
+    });
+  });
+});
+
+describe('maskAuditAddresses (read-time filter, ADR-050)', () => {
+  it('masks every address key at any depth: objects, arrays, map values', () => {
+    const stored = {
+      email: 'a@example.com',
+      nested: { userEmail: 'b@example.com', items: [{ deletedEmail: 'c@example.com' }, 'plain'] },
+      sectionAccessDefaults: { editor: { email: 'd@example.com' } },
+    };
+
+    expect(maskAuditAddresses(stored)).toEqual({
+      email: ADDRESS_MASK,
+      nested: { userEmail: ADDRESS_MASK, items: [{ deletedEmail: ADDRESS_MASK }, 'plain'] },
+      sectionAccessDefaults: { editor: { email: ADDRESS_MASK } },
+    });
+  });
+
+  it('keeps ids, other values, empty addresses and existing redaction markers, and leaves its input unchanged', () => {
+    const stored = { emailHolderId: 'u1', username: 'mario', email: null, userEmail: '[REDACTED]', count: 2 };
+    const copy = structuredClone(stored);
+
+    expect(maskAuditAddresses(stored)).toEqual(stored);
+    expect(stored).toEqual(copy);
+    expect(maskAuditAddresses(null)).toBeNull();
+  });
+
+  it('masks an address inside free text and under any key, by its value', () => {
+    const stored = {
+      error: '550 5.1.1 <mario.rossi@corp.it>: Recipient address rejected',
+      username: 'typed.as@mail.example',
+      reason: 'no address here',
+    };
+
+    expect(maskAuditAddresses(stored)).toEqual({
+      error: `550 5.1.1 <${ADDRESS_MASK}>: Recipient address rejected`,
+      username: ADDRESS_MASK,
+      reason: 'no address here',
     });
   });
 });

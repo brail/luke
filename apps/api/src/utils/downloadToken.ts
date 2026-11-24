@@ -254,19 +254,31 @@ export interface AuditLogExportTokenPayload extends BaseTokenPayload {
   filters: AuditLogFilters;
   /** The requester's zone (`getUserTimeZone`), in which the filter's days are read. */
   timeZone: string;
+  /** The requester, whose permissions the download reads again before it streams (ADR-050). */
+  userId: string;
+  /** The requester's `tokenVersion` when the link was made: a revocation since then ends the link. */
+  tokenVersion?: number;
 }
 
 /** Signs a token for the audit log export, encapsulating the applied filters. */
 export function signAuditLogExportToken(params: {
   filters: AuditLogFilters;
   timeZone: string;
+  userId: string;
+  tokenVersion?: number;
   exp?: number;
 }): string {
   const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
-  return signTokenPayload<AuditLogExportTokenPayload>({ filters: params.filters, timeZone: params.timeZone, exp });
+  return signTokenPayload<AuditLogExportTokenPayload>({
+    filters: params.filters,
+    timeZone: params.timeZone,
+    userId: params.userId,
+    tokenVersion: params.tokenVersion,
+    exp,
+  });
 }
 
 /** Verifies and decodes an audit log export token. @throws Error if the token is invalid or expired. */
 export function verifyAuditLogExportToken(token: string): AuditLogExportTokenPayload {
-  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters', 'timeZone']);
+  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters', 'timeZone', 'userId']);
 }
