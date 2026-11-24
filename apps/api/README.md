@@ -114,8 +114,8 @@ On the web side the answers given once the password is proven reach the login
 page as the `code` of the Auth.js sign-in result, thrown by
 `apps/web/src/lib/loginAuthorize.ts`: `pending` and `pending_email`,
 `email_unverified`, `maintenance` (the `MAINTENANCE_ACTIVE` marker), and
-`unavailable` (the last row above). `throttled`, for the caller's own per-IP
-bucket, is written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`,
+`unavailable` (the last row above). `throttled`, for a request limit — the
+caller's own per-IP bucket or the global limiter (ADR-051) — is written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`,
 through `throttledSignIn` in `lib/loginThrottleContext.ts`) together with the
 `429`; the page shows it, like `credentials`, with `SIGN_IN_REFUSED_MESSAGE`.
 

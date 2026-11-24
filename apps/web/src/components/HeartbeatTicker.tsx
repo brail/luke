@@ -16,6 +16,9 @@ const HEARTBEAT_INTERVAL_MS = 60_000; // 60 seconds
  */
 export function HeartbeatTicker() {
   const { mutate } = trpc.users.heartbeat.useMutation({
+    // Offline, fail instead of waiting for the network: a paused mutation is replayed on reconnect,
+    // and every missed tick would arrive at once (#239).
+    networkMode: 'always',
     onError: error => {
       if (error.data?.code === 'UNAUTHORIZED') {
         signOut({ callbackUrl: '/login' });

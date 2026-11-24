@@ -39,8 +39,8 @@ const request = { headers: new Headers({ 'x-forwarded-for': '203.0.113.7' }) };
 const credentials = { username: 'alice', password: 'her-password' };
 
 /** The API's answer to `auth.login`, as tRPC shapes an error or a result. */
-function apiAnswers(status: number, body: unknown) {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })));
+function apiAnswers(status: number, body: unknown, headers?: Record<string, string>) {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status, headers })));
 }
 
 /** The body of the global Fastify limiter's 429 (`globalRateLimit.ts`, through `setGlobalErrorHandler`). */
@@ -153,7 +153,6 @@ describe('authorizeLogin', () => {
   it.each([
     ['a refusal before proof', 401, trpcError('UNAUTHORIZED', SIGN_IN_REFUSED_MESSAGE)],
     ['a maintenance answer on anything but a 403', 401, trpcError('FORBIDDEN', 'MAINTENANCE_ACTIVE')],
-    // The global limiter's own 429 body carries no tRPC code.
     ['the global limiter', 429, GLOBAL_LIMITER_429],
     ['an unverified answer on anything but a 403', 401, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED')],
     ['a 403 whose message only starts like an unverified one', 403, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED_X')],
@@ -167,13 +166,15 @@ describe('authorizeLogin', () => {
     expect(await authorizeLogin(credentials, request)).toBeNull();
   });
 
-  it('the global limiter marks nothing for the route wrapper', async () => {
-    apiAnswers(429, GLOBAL_LIMITER_429);
+  // Its body carries no tRPC code; `trpcFetch` gives it one, with the wait of its `Retry-After`.
+  it('the global limiter marks the request with its Retry-After, not as wrong credentials', async () => {
+    apiAnswers(429, GLOBAL_LIMITER_429, { 'retry-after': '37' });
     const state: LoginThrottleState = {};
 
-    await loginThrottleContext.run(state, () => authorizeLogin(credentials, request));
+    const result = await loginThrottleContext.run(state, () => authorizeLogin(credentials, request));
 
-    expect(state).toEqual({});
+    expect(result).toBeNull();
+    expect(state).toEqual({ retryAfterSeconds: 37 });
   });
 
   it('a throttled login is a plain refusal that marks the request for the route wrapper', async () => {

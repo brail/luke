@@ -9,8 +9,9 @@ import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
 import { forwardedFor } from './lib/clientIp';
-import { debugError, debugLog } from './lib/debug';
+import { debugError, debugLog, debugWarn } from './lib/debug';
 import { authorizeLogin } from './lib/loginAuthorize';
+import { trpcFetch } from './lib/trpcFetch';
 
 import type { NextAuthConfig } from 'next-auth';
 
@@ -35,10 +36,13 @@ interface LukeAuthUser {
 // Forza runtime Node.js: necessari moduli Node in @luke/core/server
 export const runtime = 'nodejs';
 
-// Cache tokenVersion validation: avoids repeated me.get fetches for the same user.
-// TTL 30s — an acceptable window between session revocation and forced logout.
-const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (ms)
-const TOKEN_VERSION_CACHE_TTL = 30_000;
+// Throttles the token refresh: no new `auth.refreshToken` call for a user before this instant.
+// 30 s — an acceptable window between session revocation and forced logout. A 429 pushes it to the
+// limiter's `Retry-After`, capped so a malformed header cannot stop refreshes for long.
+const refreshNotBefore = new Map<string, number>(); // userId → epoch ms
+const REFRESH_THROTTLE_MS = 30_000;
+const REFRESH_DEFERRAL_CAP = 5 * 60_000;
+const REFRESH_TIMEOUT_MS = 5_000;
 
 /**
  * Full Auth.js v5 configuration for Luke (Node.js runtime only).
@@ -112,14 +116,14 @@ export const config = {
         // → UNAUTHORIZED → logout. If successful, updates the embedded accessToken,
         // so a still-valid NextAuth session never sends an expired JWT
         // (root cause of the `jwt expired` error).
-        const cached = tokenVersionCache.get(token.sub);
-        if (!cached || Date.now() - cached >= TOKEN_VERSION_CACHE_TTL) {
+        if (Date.now() >= (refreshNotBefore.get(token.sub) ?? 0)) {
           // Set before the call, whatever its outcome: at most one refresh per user per TTL. Set
           // only on success, a 429 kept the cache cold, and every image request (each one runs
           // `auth()`) fired another refresh counted by the API's global limiter — keeping it spent.
-          tokenVersionCache.set(token.sub, Date.now());
+          refreshNotBefore.set(token.sub, Date.now() + REFRESH_THROTTLE_MS);
           try {
-            const response = await fetch(buildTrpcUrl('auth.refreshToken'), {
+            // `trpcFetch`: the global limiter's 429 arrives as TOO_MANY_REQUESTS with its wait.
+            const response = await trpcFetch(buildTrpcUrl('auth.refreshToken'), {
               method: 'POST',
               headers: {
                 Authorization: `Bearer ${token.accessToken}`,
@@ -128,13 +132,23 @@ export const config = {
                 ...forwardedFor(await requestHeaders()),
               },
               body: JSON.stringify({}),
+              // A hung API must not hold every `auth()` of this user.
+              signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
             });
-
             // Check the semantic tRPC code in the body — more robust than HTTP status
             const body = await response.json().catch(() => null);
+            if (body?.error?.data?.code === 'TOO_MANY_REQUESTS') {
+              // Not before the limiter's window has passed; the session stays (ADR-051).
+              const retryAfter: unknown = body.error.data.retryAfterSeconds;
+              const waitMs = typeof retryAfter === 'number' ? retryAfter * 1000 : 0;
+              refreshNotBefore.set(
+                token.sub,
+                Date.now() + Math.min(Math.max(waitMs, REFRESH_THROTTLE_MS), REFRESH_DEFERRAL_CAP)
+              );
+            }
             if (body?.error?.data?.code === 'UNAUTHORIZED') {
               debugLog('Invalid tokenVersion or expired token during JWT refresh, forcing logout');
-              tokenVersionCache.delete(token.sub);
+              refreshNotBefore.delete(token.sub);
               return null; // Force re-login
             }
             const freshToken = body?.result?.data?.token as string | undefined;
@@ -145,10 +159,13 @@ export const config = {
             }
           } catch (error) {
             const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';
-            if (!isNetworkError) {
+            const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
+            if (isTimeout) {
+              debugWarn(`JWT refresh timed out after ${REFRESH_TIMEOUT_MS} ms; token kept`);
+            } else if (!isNetworkError) {
               debugError('Error checking tokenVersion during JWT refresh:', error);
             }
-            // On network error, keep the token but log the error
+            // On a network error or a timeout, keep the token: the next attempt comes after the TTL.
           }
         }
 

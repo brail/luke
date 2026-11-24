@@ -4,6 +4,7 @@ declare function getApiBaseUrl(): string;
 declare function forwardedFor(headers: { get(name: string): string | null }): Record<string, string>;
 declare function httpBatchLink(opts: unknown): unknown;
 declare function httpBatchStreamLink(opts: unknown): unknown;
+declare function trpcFetch(input: string, init?: RequestInit): Promise<Response>;
 declare const utils: { config: { getMultiple: { fetch(input: unknown): Promise<unknown> } } };
 
 type Incoming = { get(name: string): string | null };
@@ -55,6 +56,19 @@ export async function wrongPlace(h: Incoming) {
 export function linkWithout(token: string) {
   // ruleid: luke-server-api-call-forwarded-for
   return httpBatchLink({ url: buildApiUrl('/trpc'), headers: () => ({ Authorization: `Bearer ${token}` }) });
+}
+
+export async function wrapperWithout(ip: string) {
+  // ruleid: luke-server-api-call-forwarded-for
+  return trpcFetch(buildTrpcUrl('auth.login'), { method: 'POST', headers: { 'X-Forwarded-For': ip } });
+}
+
+export async function wrapperWith(h: Incoming) {
+  // ok: luke-server-api-call-forwarded-for
+  return trpcFetch(buildTrpcUrl('auth.login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...forwardedFor(h) },
+  });
 }
 
 export async function headersIsTheHelper(req: { headers: Incoming }) {

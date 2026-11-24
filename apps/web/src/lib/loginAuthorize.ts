@@ -22,7 +22,7 @@ import { buildTrpcUrl } from '@luke/core';
 import { forwardedFor } from './clientIp';
 import { debugError } from './debug';
 import { markLoginThrottled } from './loginThrottleContext';
-import { GATEWAY_STATUSES } from './trpcFetch';
+import { GATEWAY_STATUSES, trpcFetch } from './trpcFetch';
 
 /**
  * The API answered `SERVICE_UNAVAILABLE` with the reason `auth_unavailable`: sign-in is unavailable
@@ -105,7 +105,8 @@ async function callTRPCAuth(
   incomingHeaders: { get(name: string): string | null }
 ) {
   try {
-    const response = await fetch(buildTrpcUrl('auth.login'), {
+    // `trpcFetch`: the global limiter's 429 arrives as TOO_MANY_REQUESTS, like the per-IP bucket's.
+    const response = await trpcFetch(buildTrpcUrl('auth.login'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -142,11 +143,10 @@ async function callTRPCAuth(
         const reason: unknown = errorData?.error?.data?.unavailableReason;
         return reason === 'auth_unavailable' ? { unavailable: true } : { serviceUnavailable: true };
       }
-      // The caller's own per-IP bucket (the API's per-account one answers like a wrong password).
-      // Signals it to the route wrapper ([...nextauth]/route.ts) through AsyncLocalStorage:
-      // NextAuth responds with 200 anyway below (return null → generic CredentialsSignin), the
-      // real 429 is constructed outside this call stack. The global limiter's 429 carries no tRPC
-      // code, and reads as any other refusal.
+      // The caller's own per-IP bucket, or the global limiter (the API's per-account bucket answers
+      // like a wrong password). Signals it to the route wrapper ([...nextauth]/route.ts) through
+      // AsyncLocalStorage: NextAuth responds with 200 anyway below (return null → generic
+      // CredentialsSignin), the real 429 is constructed outside this call stack.
       if (code === 'TOO_MANY_REQUESTS') {
         const retryAfterSeconds =
           typeof errorData.error.data.retryAfterSeconds === 'number'

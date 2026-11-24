@@ -175,6 +175,16 @@ Each refusal is one `warn` line, `Global rate limit exceeded`, with the lane, th
 user id or address, the method and the procedures. `retryAfterSeconds` of a
 per-procedure limit is the whole window instead.
 
+The web waits as long as that header asks. Its tRPC fetch (`apps/web/src/lib/trpcFetch.ts`)
+turns the limiter's body into a tRPC `TOO_MANY_REQUESTS` error with `retryAfterSeconds`
+from `Retry-After`, so the login page shows a throttled sign-in, not wrong credentials. A query
+retries a 429 once, after that wait plus up to a second (a wait longer than a minute shows the
+error instead), and never another 4xx; a mutation never retries. The token
+refresh skips its next attempt until the wait is over (30 s at least, 5 minutes at most), and a
+429 never signs the user out. The heartbeat and the SSE ticket fail offline instead of queuing,
+and give up after 15 s. When the network comes back, a tab refetches its stale queries once,
+after a random wait of up to 5 s; the SSE reconnect backs off with jitter.
+
 A tRPC batch is one request to this limiter, whatever the number of calls in
 it. The tRPC adapter refuses a batch of more than `TRPC_MAX_BATCH_SIZE` calls
 (`@luke/core`, 20) with a 400, before any procedure runs, and the web's links
@@ -304,7 +314,7 @@ denied` warning, with `traceId`, `userId`, `userRole` and either
 last-admin refusals do not write it.
 
 The [global limiter](#global-limiter)'s 429 has its own body, code
-`TOO_MANY_REQUESTS`, and no `error.data.code`.
+`TOO_MANY_REQUESTS`, and no `error.data.code`; the web's tRPC fetch gives it one.
 
 ---
 

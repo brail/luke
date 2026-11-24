@@ -4,11 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchStreamLink, httpLink, splitLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
 import { TRPC_MAX_BATCH_SIZE, sendsUnbatched } from '@luke/core';
 
+import { queryRetryDelay, refetchOnReconnectWithJitter, shouldRetryQuery } from './queryRetry';
 import { trpcFetch } from './trpcFetch';
 
 /**
@@ -36,30 +37,38 @@ export function narrowRouterOutput<T>(value: unknown): T {
 }
 
 /**
- * Wraps children with the tRPC and React Query providers.
- * Creates a `QueryClient` with project-wide defaults (1 min stale time, no
- * window-focus refetch, no mutation retry) and attaches a `Bearer` JWT header
- * from the NextAuth session on every tRPC request.
+ * The browser's `QueryClient`, with project-wide defaults: 1 min stale time, no window-focus refetch,
+ * retries that follow the server's answer, no React Query reconnect refetch (`TRPCProvider` runs
+ * `refetchOnReconnectWithJitter` instead), no mutation retry.
+ */
+export function createQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000, // 1 minute
+        retry: shouldRetryQuery,
+        retryDelay: queryRetryDelay,
+        refetchOnWindowFocus: false, // Avoid unnecessary automatic refetches
+        refetchOnReconnect: false, // `refetchOnReconnectWithJitter` instead
+      },
+      mutations: {
+        retry: false, // No automatic retry, to avoid duplicate writes
+      },
+    },
+  });
+}
+
+/**
+ * Wraps children with the tRPC and React Query providers: a `createQueryClient` client, its jittered
+ * reconnect refetch, and a `Bearer` JWT header from the NextAuth session on every tRPC request.
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
   const accessToken = session?.accessToken;
 
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 60 * 1000, // 1 minute
-            retry: 1,
-            refetchOnWindowFocus: false, // Avoid unnecessary automatic refetches
-          },
-          mutations: {
-            retry: false, // No automatic retry, to avoid duplicate writes
-          },
-        },
-      })
-  );
+  const [queryClient] = useState(createQueryClient);
+
+  useEffect(() => refetchOnReconnectWithJitter(queryClient), [queryClient]);
 
   const trpcClient = React.useMemo(() => {
     // Headers for authentication and trace correlation, on every request.

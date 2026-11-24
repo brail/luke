@@ -20,6 +20,8 @@ rules:
       # specialised builders, helpers and parameters.
       - pattern-either:
           - pattern: fetch($URL, ...)
+          # Luke's tRPC fetch wrapper (`lib/trpcFetch.ts`) sends what it is given.
+          - pattern: trpcFetch($URL, ...)
           - pattern: httpBatchLink(...)
           - pattern: httpBatchStreamLink(...)
           - pattern: httpLink(...)
@@ -31,6 +33,8 @@ rules:
       # `body: 'forwardedFor('` and an unused `forwardedFor(h)` next to the call.
       - pattern-not: 'fetch($URL, { ..., headers: forwardedFor($R), ... })'
       - pattern-not: 'fetch($URL, { ..., headers: { ..., ...forwardedFor($R), ... }, ... })'
+      - pattern-not: 'trpcFetch($URL, { ..., headers: forwardedFor($R), ... })'
+      - pattern-not: 'trpcFetch($URL, { ..., headers: { ..., ...forwardedFor($R), ... }, ... })'
       - pattern-not: '$LINK({ ..., headers: () => ({ ..., ...forwardedFor($R), ... }), ... })'
     paths:
       include:

@@ -31,7 +31,8 @@ export function SseProvider({ children }: { children: React.ReactNode }) {
   const enabled = status === 'authenticated';
   const listenersRef = useRef(new Set<Listener>());
 
-  const getSseTicketMutation = trpc.notifications.getSseTicket.useMutation();
+  // Offline, fail and back off instead of pausing until reconnect: the reconnect timer owns retries.
+  const getSseTicketMutation = trpc.notifications.getSseTicket.useMutation({ networkMode: 'always' });
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -44,7 +45,10 @@ export function SseProvider({ children }: { children: React.ReactNode }) {
 
     const scheduleReconnect = () => {
       if (!isMounted) return;
-      const delay = calcBackoffDelay(reconnectAttemptRef.current, 5_000, 60_000);
+      // Equal jitter: after an API restart or a network drop, the tabs of every user reconnect apart,
+      // and never sooner than half the backoff — a stream that opens and drops at once cannot loop.
+      const backoff = calcBackoffDelay(reconnectAttemptRef.current, 5_000, 60_000);
+      const delay = backoff / 2 + (Math.random() * backoff) / 2;
       reconnectAttemptRef.current += 1;
       clearTimeout(reconnectTimerRef.current ?? undefined);
       reconnectTimerRef.current = setTimeout(() => void connect(), delay);

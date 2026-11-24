@@ -147,7 +147,7 @@ export function createUserSession(token: string): UserSession | null {
  * missing, or tampered token falls back to the IP, and rejecting the request
  * is the handler's job. Verifying the signature here costs one HMAC and no query;
  * a revoked token that has not expired still keys its user's upload bucket (accepted:
- * the handler refuses it). The global limiter keys on `sessionFromBearer` instead.
+ * the handler refuses it). The global limiter keys on `requestSession` instead.
  *
  * Needed because the four upload routes had a `keyGenerator` that read
  * `req.session?.user?.id` — which **nobody ever assigns**: the limiter is an

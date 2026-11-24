@@ -168,9 +168,13 @@ toast, such as closing a dialog or navigating.
 
 Prefer these helpers to manual `refetch()` calls and to ad-hoc `onSuccess`
 invalidations. The React Query client in [`src/lib/trpc.tsx`](src/lib/trpc.tsx)
-sets queries to a 60-second `staleTime`, one retry and no refetch on window
-focus, and mutations to no retry, so a failed mutation is never resubmitted
-automatically.
+sets queries to a 60-second `staleTime` and no refetch on window focus, and
+mutations to no retry, so a failed mutation is never resubmitted automatically.
+A query retries a network failure or a 5xx twice with jittered backoff, a 429
+once after the server's `Retry-After` (up to a minute), and no other 4xx
+([`src/lib/queryRetry.ts`](src/lib/queryRetry.ts)). When the network comes back,
+the active, stale queries refetch once after a random wait of up to 5 s, in
+place of React Query's `refetchOnReconnect`.
 
 ## Error pages and components
 
