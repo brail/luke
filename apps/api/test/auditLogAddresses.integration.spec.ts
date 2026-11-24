@@ -128,7 +128,8 @@ describe('the export', () => {
     sheet.eachRow((row, n) => {
       if (n > 1) xlsxEmails.push(String(row.getCell(3).value ?? ''));
     });
-    return { csv: csvEmails, xlsx: xlsxEmails };
+    // Sorted: the seeded rows share one timestamp, so the export's order among them is the random id's.
+    return { csv: csvEmails.sort(), xlsx: xlsxEmails.sort() };
   }
 
   async function linkFor(session: Parameters<typeof createCallerWithSession>[0]) {
@@ -141,8 +142,8 @@ describe('the export', () => {
 
     const { csv, xlsx } = await emailColumn(await linkFor(session));
 
-    expect(csv).toEqual([other.email, other.email, '']);
-    expect(xlsx).toEqual([other.email, other.email, '']);
+    expect(csv).toEqual(['', other.email, other.email]);
+    expect(xlsx).toEqual(['', other.email, other.email]);
   });
 
   it('leaves the Email column empty for audit:read_all without users:read', async () => {
