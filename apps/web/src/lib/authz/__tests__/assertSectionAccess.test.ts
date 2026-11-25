@@ -30,8 +30,9 @@ vi.mock('../../../lib/trpcAuth', () => ({
 
 const { assertSectionAccess } = await import('../assertSectionAccess');
 
-// `TRPCClientError` keeps the response shape it is given; the guard reads only `data.code`.
-const trpcError = (code: string) => TRPCClientError.from({ error: { code: -1, message: code, data: { code } } } as never);
+// `TRPCClientError` keeps the response shape it is given; the guard reads only `data.sessionEnded`.
+const trpcError = (code: string, data: object = {}) =>
+  TRPCClientError.from({ error: { code: -1, message: code, data: { code, ...data } } } as never);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -52,13 +53,15 @@ describe('assertSectionAccess', () => {
     await expect(assertSectionAccess('settings')).rejects.toThrow('redirect:/dashboard');
   });
 
-  it('sends a revoked session through the forced logout', async () => {
-    h.query.mockRejectedValue(trpcError('UNAUTHORIZED'));
+  it('sends an ended session through the forced logout', async () => {
+    h.query.mockRejectedValue(trpcError('UNAUTHORIZED', { sessionEnded: true }));
 
     await expect(assertSectionAccess('settings')).rejects.toThrow('redirect:/api/auth/force-logout');
   });
 
   it.each([
+    // Only `sessionEnded` signs out (ADR-052): another UNAUTHORIZED is an error like the rest.
+    ['an UNAUTHORIZED that does not end the session', trpcError('UNAUTHORIZED')],
     ['a rate limit', trpcError('TOO_MANY_REQUESTS')],
     ['a server error', trpcError('INTERNAL_SERVER_ERROR')],
     ['a network error', new TypeError('fetch failed')],

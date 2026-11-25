@@ -12,6 +12,7 @@ import { createQueryClient, trpc, TRPCProvider } from '../trpc';
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ status: 'authenticated', data: { accessToken: 'token' } }),
+  signOut: vi.fn(),
 }));
 
 const network = vi.fn<typeof fetch>();

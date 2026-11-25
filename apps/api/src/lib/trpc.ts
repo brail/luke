@@ -9,7 +9,8 @@ import { TRPCError } from '@trpc/server';
 
 import type { PrismaClient } from '@luke/db';
 
-import { authenticateRequest } from './auth';
+import { authenticateRequest, extractTokenFromRequest } from './auth';
+import { SessionEndedError } from './error';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
 import { t } from './t';
 import { verifyTokenVersion } from './tokenVersionCache';
@@ -93,9 +94,12 @@ export const loggingMiddleware = t.middleware(
 /**
  * Middleware that enforces authentication and tokenVersion validity.
  * Rejects requests with an `UNAUTHORIZED` error if the session is absent or the token has been revoked.
+ * A bearer that no longer authenticates is a `SessionEndedError` (the web signs out); a request
+ * with no bearer at all is not — a page still loading its session sends none (ADR-052).
  */
 export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
+    if (extractTokenFromRequest(ctx.req)) throw new SessionEndedError();
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Devi essere autenticato per accedere a questa risorsa',
@@ -113,10 +117,7 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   );
 
   if (!isTokenVersionValid) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Sessione scaduta, effettua nuovamente il login',
-    });
+    throw new SessionEndedError('Sessione scaduta, effettua nuovamente il login');
   }
 
   return next({

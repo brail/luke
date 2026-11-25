@@ -3,8 +3,8 @@
  *
  * The ticket carries that session (`userId`, `tokenVersion`, `authTime`), and the route checks it when
  * the stream opens and on every heartbeat: a logout, any other revocation or a deactivation ends the
- * stream at the next check, and the 12 h limit ends it on time through a timer of its own. The check
- * runs in a timer, outside any request: a failure there is logged and ends the stream instead of
+ * stream at once (the push, ADR-052) or, for one the push missed, at the next check, and the 12 h
+ * limit ends it on time through a timer of its own. The check runs in a timer, outside any request: a failure there is logged and ends the stream instead of
  * becoming an unhandled rejection, and the stream is unsubscribed before it is ended, so a push
  * landing in between writes nothing.
  *
@@ -248,17 +248,20 @@ describe('the SSE stream', () => {
     expect(loggedStreamErrors()).toEqual([]);
   });
 
-  it('keeps the stream on a check that read before a revocation, and ends it on the next one', async () => {
+  it('is ended by a revocation at once, and a check that read before it writes nothing after', async () => {
     const { user, session, stream } = await liveStream();
     const { reachedRead, release } = holdNextUserRead(user.id, { after: true });
     await reachedRead;
 
+    // The revocation pushes and ends the stream (ADR-052) while the check is still held.
     await createCallerWithSession(session).auth.logout();
-    const beats = stream.events.length;
+    await within(stream.ended, END_BOUND_MS);
+    const events = [...stream.events];
     release();
 
-    await vi.waitFor(() => expect(stream.events.length).toBeGreaterThan(beats), { timeout: END_BOUND_MS });
-    await within(stream.ended, END_BOUND_MS);
+    await tick();
+    expect(events.at(-1)).toBe('session-revoked');
+    expect(stream.events).toEqual(events);
   });
 
   it('ends at 12 h from the login on its own timer, with no database call', async () => {

@@ -105,8 +105,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 4,
   },
   notifications: {
-    reason: '`list` and its cursor from the notifications spec, the CALENDAR preference procedures (`preferences.update`, `listCalendarEventOverrides`, `updateCalendarEventOverride`) from the preferences spec, `getSseTicket` from the SSE session spec; the rest is untested',
-    uncovered: 5,
+    reason: '`list` and its cursor, and the read-state mutations (`markAsRead`, `markAllAsRead`, `archiveRead`) and their push, from the notifications spec, the CALENDAR preference procedures (`preferences.update`, `listCalendarEventOverrides`, `updateCalendarEventOverride`) from the preferences spec, `getSseTicket` from the SSE session spec; `counts` and `preferences.list` are untested',
+    uncovered: 2,
   },
   dashboard: {
     reason:

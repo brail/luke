@@ -8,8 +8,8 @@ deliverability, the reverse proxy's network and the release build's repository
 variables. Security headers and
 the health and readiness probes are documented in the
 [API documentation](apps/api/README.md); session revocation is decided in
-[ADR-048](docs/decisions/048-session-revocation-signing-out-always-ends-the-browser-session.md),
-which supersedes ADR-039.
+[ADR-052](docs/decisions/052-session-revocation-pushed-and-one-sign-out-signal.md),
+which supersedes ADR-048 (itself superseding ADR-039).
 
 ## Contents
 

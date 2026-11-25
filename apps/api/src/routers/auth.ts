@@ -20,11 +20,11 @@ import {
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
-import { isUniqueViolation } from '../lib/error';
+import { isUniqueViolation, SessionEndedError } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction } from '../lib/sessionRevocation';
 import {
   router,
   protectedProcedure,
@@ -87,7 +87,7 @@ export const authRouter = router({
     // A request's session always has one (`createUserSession`); a hand-built one may not, and a
     // refresh has no login time of its own to put in its place.
     if (authTime === undefined) {
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+      throw new SessionEndedError();
     }
 
     // Role and tokenVersion are re-read from the database, not from the session claim.
@@ -108,10 +108,7 @@ export const authRouter = router({
     // The version read here must still be the bearer's: a refresh that passed authentication
     // before a logout or any other revocation must not mint a token at the new version.
     if (!fresh || !fresh.isActive || fresh.tokenVersion !== ctx.session.user.tokenVersion) {
-      throw new TRPCError({
-        code: 'UNAUTHORIZED',
-        message: 'Sessione non più valida',
-      });
+      throw new SessionEndedError();
     }
 
     const token = createToken(
@@ -139,11 +136,9 @@ export const authRouter = router({
    */
   logout: selfProcedure.mutation(async ({ ctx }) => {
     const userId = ctx.session.user.id;
-    await ctx.prisma.user.update({
-      where: { id: userId },
-      data: { tokenVersion: { increment: 1 } },
-    });
-    invalidateTokenVersionCache(userId);
+    await revokingTransaction(ctx.prisma, (tx, revoke) =>
+      tx.user.update({ where: { id: userId }, data: { tokenVersion: revoke.user(userId) } })
+    );
 
     await logAudit(ctx, { action: 'AUTH_LOGOUT', targetType: 'Auth', targetId: userId, result: 'SUCCESS' });
 

@@ -1,0 +1,24 @@
+rules:
+  - id: luke-session-revocation-helper
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      End a user's sessions through revokingTransaction() in
+      apps/api/src/lib/sessionRevocation.ts (ADR-052): pass `revoke.user(id)`
+      as the `tokenVersion` value, or `revoke.where(...)` for a bulk
+      revocation. A bare `tokenVersion: { increment }` commits without telling
+      anyone: the cached version keeps the revoked session alive until its TTL,
+      and the user's open tabs are never signed out. A host command outside
+      the API that must increment carries a reasoned `nosemgrep` (bounded by
+      the cache TTL).
+    pattern: '{ ..., tokenVersion: { ..., increment: $N, ... }, ... }'
+    paths:
+      include:
+        - '/apps/**'
+        - '/packages/**'
+      exclude:
+        # The helper itself, and the tests that revoke by hand on purpose to
+        # stand for a write the API did not make.
+        - '/apps/api/src/lib/sessionRevocation.ts'
+        - '/apps/api/test/**'
+        - '**/__tests__/**'

@@ -174,7 +174,11 @@ A query retries a network failure or a 5xx twice with jittered backoff, a 429
 once after the server's `Retry-After` (up to a minute), and no other 4xx
 ([`src/lib/queryRetry.ts`](src/lib/queryRetry.ts)). When the network comes back,
 the active, stale queries refetch once after a random wait of up to 5 s, in
-place of React Query's `refetchOnReconnect`.
+place of React Query's `refetchOnReconnect`. Any query or mutation answering
+`data.sessionEnded` signs the browser out once ([`src/lib/sessionEnd.ts`](src/lib/sessionEnd.ts),
+ADR-052); no other `UNAUTHORIZED` does. While the SSE stream is down, the session
+is checked when the tab becomes visible or the network returns (`SessionVerification`),
+and notifications and the maintenance state poll every 2 minutes (`useSseFallbackPoll`).
 
 ## Error pages and components
 

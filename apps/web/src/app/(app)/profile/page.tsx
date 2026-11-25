@@ -10,7 +10,7 @@ import {
   User,
   CheckCircle,
 } from 'lucide-react';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -40,6 +40,7 @@ import { UserAvatar } from '../../../components/UserAvatar';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useFormatDate } from '../../../hooks/useFormatDate';
 import { triggerBlobDownload } from '../../../lib/download';
+import { endSession } from '../../../lib/sessionEnd';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
@@ -71,8 +72,8 @@ export default function ProfilePage() {
   const revokeAllSessionsMutation = trpc.me.revokeAllSessions.useMutation({
     onSuccess: () => {
       toast.success('Tutte le sessioni sono state revocate');
-      // Force logout
-      signOut({ callbackUrl: '/login' });
+      // This session ended too; the pushed `session-revoked` may get there first (`endSession` runs once).
+      endSession();
     },
     onError: error => {
       toast.error(`Errore: ${error.message}`);

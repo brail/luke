@@ -6,11 +6,10 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { hasPermission, UserIdSchema, type Role } from '@luke/core';
-import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock, assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction } from '../lib/sessionRevocation';
 
 import type { Context } from '../lib/trpc';
 
@@ -48,7 +47,7 @@ export async function deleteUserHandler({
   }
 
   // Soft delete: sets isActive = false
-  const deletedUser = await ctx.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const deletedUser = await revokingTransaction(ctx.prisma, async (tx, revoke) => {
     // The guard's lock before the role is read: a role change waits on the same lock, so the role
     // read here is the one the deletion acts on.
     await acquireLastAdminLock(tx);
@@ -72,6 +71,8 @@ export async function deleteUserHandler({
       where: { id: input.id, isActive: true },
       data: { isActive: false, updatedAt: new Date() },
     });
+    // Inactive, the user's sessions are refused: their open tabs sign out now.
+    revoke.ended(input.id);
     if (count === 1) {
       await logAudit(ctx, {
         action: 'USER_ACCESS_CHANGED',
@@ -83,8 +84,6 @@ export async function deleteUserHandler({
     }
     return tx.user.findUniqueOrThrow({ where: { id: input.id } });
   });
-
-  invalidateTokenVersionCache(input.id);
 
   // Audit logging handled automatically by withAuditLog middleware
 

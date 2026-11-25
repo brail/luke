@@ -2,7 +2,6 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoaderCircle, Eye, EyeOff } from 'lucide-react';
-import { signOut } from 'next-auth/react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -15,8 +14,8 @@ import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
-import { debugLog } from '../../../../lib/debug';
 import { evaluatePassword } from '../../../../lib/passwordChecks';
+import { endSession, isSessionEnded } from '../../../../lib/sessionEnd';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -75,26 +74,18 @@ export function ChangePasswordCard({
       if (onSuccess) {
         onSuccess();
       }
-      // Force logout after password change to invalidate all sessions
-      setTimeout(() => {
-        signOut({ callbackUrl: '/login' });
-      }, 1000);
+      // Every session ended with the change, this one included: sign out after the toast. The
+      // pushed `session-revoked` may get there first; `endSession` runs once.
+      setTimeout(endSession, 1000);
     },
     onError: error => {
-      // Handle UNAUTHORIZED errors from session invalidation
-      if (error?.data?.code === 'UNAUTHORIZED') {
-        // If the message is "Password corrente non valida", do not force logout
-        if (error.message === 'Password corrente non valida') {
-          toast.error('Password corrente non valida');
-          return;
-        }
-        // Otherwise it is an expired-session error
-        debugLog('Session invalidated, forcing logout...');
-        signOut({ callbackUrl: '/login' });
-        return;
-      }
-      // FORBIDDEN here is a refusal the server words itself, not a missing permission.
-      toast.error(`Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true })}`);
+      // An ended session signs out through the global handler (`createQueryClient`).
+      if (isSessionEnded(error)) return;
+      // FORBIDDEN and UNAUTHORIZED (a wrong current password) here are refusals the server words
+      // itself, not a missing permission or an ended session.
+      toast.error(
+        `Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true, UNAUTHORIZED: true })}`
+      );
     },
   });
 

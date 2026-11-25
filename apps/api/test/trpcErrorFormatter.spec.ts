@@ -40,7 +40,7 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
   const { t } = await import('../src/lib/t');
   const { buildRateLimitExceededError } = await import('../src/lib/rateLimitError');
   // From the freshly loaded module, or the formatter's `instanceof` would see another class.
-  const { ServiceUnavailableError } = await import('../src/lib/error');
+  const { ServiceUnavailableError, SessionEndedError } = await import('../src/lib/error');
 
   const failWith = (err: Error) =>
     t.procedure.query(() => {
@@ -61,6 +61,7 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
     maintenance: failWith(new ServiceUnavailableError('maintenance')),
     authUnavailable: failWith(new ServiceUnavailableError('auth_unavailable')),
     rateLimited: failWith(buildRateLimitExceededError(60_000)),
+    sessionEnded: failWith(new SessionEndedError()),
     explicitWithZodCause: failWith(
       new TRPCError({
         code: 'BAD_REQUEST',
@@ -198,6 +199,14 @@ describe('trpcErrorFormatter in production', () => {
     const error = await callError(await loadRouter('production'), 'unavailable');
 
     expect(error.data).not.toHaveProperty('unavailableReason');
+  });
+
+  it('marks an ended session, and only that UNAUTHORIZED (ADR-052)', async () => {
+    const router = await loadRouter('production');
+
+    expect((await callError(router, 'sessionEnded')).data).toMatchObject({ code: 'UNAUTHORIZED', sessionEnded: true });
+    // The wrong current password is an UNAUTHORIZED too: it must never sign anyone out.
+    expect((await callError(router, 'UNAUTHORIZED')).data).not.toHaveProperty('sessionEnded');
   });
 
   it('keeps retryAfterSeconds on a rate-limit error', async () => {

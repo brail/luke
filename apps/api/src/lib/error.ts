@@ -276,19 +276,33 @@ export class ServiceUnavailableError extends TRPCError {
 }
 
 /**
+ * An `UNAUTHORIZED` that means the caller's session is over: a bearer that no longer authenticates
+ * (revoked, expired, its user gone or inactive). The formatter sends `data.sessionEnded: true`, the
+ * web's only sign-out signal (ADR-052); every other `UNAUTHORIZED` — a wrong current password, a
+ * refused sign-in, a request that carried no bearer — leaves the session alone.
+ */
+export class SessionEndedError extends TRPCError {
+  constructor(message = 'Sessione non più valida') {
+    super({ code: 'UNAUTHORIZED', message });
+  }
+}
+
+/**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
  * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
  *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it
  *   (the global limiter's 429, outside tRPC, carries the time left: `toResponseBody`);
  * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
  *   and this keeps every issue with the field it belongs to;
- * - `unavailableReason`, for a `ServiceUnavailableError`: why the service is unavailable.
+ * - `unavailableReason`, for a `ServiceUnavailableError`: why the service is unavailable;
+ * - `sessionEnded`, for a `SessionEndedError`: the session is over, sign out.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
   data: TRPCDefaultErrorShape['data'] & {
     retryAfterSeconds?: number;
     zodIssues?: ZodIssueData[];
     unavailableReason?: ServiceUnavailableReason;
+    sessionEnded?: true;
   };
 }
 
@@ -310,8 +324,8 @@ function clientMessage(shape: TRPCDefaultErrorShape, error: TRPCError): string {
 /**
  * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
  * Decides which message reaches the client (see `clientMessage`) and surfaces
- * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`) and `unavailableReason` for a
- * `ServiceUnavailableError`.
+ * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`), `unavailableReason` for a
+ * `ServiceUnavailableError` and `sessionEnded` for a `SessionEndedError`.
  */
 export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
   const retryAfterSeconds = isRateLimitExceededCause(error.cause)
@@ -332,6 +346,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
       ...(zodIssues !== undefined && { zodIssues }),
       ...(error instanceof ServiceUnavailableError && { unavailableReason: error.reason }),
+      ...(error instanceof SessionEndedError && { sessionEnded: true as const }),
     },
   };
 };

@@ -30,7 +30,8 @@ const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<s
   try {
     return await createAuthedTrpcClient(accessToken, await headers()).sectionAccess.getEffectiveForMe.query();
   } catch (err) {
-    if (err instanceof TRPCClientError && err.data?.code === 'UNAUTHORIZED') {
+    // Only an ended session signs out (ADR-052), never another UNAUTHORIZED.
+    if (err instanceof TRPCClientError && err.data?.sessionEnded === true) {
       redirect(FORCE_LOGOUT_URL);
     }
     throw err;

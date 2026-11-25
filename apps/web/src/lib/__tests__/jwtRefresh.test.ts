@@ -104,6 +104,16 @@ describe('the JWT refresh', () => {
     expect(h.debugWarn).toHaveBeenCalledOnce();
   });
 
+  it('ends the session only on sessionEnded, never on another UNAUTHORIZED (ADR-052)', async () => {
+    const refused = (data: object) =>
+      new Response(JSON.stringify({ error: { message: 'x', data: { code: 'UNAUTHORIZED', ...data } } }), { status: 401 });
+
+    network.mockResolvedValueOnce(refused({ sessionEnded: true }));
+    expect(await refresh(signedIn())).toBeNull();
+    network.mockResolvedValueOnce(refused({}));
+    expect(await refresh(signedIn())).toMatchObject({ accessToken: 'old' });
+  });
+
   it('takes the fresh token of a successful refresh', async () => {
     network.mockResolvedValue(Response.json({ result: { data: { token: 'fresh' } } }));
 

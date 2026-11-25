@@ -23,7 +23,7 @@ import { hashPassword } from '../lib/password';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction } from '../lib/sessionRevocation';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 import { refuseIfLastPersonOnEvents } from '../services/seasonCalendar.service';
@@ -469,7 +469,7 @@ export const usersCoreRouter = router({
       // skip either this bump or the last-admin guard below.
       let txResult;
       try {
-        txResult = await ctx.prisma.$transaction(async tx => {
+        txResult = await revokingTransaction(ctx.prisma, async (tx, revoke) => {
           // A role or active-state change is recorded with its "before" (#222), and a rename moves
           // the LOCAL identity filed under the username it replaces (#229): lock so `current` is the
           // value the write replaces — the last-admin advisory lock first, then the user row, the
@@ -552,7 +552,7 @@ export const usersCoreRouter = router({
               // self-service paths; this was the one cross-user path that did
               // not.
               ...(emailChanged ? { emailVerifiedAt: null } : {}),
-              ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
+              ...(revokesSessions ? { tokenVersion: revoke.user(id) } : {}),
             },
           });
 
@@ -617,11 +617,7 @@ export const usersCoreRouter = router({
         }
         throw err;
       }
-      const { updated: updatedUser, revokesSessions, current } = txResult;
-
-      if (revokesSessions) {
-        invalidateTokenVersionCache(id);
-      }
+      const { updated: updatedUser, current } = txResult;
 
       // The mutation is already committed: a notification failure must not
       // masquerade as a failure of the update itself.
@@ -770,7 +766,7 @@ export const usersCoreRouter = router({
 
       // Hard delete: deletes user and all relations (cascade)
       try {
-        const deletedSnapshot = await ctx.prisma.$transaction(async tx => {
+        const deletedSnapshot = await revokingTransaction(ctx.prisma, async (tx, revoke) => {
           // The guard's lock before the role is read, as in `update`: the role read is the one the
           // deletion acts on.
           await acquireLastAdminLock(tx);
@@ -792,11 +788,11 @@ export const usersCoreRouter = router({
           await tx.user.delete({
             where: { id: input.id },
           });
+          // The user is gone: their open tabs sign out now, not at their next call.
+          revoke.ended(input.id);
 
           return current;
         });
-
-        invalidateTokenVersionCache(input.id);
 
         // Log SUCCESS after a successful delete — snapshot read inside the
         // transaction (not the outer pre-transaction one): reflects the

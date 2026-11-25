@@ -113,7 +113,7 @@ export const config = {
 
         // Refresh token: re-mint the API accessToken by calling auth.refreshToken
         // (with TTL cache). protectedProcedure validates expired Bearer and revoked tokenVersion
-        // → UNAUTHORIZED → logout. If successful, updates the embedded accessToken,
+        // → `sessionEnded` → logout. If successful, updates the embedded accessToken,
         // so a still-valid NextAuth session never sends an expired JWT
         // (root cause of the `jwt expired` error).
         if (Date.now() >= (refreshNotBefore.get(token.sub) ?? 0)) {
@@ -146,7 +146,8 @@ export const config = {
                 Date.now() + Math.min(Math.max(waitMs, REFRESH_THROTTLE_MS), REFRESH_DEFERRAL_CAP)
               );
             }
-            if (body?.error?.data?.code === 'UNAUTHORIZED') {
+            // Only an ended session signs out (ADR-052), never another UNAUTHORIZED.
+            if (body?.error?.data?.sessionEnded === true) {
               debugLog('Invalid tokenVersion or expired token during JWT refresh, forcing logout');
               refreshNotBefore.delete(token.sub);
               return null; // Force re-login

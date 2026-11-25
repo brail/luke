@@ -1,6 +1,6 @@
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchStreamLink, httpLink, splitLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
@@ -10,6 +10,7 @@ import type { AppRouter } from '@luke/api';
 import { TRPC_MAX_BATCH_SIZE, sendsUnbatched } from '@luke/core';
 
 import { queryRetryDelay, refetchOnReconnectWithJitter, shouldRetryQuery } from './queryRetry';
+import { endSession, isSessionEnded } from './sessionEnd';
 import { trpcFetch } from './trpcFetch';
 
 /**
@@ -39,10 +40,16 @@ export function narrowRouterOutput<T>(value: unknown): T {
 /**
  * The browser's `QueryClient`, with project-wide defaults: 1 min stale time, no window-focus refetch,
  * retries that follow the server's answer, no React Query reconnect refetch (`TRPCProvider` runs
- * `refetchOnReconnectWithJitter` instead), no mutation retry.
+ * `refetchOnReconnectWithJitter` instead), no mutation retry. Any query or mutation answering
+ * `sessionEnded` signs the browser out (ADR-052).
  */
 export function createQueryClient(): QueryClient {
+  const onError = (error: unknown) => {
+    if (isSessionEnded(error)) endSession();
+  };
   return new QueryClient({
+    queryCache: new QueryCache({ onError }),
+    mutationCache: new MutationCache({ onError }),
     defaultOptions: {
       queries: {
         staleTime: 60 * 1000, // 1 minute

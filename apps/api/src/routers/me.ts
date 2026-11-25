@@ -22,14 +22,14 @@ import type { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { acquireAppConfigWriteLock, getAuthStrategy, getRequireEmailVerification } from '../lib/configManager';
 import { lockUserEmail, moveUserEmail, sendVerificationEmail } from '../lib/emailHelpers';
-import { isUniqueViolation, ServiceUnavailableError } from '../lib/error';
+import { isUniqueViolation, ServiceUnavailableError, SessionEndedError } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction } from '../lib/sessionRevocation';
 import { selfProcedure, router } from '../lib/trpc';
 import { resolveUserTimeZone } from '../lib/userTimeZone';
 import { localSignInRefusal, verifyCredentials, WRONG_CURRENT_PASSWORD } from '../services/auth.service';
@@ -134,10 +134,7 @@ export const meRouter = router({
     });
 
     if (!user) {
-      throw new TRPCError({
-        code: 'UNAUTHORIZED',
-        message: 'Utente non trovato',
-      });
+      throw new SessionEndedError('Utente non trovato');
     }
 
     // The directory's identity first, whatever the row order (#230): a user it syncs stays its.
@@ -191,7 +188,7 @@ export const meRouter = router({
         select: { firstName: true, lastName: true, identities: { select: { provider: true } } },
       });
       if (!current) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Utente non trovato' });
+        throw new SessionEndedError('Utente non trovato');
       }
 
       // The fields an external provider syncs stay as it wrote them (#230).
@@ -273,7 +270,7 @@ export const meRouter = router({
         select: { username: true, identities: { select: { provider: true } } },
       });
       if (!self) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+        throw new SessionEndedError();
       }
       // The directory owns an LDAP account's address and writes it back at every sign-in (#230).
       if (getSelfLockedFields(resolveEffectiveProvider(self.identities)).includes('email')) {
@@ -381,10 +378,7 @@ export const meRouter = router({
       });
 
       if (!userWithProvider) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Utente non trovato',
-        });
+        throw new SessionEndedError('Utente non trovato');
       }
 
       const localIdentity = changeableLocalIdentity(userWithProvider);
@@ -434,8 +428,8 @@ export const meRouter = router({
 
       const checkedHash = localIdentity.localCredential.passwordHash;
 
-      // Update the password and bump tokenVersion in a transaction
-      await ctx.prisma.$transaction(async trx => {
+      // Update the password and end every session in one transaction
+      await revokingTransaction(ctx.prisma, async (trx, revoke) => {
         // What the sign-in rule reads holds until commit (rule 3): the last-admin lock (strategy and
         // role writers), the AppConfig write lock (`auth.requireEmailVerification`), then the user
         // row — the order of every writer of a user's identities and credential.
@@ -467,15 +461,12 @@ export const meRouter = router({
           throw new TRPCError({ code: 'CONFLICT', message: 'La password è stata cambiata nel frattempo: riprova' });
         }
 
-        // Bump tokenVersion to invalidate all previous sessions
+        // End every previous session
         await trx.user.update({
           where: { id: ctx.session.user.id },
-          data: { tokenVersion: { increment: 1 } },
+          data: { tokenVersion: revoke.user(ctx.session.user.id) },
         });
       });
-
-      // Invalidate the tokenVersion cache for this user
-      invalidateTokenVersionCache(ctx.session.user.id);
 
       // Audit log for the password change
       await logAudit(ctx, {
@@ -543,14 +534,10 @@ export const meRouter = router({
    * @output {{ success: true }}
    */
   revokeAllSessions: selfProcedure.mutation(async ({ ctx }) => {
-    // Bump tokenVersion to invalidate all sessions
-    await ctx.prisma.user.update({
-      where: { id: ctx.session.user.id },
-      data: { tokenVersion: { increment: 1 } },
-    });
-
-    // Invalidate the tokenVersion cache for this user
-    invalidateTokenVersionCache(ctx.session.user.id);
+    const userId = ctx.session.user.id;
+    await revokingTransaction(ctx.prisma, (tx, revoke) =>
+      tx.user.update({ where: { id: userId }, data: { tokenVersion: revoke.user(userId) } })
+    );
 
     // Log audit
     await logAudit(ctx, {

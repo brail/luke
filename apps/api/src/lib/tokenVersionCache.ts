@@ -1,9 +1,9 @@
 /**
  * In-memory tokenVersion cache with TTL, shared by `trpc.ts` (per-request verification) and
- * anything that revokes sessions in bulk (e.g. maintenance-mode force-logout). Split into its
- * own module so bulk-revocation code doesn't need to import `trpc.ts` itself — `trpc.ts` will
- * import `isMaintenanceActive` from `maintenanceMode.ts`, and `maintenanceMode.ts` needs to
- * clear this cache, so the cache can't live inside `trpc.ts` without a circular import.
+ * `sessionRevocation.ts`, which drops a revoked user's entry after the commit. Split into its own
+ * module so revocation code doesn't need to import `trpc.ts` itself — `trpc.ts` imports
+ * `isMaintenanceActive` from `maintenanceMode.ts`, which revokes in bulk, so the cache can't live
+ * inside `trpc.ts` without a circular import.
  */
 
 import type { PrismaClient } from '@luke/db';
@@ -98,13 +98,16 @@ export async function verifyTokenVersion(
   return user.isActive && user.tokenVersion === tokenVersion;
 }
 
-/** Removes the cached tokenVersion for a specific user — call after revoking that user's sessions. */
+/** Removes the cached tokenVersion for a specific user; `revokingTransaction` calls it after the commit. */
 export function invalidateTokenVersionCache(userId: string): void {
   generation++;
   tokenVersionCache.delete(userId);
 }
 
-/** Clears every cached entry — call after a bulk revocation (e.g. force-logout on maintenance-mode activation) so it takes effect immediately rather than waiting out the TTL. */
+/**
+ * Clears every cached entry. Only for a wholesale rewrite of the users table — a backup restore —
+ * which no revocation records; every revocation goes through `revokingTransaction`.
+ */
 export function clearTokenVersionCache(): void {
   generation++;
   tokenVersionCache.clear();

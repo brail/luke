@@ -36,6 +36,7 @@ import { getBackupScheduleSettings, saveConfigs } from '../lib/configManager';
 import { toErrorCode } from '../lib/error';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
+import { clearTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getStorageProvider } from '../storage';
 import { signExportToken } from '../utils/downloadToken';
@@ -509,6 +510,8 @@ export const backupRouter = router({
           // restore's own error: the caller must still see why the restore failed.
           try {
             await writeMaintenanceState(ctx.prisma, maintenanceState);
+            // Every user row was rewritten, administrators' included: no cached verdict holds.
+            clearTokenVersionCache();
             await forceLogoutNonAdmins(ctx.prisma);
           } catch (lockdownErr) {
             ctx.logger.error({ err: lockdownErr }, 'Restore: could not reassert the post-restore lockdown');

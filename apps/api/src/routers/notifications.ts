@@ -1,11 +1,11 @@
 import { randomUUID } from 'crypto';
 
-import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { CALENDAR_EVENT_KEYS, CalendarInstantSchema, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
 
-import { preferencesOf, receives } from '../lib/notifications';
+import { SessionEndedError } from '../lib/error';
+import { pingRecipients, preferencesOf, receives } from '../lib/notifications';
 import { sseStore } from '../lib/sseStore';
 import { selfProcedure, router } from '../lib/trpc';
 
@@ -90,10 +90,12 @@ export const notificationsRouter = router({
   markAsRead: selfProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.prisma.notification.updateMany({
+      const { count } = await ctx.prisma.notification.updateMany({
         where: { id: input.id, userId: ctx.session.user.id },
         data: { isRead: true, readAt: new Date() },
       });
+      // The user's other tabs stop polling while their stream is open (ADR-052): tell them.
+      if (count > 0) pingRecipients([{ userId: ctx.session.user.id }]);
       return { ok: true };
     }),
 
@@ -105,10 +107,11 @@ export const notificationsRouter = router({
    * @output {{ ok: true }}
    */
   markAllAsRead: selfProcedure.mutation(async ({ ctx }) => {
-    await ctx.prisma.notification.updateMany({
+    const { count } = await ctx.prisma.notification.updateMany({
       where: { userId: ctx.session.user.id, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+    if (count > 0) pingRecipients([{ userId: ctx.session.user.id }]);
     return { ok: true };
   }),
 
@@ -121,10 +124,11 @@ export const notificationsRouter = router({
    * @output {{ ok: true }}
    */
   archiveRead: selfProcedure.mutation(async ({ ctx }) => {
-    await ctx.prisma.notification.updateMany({
+    const { count } = await ctx.prisma.notification.updateMany({
       where: { userId: ctx.session.user.id, isRead: true, isArchived: false },
       data: { isArchived: true },
     });
+    if (count > 0) pingRecipients([{ userId: ctx.session.user.id }]);
     return { ok: true };
   }),
 
@@ -220,7 +224,7 @@ export const notificationsRouter = router({
   getSseTicket: selfProcedure.mutation(async ({ ctx }) => {
     const { id: userId, tokenVersion, authTime } = ctx.session.user;
     if (tokenVersion === undefined || authTime === undefined) {
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+      throw new SessionEndedError();
     }
     const ticket = randomUUID();
     sseStore.createTicket(ticket, { userId, tokenVersion, authTime });

@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 
 import { useAppContext } from '../contexts/AppContextProvider';
-import { useSseMessage } from '../contexts/SseProvider';
+import { useSseFallbackPoll, useSseMessage } from '../contexts/SseProvider';
 import { trpc } from '../lib/trpc';
 
 interface SseMessage {
@@ -13,9 +13,9 @@ interface SseMessage {
 }
 
 /**
- * Returns the current user's notifications, using a dual-track strategy:
- * SSE push for real-time delivery (via the shared `SseProvider` connection) and React Query
- * polling every 30 s as fallback.
+ * Returns the current user's notifications: pushed over the shared SSE connection (`SseProvider`),
+ * refetched when the stream (re)opens to catch up on what it missed, and polled every 2 minutes
+ * only while the stream is down (ADR-052).
  *
  * @returns `{ notifications, nextCursor, unreadCount, readCount, isLoading, refetch }`
  */
@@ -23,10 +23,9 @@ export function useNotifications() {
   const utils = trpc.useUtils();
   const { season } = useAppContext();
 
-  const listQuery = trpc.notifications.list.useQuery({ limit: 20 }, { refetchInterval: 30_000 });
-  const countQuery = trpc.notifications.counts.useQuery(undefined, {
-    refetchInterval: 30_000,
-  });
+  const refetchInterval = useSseFallbackPoll();
+  const listQuery = trpc.notifications.list.useQuery({ limit: 20 }, { refetchInterval });
+  const countQuery = trpc.notifications.counts.useQuery(undefined, { refetchInterval });
 
   // Read inside the SSE handler without forcing a reconnect when the user switches season —
   // the shared connection itself is season-agnostic.
@@ -34,7 +33,7 @@ export function useNotifications() {
   seasonIdRef.current = season?.id;
 
   useSseMessage<SseMessage>(data => {
-    if (data.type === 'notification') {
+    if (data.type === 'notification' || data.type === 'connected') {
       void utils.notifications.list.invalidate();
       void utils.notifications.counts.invalidate();
     } else if (data.type === 'sync-state') {

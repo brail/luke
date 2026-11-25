@@ -16,8 +16,8 @@ import type { PrismaClient } from '@luke/db';
 
 import { UnreadableStoredConfigError, getConfig, saveConfig } from './configManager';
 import { ServiceUnavailableError } from './error';
+import { revokingTransaction } from './sessionRevocation';
 import { sseStore } from './sseStore';
-import { clearTokenVersionCache } from './tokenVersionCache';
 
 
 export type { MaintenanceModeState, MaintenanceModeStatus } from '@luke/core';
@@ -136,17 +136,13 @@ export async function recordWarningsSent(prisma: PrismaClient, current: Maintena
 
 /**
  * Revokes the session of every role that cannot bypass maintenance (`bypassesMaintenance`) in one
- * bulk update (same mechanism as the existing single-user force-logout in `users.admin.router.ts`,
- * just role-scoped instead of id-scoped),
- * then clears the whole tokenVersion cache so it takes effect immediately rather than waiting
- * out each entry's TTL.
+ * bulk update, through the same helper as every single-user revocation: each revoked user's cached
+ * version is dropped and their open tabs are told at once.
  */
 export async function forceLogoutNonAdmins(prisma: PrismaClient): Promise<void> {
-  await prisma.user.updateMany({
-    where: { role: { in: Roles.filter(role => !bypassesMaintenance(role)) } },
-    data: { tokenVersion: { increment: 1 } },
-  });
-  clearTokenVersionCache();
+  await revokingTransaction(prisma, (_tx, revoke) =>
+    revoke.where({ role: { in: Roles.filter(role => !bypassesMaintenance(role)) } })
+  );
 }
 
 /**

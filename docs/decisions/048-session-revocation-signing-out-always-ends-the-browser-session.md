@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [052 — Session Revocation: Pushed at Once, with One Sign-Out Signal](052-session-revocation-pushed-and-one-sign-out-signal.md)
 
 ## Context
 

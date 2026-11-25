@@ -15,10 +15,10 @@ const { query, session, sse } = vi.hoisted(() => ({
     data: undefined as { status: string } | undefined,
     isLoading: false,
     refetch: vi.fn(),
-    options: undefined as { enabled?: boolean } | undefined,
+    options: undefined as { enabled?: boolean; refetchInterval?: number | false } | undefined,
   },
   session: { status: 'authenticated' as 'authenticated' | 'unauthenticated' | 'loading' },
-  sse: { handler: undefined as ((data: { type: string }) => void) | undefined },
+  sse: { handler: undefined as ((data: { type: string }) => void) | undefined, connected: false },
 }));
 
 vi.mock('../../lib/trpc', () => ({
@@ -26,7 +26,7 @@ vi.mock('../../lib/trpc', () => ({
     maintenance: {
       mode: {
         getStatus: {
-          useQuery: (_input: unknown, options: { enabled?: boolean }) => {
+          useQuery: (_input: unknown, options: { enabled?: boolean; refetchInterval?: number | false }) => {
             query.options = options;
             return query;
           },
@@ -40,6 +40,8 @@ vi.mock('../../contexts/SseProvider', () => ({
   useSseMessage: (handler: (data: { type: string }) => void) => {
     sse.handler = handler;
   },
+  // As the provider's: no polling while the stream is open.
+  useSseFallbackPoll: () => (sse.connected ? false : 120_000),
 }));
 
 afterEach(() => {
@@ -49,6 +51,7 @@ afterEach(() => {
   query.options = undefined;
   session.status = 'authenticated';
   sse.handler = undefined;
+  sse.connected = false;
 });
 
 test('signed in, the state is asked for and returned, and an SSE push refreshes it', async () => {
@@ -83,4 +86,15 @@ test('signed out, an SSE push asks for nothing', async () => {
 
   sse.handler?.({ type: 'maintenance-mode' });
   expect(query.refetch).not.toHaveBeenCalled();
+});
+
+test('polls every 2 minutes only while the stream is down, and catches up when it opens', async () => {
+  const { rerender } = await renderHook(() => useMaintenanceStatus());
+  expect(query.options?.refetchInterval).toBe(120_000);
+
+  sse.connected = true;
+  await rerender();
+  expect(query.options?.refetchInterval).toBe(false);
+  sse.handler?.({ type: 'connected' });
+  expect(query.refetch).toHaveBeenCalledOnce();
 });

@@ -92,7 +92,6 @@ export async function registerSseRoute(
     reply.raw.write('data: {"type":"connected"}\n\n');
 
     const { userId } = session;
-    sseStore.subscribe(userId, reply);
 
     let closed = false;
     let heartbeatTimer: NodeJS.Timeout | undefined;
@@ -115,6 +114,8 @@ export async function registerSseRoute(
     const end = () => {
       if (stop()) reply.raw.end();
     };
+    // A revocation of the user's sessions ends the stream through `end` (`sseStore.endUser`).
+    sseStore.subscribe(userId, reply, end);
 
     // Runs in a timer, outside any request: a rejection here would be unhandled, and
     // `gracefulShutdown` turns that into `exit(1)`. Re-armed only once a check has finished, so two

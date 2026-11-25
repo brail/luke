@@ -18,7 +18,7 @@ import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction } from '../lib/sessionRevocation';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   LocalAccessRefused,
@@ -100,7 +100,7 @@ export const usersAdminRouter = router({
 
       let txResult;
       try {
-        txResult = await ctx.prisma.$transaction(async tx => {
+        txResult = await revokingTransaction(ctx.prisma, async (tx, revoke) => {
           // The lock order of `users.update`: the last-admin lock, then the user row. Under the row
           // lock, of two approvals of the same user the second finds it no longer pending and writes
           // nothing of its own (rule 3).
@@ -136,7 +136,7 @@ export const usersAdminRouter = router({
           if (email !== undefined || roleChanged) {
             await tx.user.update({
               where: { id },
-              data: { role: roleChanged ? role : undefined, tokenVersion: { increment: 1 } },
+              data: { role: roleChanged ? role : undefined, tokenVersion: revoke.user(id) },
             });
           }
           if (roleChanged) {
@@ -204,7 +204,6 @@ export const usersAdminRouter = router({
       // The address the approval leaves: the one given, or the one the account had.
       const approvedEmail = email ?? user.email;
 
-      if (email !== undefined || roleChanged) invalidateTokenVersionCache(id);
       if (roleChanged) invalidateRbacCache();
 
       // A new address is unverified: its link goes out as on the pending screen's own path
@@ -312,14 +311,10 @@ export const usersAdminRouter = router({
         });
       }
 
-      // Increment tokenVersion to invalidate all of the user's sessions
-      await ctx.prisma.user.update({
-        where: { id: input.id },
-        data: { tokenVersion: { increment: 1 } },
-      });
-
-      // Invalidate the tokenVersion cache for this user
-      invalidateTokenVersionCache(input.id);
+      // End all of the user's sessions
+      await revokingTransaction(ctx.prisma, (tx, revoke) =>
+        tx.user.update({ where: { id: input.id }, data: { tokenVersion: revoke.user(input.id) } })
+      );
 
       // Audit logging handled automatically by the withAuditLog middleware
 
@@ -506,7 +501,7 @@ export const usersAdminRouter = router({
       // Read → validate → write entirely inside the transaction: a concurrent second call for
       // the same user must re-read fresh state, not act on a stale pre-transaction snapshot
       // (mirrors the race-safety already applied to `forceLocalAccess` above).
-      const result = await ctx.prisma.$transaction(async tx => {
+      const result = await revokingTransaction(ctx.prisma, async (tx, revoke) => {
         // Revoking an administrator's LOCAL credential can lower the break-glass count a strategy
         // change checks under this lock (#246): the two wait for each other.
         await acquireLastAdminLock(tx);
@@ -543,13 +538,11 @@ export const usersAdminRouter = router({
         await tx.identity.delete({ where: { id: localIdentity.id } });
         await tx.user.update({
           where: { id: user.id },
-          data: { tokenVersion: { increment: 1 } },
+          data: { tokenVersion: revoke.user(user.id) },
         });
 
         return user;
       });
-
-      invalidateTokenVersionCache(result.id);
 
       return {
         success: true,

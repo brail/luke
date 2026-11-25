@@ -14,19 +14,35 @@ import type { FastifyReply } from 'fastify';
 
 // --- Connection pool ---
 
-const connections = new Map<string, Set<FastifyReply>>();
+/** Each user's open streams, with the route's way to end each one (`routes/sse.ts`). */
+const connections = new Map<string, Map<FastifyReply, () => void>>();
 
-function subscribe(userId: string, reply: FastifyReply): void {
-  const set = connections.get(userId) ?? new Set();
-  set.add(reply);
-  connections.set(userId, set);
+function subscribe(userId: string, reply: FastifyReply, end: () => void): void {
+  const streams = connections.get(userId) ?? new Map();
+  streams.set(reply, end);
+  connections.set(userId, streams);
 }
 
 function unsubscribe(userId: string, reply: FastifyReply): void {
-  const set = connections.get(userId);
-  if (!set) return;
-  set.delete(reply);
-  if (set.size === 0) connections.delete(userId);
+  const streams = connections.get(userId);
+  if (!streams) return;
+  streams.delete(reply);
+  if (streams.size === 0) connections.delete(userId);
+}
+
+/**
+ * Ends every open stream of `userId`, after its sessions were revoked (`sessionRevocation.ts`). Each
+ * `end` unsubscribes its stream first, so nothing is written to it afterwards; one that throws does
+ * not keep the others open.
+ */
+function endUser(userId: string): void {
+  for (const end of [...(connections.get(userId)?.values() ?? [])]) {
+    try {
+      end();
+    } catch {
+      // Already closing: its 'close' event cleans up.
+    }
+  }
 }
 
 /**
@@ -37,13 +53,16 @@ export type SSEEvent =
   | { type: 'sync-state'; entity: string; isRunning: boolean }
   | { type: 'calendar-updated'; seasonId: string }
   | { type: 'maintenance-mode'; status: MaintenanceModeStatus; scheduledAt: string | null; message: string | null }
-  | { type: 'heartbeat' };
+  | { type: 'connected' } // Written by the route on every open (`routes/sse.ts`).
+  | { type: 'heartbeat' }
+  // The user's sessions were revoked: the web signs out (ADR-052). Its streams end right after.
+  | { type: 'session-revoked' };
 
 function pushToUser(userId: string, event: SSEEvent): void {
-  const set = connections.get(userId);
-  if (!set || set.size === 0) return;
+  const streams = connections.get(userId);
+  if (!streams) return;
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const reply of set) {
+  for (const reply of streams.keys()) {
     try {
       reply.raw.write(data);
     } catch {
@@ -54,8 +73,8 @@ function pushToUser(userId: string, event: SSEEvent): void {
 
 function pushToAll(event: SSEEvent): void {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const [, set] of connections.entries()) {
-    for (const reply of set) {
+  for (const streams of connections.values()) {
+    for (const reply of streams.keys()) {
       try {
         reply.raw.write(data);
       } catch {
@@ -112,7 +131,7 @@ setInterval(() => {
 /**
  * Singleton SSE store exposing the full connection pool and ticket API.
  *
- * - `subscribe` / `unsubscribe` — manage per-user reply sets.
+ * - `subscribe` / `unsubscribe` — manage per-user streams; `endUser` ends them all.
  * - `pushToUser` — write an SSE event to all connections for a single user.
  * - `pushToAll` — broadcast an SSE event to every connected client.
  * - `connectedUserIds` — returns the list of user IDs with active connections.
@@ -121,6 +140,7 @@ setInterval(() => {
 export const sseStore = {
   subscribe,
   unsubscribe,
+  endUser,
   pushToUser,
   pushToAll,
   connectedUserIds,

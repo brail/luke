@@ -28,7 +28,7 @@ import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from '../lib/not
 import { dummyPasswordHash, hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
-import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { revokingTransaction, type SessionRevocation } from '../lib/sessionRevocation';
 
 import { checkPasswordAgainstPolicy } from './passwordPolicy.service';
 
@@ -663,11 +663,11 @@ class LinkGone extends Error {}
 async function consumeLink(
   ctx: Context,
   tokenId: string,
-  writes: (tx: Prisma.TransactionClient) => Promise<void>
+  writes: (tx: Prisma.TransactionClient, revoke: SessionRevocation) => Promise<void>
 ): Promise<boolean> {
   try {
-    await ctx.prisma.$transaction(async tx => {
-      await writes(tx);
+    await revokingTransaction(ctx.prisma, async (tx, revoke) => {
+      await writes(tx, revoke);
       const { count } = await tx.userToken.deleteMany({ where: { id: tokenId } });
       if (count === 0) throw new LinkGone();
     });
@@ -760,7 +760,7 @@ export async function confirmPasswordReset(
 
   const passwordHash = await hashPassword(newPassword);
 
-  const consumed = await consumeLink(ctx, userToken.id, async tx => {
+  const consumed = await consumeLink(ctx, userToken.id, async (tx, revoke) => {
     // The user row first, the order of every writer of a user's identities and credential
     // (`lockUserEmail`): a revocation, a rename or a deletion meanwhile is done, or waits for this.
     await lockUserEmail(tx, userToken.userId);
@@ -780,7 +780,7 @@ export async function confirmPasswordReset(
     });
     await tx.user.update({
       where: { id: userToken.userId },
-      data: { tokenVersion: { increment: 1 } },
+      data: { tokenVersion: revoke.user(userToken.userId) },
     });
   });
   if (!consumed) {
@@ -793,8 +793,6 @@ export async function confirmPasswordReset(
     });
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Token non valido o scaduto.' });
   }
-
-  invalidateTokenVersionCache(userToken.userId);
 
   await logAudit(ctx, {
     action: 'PASSWORD_CHANGED',

@@ -39,6 +39,10 @@ What 3.1 changes for the operator so far:
   any state. When the API cannot end the sessions (maintenance, a request limit, an error), the
   browser session is cleared anyway and the login page says that other devices stay signed in
   until their sessions expire (ADR-048). Nothing to run.
+- **A revocation shows at once.** Signing out everywhere, a password change, an administrator
+  revoking, deactivating or deleting a user, or maintenance's forced sign-out now signs the user's
+  open tabs out within about a second (ADR-052); an idle tab no longer checks its session every
+  10 seconds. Nothing to run.
 - **Request limits count per user.** The API's global limit counts a signed-in user's requests for
   that user — profile, token refresh and sign-out in their own lane — and only requests without a
   session per address (ADR-051). The numbers are the optional `rateLimit.global` key; without it the

@@ -131,7 +131,7 @@ Relevant architectural decisions are documented in [`docs/decisions/`](docs/deci
 - **Engineering rules** — environment policy, AppConfig, RBAC, frontend
   conventions, import order: [`CLAUDE.md`](CLAUDE.md)
 - **Decisions** — sessions
-  ([ADR-048](docs/decisions/048-session-revocation-signing-out-always-ends-the-browser-session.md)), master key
+  ([ADR-052](docs/decisions/052-session-revocation-pushed-and-one-sign-out-signal.md)), master key
   ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md)),
   runtime configuration
   ([ADR-018](docs/decisions/018-runtime-configuration-and-bootstrap-environment.md)),
