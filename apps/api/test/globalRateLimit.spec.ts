@@ -3,13 +3,14 @@
  * procedure would silently fall back to the normal lane, so every listed name must be mounted.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BACKGROUND_PROCEDURES, ESSENTIAL_PROCEDURES } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { createToken } from '../src/lib/auth';
+import { createToken, rateLimitKeyFromRequest } from '../src/lib/auth';
 import { globalRateLimitOptions } from '../src/lib/globalRateLimit';
+import * as jwtModule from '../src/lib/jwt';
 import * as tokenVersionCache from '../src/lib/tokenVersionCache';
 
 import { discoverProcedures } from './helpers/procedureRegistry';
@@ -47,22 +48,49 @@ describe('refusal log', () => {
   });
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** A request to `url` from 203.0.113.7 carrying a signed bearer for user-7. */
+function signedRequest(url = '/trpc/me.get') {
+  const bearer = createToken(
+    { id: 'user-7', email: 'u7@test.com', username: 'u7', role: 'viewer', tokenVersion: 0 },
+    Math.floor(Date.now() / 1000)
+  );
+  // Only the fields the key generators read: a full Fastify request is not needed here.
+  return { url, ip: '203.0.113.7', headers: { authorization: `Bearer ${bearer}` } } as unknown as FastifyRequest;
+}
+
+/** Verification fails as a server fault does: `verifyJWT` throws instead of refusing. */
+function verificationFaults() {
+  vi.spyOn(jwtModule, 'verifyJWT').mockImplementation(() => {
+    throw new Error('Unable to derive API JWT secret from master key');
+  });
+}
+
 describe('session check', () => {
+  it('keys by address when the bearer cannot even be verified', async () => {
+    const request = signedRequest();
+    verificationFaults();
+    const { keyGenerator } = globalRateLimitOptions({} as PrismaClient, { warn: vi.fn() }); // never queried here
+
+    await expect(keyGenerator?.(request)).resolves.toBe('ip:203.0.113.7');
+  });
+
+  it("keys an upload route's bucket by address when the bearer cannot even be verified", () => {
+    const request = signedRequest('/upload/brand-logo/temp');
+    verificationFaults();
+
+    expect(rateLimitKeyFromRequest(request)).toBe('ip:203.0.113.7');
+  });
+
   it('keys by the signed identity when the revocation check does not answer within a second', async () => {
     vi.spyOn(tokenVersionCache, 'verifyTokenVersion').mockReturnValue(new Promise(() => {}));
     const log = { warn: vi.fn() };
     const { keyGenerator } = globalRateLimitOptions({} as PrismaClient, log); // never queried here
-    const bearer = createToken(
-      { id: 'user-7', email: 'u7@test.com', username: 'u7', role: 'viewer', tokenVersion: 0 },
-      Math.floor(Date.now() / 1000)
-    );
-    const request = {
-      url: '/trpc/me.get',
-      ip: '203.0.113.7',
-      headers: { authorization: `Bearer ${bearer}` },
-    } as unknown as FastifyRequest;
 
-    await expect(keyGenerator?.(request)).resolves.toBe('essential:u:user-7');
+    await expect(keyGenerator?.(signedRequest())).resolves.toBe('essential:u:user-7');
     expect(log.warn).toHaveBeenCalledTimes(1);
   });
 });

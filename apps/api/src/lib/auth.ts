@@ -74,7 +74,8 @@ export function createToken(
 /**
  * Verifies and decodes a JWT token.
  *
- * @returns Decoded payload, or `null` if the token is invalid or expired.
+ * @returns Decoded payload, or `null` if the token is refused (invalid or expired).
+ * @throws On a server fault while verifying it (`verifyJWT`).
  */
 export function verifyToken(token: string): JWTPayload | null {
   return verifyJWT(token);
@@ -118,8 +119,10 @@ export function isWithinSessionLifetime(authTime: number | undefined): authTime 
  * Builds a `UserSession` from a raw JWT token. The one place a bearer becomes a session
  * (`authenticateRequest`), so the absolute lifetime is enforced here, whatever `exp` says.
  *
- * @returns Session object, or `null` if the token is invalid, carries no valid `authTime`, or is
+ * @returns Session object, or `null` if the token is refused, carries no valid `authTime`, or is
  *   past `SESSION_ABSOLUTE_LIFETIME_SECONDS` from it.
+ * @throws On a server fault while verifying the token (`verifyJWT`): the request fails, it does not
+ *   read as an ended session.
  */
 export function createUserSession(token: string): UserSession | null {
   const payload = verifyToken(token);
@@ -157,7 +160,13 @@ export function createUserSession(token: string): UserSession | null {
  */
 export function rateLimitKeyFromRequest(request: FastifyRequest): string {
   const token = extractTokenFromRequest(request);
-  const userId = token ? verifyToken(token)?.userId : undefined;
+  let userId: string | undefined;
+  try {
+    userId = token ? verifyToken(token)?.userId : undefined;
+  } catch {
+    // A server fault while verifying: key by address; the handler's own authentication fails the
+    // request, and its error handler logs the fault.
+  }
   // Prefixed so a user id and an address can never name the same bucket.
   return userId ? `u:${userId}` : `ip:${request.ip}`;
 }

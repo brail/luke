@@ -6,6 +6,7 @@
 
 import jwt from 'jsonwebtoken';
 
+import { toErrorMessage } from '@luke/core';
 import { getApiJwtSecret } from '@luke/core/server';
 
 import { rootLogger } from './logger';
@@ -92,34 +93,38 @@ export function signJWT(
 }
 
 /**
- * Verifies and decodes a JWT token
+ * Verifies and decodes a JWT token.
  *
  * @param token - JWT token to verify
- * @returns Decoded payload or null if invalid
+ * @returns Decoded payload, or `null` when the token is refused: whatever `jwt.verify` throws comes
+ *   from the token (bad signature, malformed, unparsable, expired, not yet valid, wrong issuer or
+ *   audience)
+ * @throws When the secret cannot be derived: a server fault fails the request, logged by its error
+ *   handler, and never reads as an ended session (ADR-052, #299)
  */
 export function verifyJWT(token: string): JWTPayload | null {
+  // Outside the `try`: the one failure that is the server's, not the token's.
+  const secret = getJWTSecret();
   try {
-    const decoded = jwt.verify(token, getJWTSecret(), {
+    return jwt.verify(token, secret, {
       algorithms: [JWT_CONFIG.algorithm],
       clockTolerance: JWT_CONFIG.clockTolerance,
       issuer: JWT_CONFIG.issuer,
       audience: JWT_CONFIG.audience,
+      // `verify` types its answer as `string | JwtPayload`; a token that passes was signed by
+      // `signJWT` with our secret, so it carries `JWTPayload`'s claims.
     }) as JWTPayload;
-
-    return decoded;
   } catch (error) {
-    // A refused token (`JsonWebTokenError`, the parent of the expired and not-before errors) is an
-    // expected answer, logged by its message; anything else, such as a secret that cannot be
-    // derived, whole. Metadata only, never the full token.
-    const refused = error instanceof jwt.JsonWebTokenError;
-    logger.error(
+    // Metadata only, never the full token. An expired or not-yet-valid token is routine (the web
+    // refreshes it); any other refusal, a forged or garbled bearer included, is worth a warning.
+    const routine = error instanceof jwt.TokenExpiredError || error instanceof jwt.NotBeforeError;
+    logger[routine ? 'debug' : 'warn'](
       {
-        error: refused ? error.message : undefined,
-        err: refused ? undefined : error,
+        error: toErrorMessage(error),
         tokenLength: token.length,
-        tokenPrefix: token.substring(0, 10) + '...', // Reduced from 20 to 10 chars for security
+        tokenPrefix: token.substring(0, 10) + '...',
       },
-      'JWT verification failed'
+      'JWT refused'
     );
     return null;
   }

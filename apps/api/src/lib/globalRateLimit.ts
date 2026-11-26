@@ -138,13 +138,23 @@ export function globalRateLimitOptions(prisma: PrismaClient, log: RateLimitLogge
       }
       // The revocation check failed or is slow (database): a signature-checked bearer still names its
       // user, so the user keeps their own buckets instead of sharing the address's; the handler
-      // refuses a revoked token anyway.
+      // refuses a revoked token anyway. A bearer that cannot even be verified (a server fault) counts
+      // by address, and `createContext` fails the request with the same fault.
+      let key = address;
+      try {
+        const signed = createUserSession(token);
+        if (signed) key = userKey(signed.user.id);
+      } catch {
+        // The fault is the request's to report: its error handler logs it.
+      }
       if (Date.now() - sessionWarnedAt >= SESSION_WARNING_INTERVAL_MS) {
         sessionWarnedAt = Date.now();
-        log.warn({ err: problem }, 'Session check failed for the global rate limit: keyed by the signed identity');
+        log.warn(
+          { err: problem, keyedBy: key === address ? 'address' : 'signed identity' },
+          'Session check failed for the global rate limit'
+        );
       }
-      const signed = createUserSession(token);
-      return signed ? userKey(signed.user.id) : address;
+      return key;
     },
 
     max: (_request: FastifyRequest, key: string) => {
