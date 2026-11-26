@@ -83,21 +83,31 @@ test('a relative time counts days in the profile zone, not the browser zone', as
   expect(result.current.relative(INSTANT)).toBe('l’altro ieri');
 });
 
-test('a profile zone this browser does not know is reported like a failed read, never thrown', async () => {
+test('a profile zone this browser does not know leaves the placeholder and one toast naming it, never a throw', async () => {
   meQuery.data = { timezone: 'Mars/Olympus_Mons', locale: 'it-IT' };
   const { result } = await renderHook(() => useFormatDate());
 
   expect(result.current.dateTime(INSTANT)).toBe('…');
   expect(result.current.ready).toBe(false);
   await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  expect(toastError).toHaveBeenCalledWith(expect.stringContaining('Mars/Olympus_Mons'), { id: 'reader-zone' });
 });
 
-test('a failed profile read is reported once and leaves the placeholder', async () => {
+test('a failed profile read leaves the placeholder and exposes the error, with no time-zone toast', async () => {
   meQuery.error = new Error('down');
   const { result } = await renderHook(() => useFormatDate());
 
   expect(result.current.dateTime(INSTANT)).toBe('…');
   expect(result.current).toMatchObject({ ready: false, error: meQuery.error });
-  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
-  expect(toastError).toHaveBeenCalledWith(expect.any(String), { id: 'reader-zone' });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('a failed refetch with the zone already known exposes no error: dates are still shown', async () => {
+  meQuery.data = { timezone: 'Europe/Rome', locale: 'it-IT' };
+  meQuery.error = new Error('down');
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current).toMatchObject({ ready: true, error: null });
+  expect(result.current.dateTime(INSTANT)).toBe('15/01/2026, 11:30');
 });

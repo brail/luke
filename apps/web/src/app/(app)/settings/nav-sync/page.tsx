@@ -496,7 +496,7 @@ function NavSyncTab({
   // and is visible only when mode is whitelist or exclude.
   const previewQuery = trpc.integrations.nav.sync.preview.useQuery(
     { entity },
-    { enabled: false, retry: 1 },
+    { enabled: false },
   );
 
   // ── Mutations ──────────────────────────────────────────────────────────────

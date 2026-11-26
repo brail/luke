@@ -11,6 +11,7 @@ import { DailyGreetingModal } from '../../components/DailyGreetingModal';
 import { HeartbeatTicker } from '../../components/HeartbeatTicker';
 import LoadingLogo from '../../components/LoadingLogo';
 import { NotificationDropdown } from '../../components/NotificationDropdown';
+import { ProfileLoadAlert } from '../../components/ProfileLoadAlert';
 import { SidebarProvider, SidebarTrigger, useSidebar } from '../../components/ui/sidebar';
 import { AppContextProvider } from '../../contexts/AppContextProvider';
 
@@ -66,6 +67,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             </header>
+
+            <ProfileLoadAlert />
 
             {/* Main content: the only scroll container of the shell. `relative` makes it the
                 containing block of absolutely positioned descendants too (the hidden form

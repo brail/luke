@@ -22,10 +22,11 @@ function browserZone(): string {
 /**
  * Formats instants in the reader zone — the profile zone as `me.get` resolves it — and in the one
  * locale dates are written in until the i18n cycle (`DEFAULT_LOCALE`). Until `me.get` has answered
- * (`ready` false) the formatters return a placeholder; if it fails, `error` is set, one toast says
- * so, and the placeholder stays: no other zone stands in (ADR-035). A reader without a session (the
- * sign-in page) has no profile zone: the browser zone dates instants, and every absolute value
- * names it (a relative one does not).
+ * (`ready` false) the formatters return a placeholder; if it fails, `error` is set (the shell's
+ * `ProfileLoadAlert` says what failed) and the placeholder stays: no other zone stands in (ADR-035).
+ * A profile zone this browser's `Intl` does not know leaves the placeholder too, with one toast
+ * naming the zone. A reader without a session (the sign-in page) has no profile zone: the browser
+ * zone dates instants, and every absolute value names it (a relative one does not).
  *
  * @example
  * ```tsx
@@ -45,12 +46,16 @@ export function useFormatDate() {
   // A zone this browser's `Intl` does not know (older zone data than the server's) is unavailable,
   // like a failed read: formatting with it would throw during render.
   const zone = sessionless ? browserZone() : profileZone && isValidTimeZone(profileZone) ? profileZone : undefined;
-  const failed = !zone && (!!error || !!profileZone);
+  const unknownZone = zone ? undefined : profileZone;
 
   useEffect(() => {
     // One toast however many components format dates: sonner replaces a toast with the same id.
-    if (failed) toast.error('Fuso orario del profilo non disponibile: date non mostrate', { id: 'reader-zone' });
-  }, [failed]);
+    if (unknownZone) {
+      toast.error(`Fuso orario del profilo (${unknownZone}) non riconosciuto da questo browser: date non mostrate`, {
+        id: 'reader-zone',
+      });
+    }
+  }, [unknownZone]);
 
   const format = (value: Instant, options: Intl.DateTimeFormatOptions) => {
     if (!zone) return PENDING;
@@ -61,8 +66,8 @@ export function useFormatDate() {
   return {
     /** Whether the reader zone is known. */
     ready: !!zone,
-    /** The `me.get` error, when the zone could not be loaded. */
-    error,
+    /** The `me.get` error, only while the zone is unknown: a failed refetch keeps the zone it had. */
+    error: zone ? null : error,
     /** The reader zone (IANA), once known. */
     zone,
     /** Today in the reader zone, once it is known. */
