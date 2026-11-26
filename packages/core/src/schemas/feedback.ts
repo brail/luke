@@ -17,20 +17,16 @@ export const FeedbackSubmitInputSchema = z.object({
 });
 export type FeedbackSubmitInput = z.infer<typeof FeedbackSubmitInputSchema>;
 
-/** An issue's address on GitHub, and nowhere else: it becomes a notification's link and goes back to the client. */
-const GitHubIssueUrlSchema = z.url({ protocol: /^https$/, hostname: /^github\.com$/ });
-
-/** What `feedback.submit` reads from the issue it created. */
+/** What `feedback.submit` reads from the issue it created; the address, on GitHub only, is stored with the submission. */
 export const GitHubCreatedIssueSchema = z.object({
   number: z.number().int().positive(),
-  html_url: GitHubIssueUrlSchema,
+  html_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
 });
 
 /** What the feedback sync reads from an issue it follows. */
 export const GitHubIssueSchema = z.object({
   state: z.enum(['open', 'closed']),
   comments: z.number().int().nonnegative(),
-  html_url: GitHubIssueUrlSchema,
 });
 
 /**

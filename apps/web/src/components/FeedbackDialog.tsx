@@ -1,7 +1,6 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ExternalLink } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -52,7 +51,7 @@ interface FeedbackDialogProps {
  * Controlled dialog for submitting bug reports and feature suggestions.
  *
  * On success it creates a GitHub issue via the `feedback.submit` tRPC mutation and
- * shows a toast with a direct link to the created issue.
+ * shows a toast with the report number.
  */
 export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const form = useForm<FeedbackFormData>({
@@ -61,15 +60,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   });
 
   const submit = trpc.feedback.submit.useMutation({
-    onSuccess: ({ issueUrl, issueNumber }) => {
-      toast.success(
-        <span>
-          Segnalazione #{issueNumber} creata.{' '}
-          <a href={issueUrl} target="_blank" rel="noopener noreferrer" className="underline inline-flex items-center gap-1">
-            Apri <ExternalLink className="h-3 w-3" />
-          </a>
-        </span>,
-      );
+    onSuccess: ({ issueNumber }) => {
+      toast.success(`Segnalazione #${issueNumber} creata.`);
       onOpenChange(false);
     },
     onError: (err) => {

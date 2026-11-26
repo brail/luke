@@ -125,7 +125,7 @@ export async function syncSubmission(
       }
     : { title: 'Nuova risposta alla tua segnalazione', message: `C'è una nuova risposta sulla tua segnalazione #${submission.issueNumber}`, type: 'feedback_comment' };
   const notices: NotificationRow[] = notify
-    ? [{ userId: submission.userId, category: 'SYSTEM', title, message, link: issue.html_url, data: { issueNumber: submission.issueNumber, type } }]
+    ? [{ userId: submission.userId, category: 'SYSTEM', title, message, data: { issueNumber: submission.issueNumber, type } }]
     : [];
 
   // One transaction: a failure leaves the row and the notices as they were, retried whole next tick.

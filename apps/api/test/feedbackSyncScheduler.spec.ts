@@ -88,10 +88,10 @@ interface Page {
  * not listed answers 404.
  */
 function mockGitHub(
-  issue: Partial<{ ok: boolean; state: 'open' | 'closed'; comments: number; html_url: string }> = {},
+  issue: Partial<{ ok: boolean; state: 'open' | 'closed'; comments: number }> = {},
   pages: Record<string, Page> = {}
 ) {
-  const { ok = true, state = 'open', comments = 0, html_url = HTML_URL } = issue;
+  const { ok = true, state = 'open', comments = 0 } = issue;
   const fetchMock = vi.fn(async (url: string, _init?: { signal: AbortSignal; headers: Record<string, string> }) => {
     if (url.includes('/comments')) {
       const page = pages[url];
@@ -101,7 +101,7 @@ function mockGitHub(
         headers: page.link ? { link: page.link } : {},
       });
     }
-    return new Response(JSON.stringify({ state, comments, html_url }), { status: ok ? 200 : 404 });
+    return new Response(JSON.stringify({ state, comments }), { status: ok ? 200 : 404 });
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -143,8 +143,10 @@ describe('feedbackSyncScheduler', () => {
   }
 
   function expectNotice(prisma: ReturnType<typeof buildFakePrisma>, type: 'feedback_comment' | 'feedback_closed') {
-    const notice = expect.objectContaining({ userId: 'user-1', category: 'SYSTEM', link: HTML_URL, data: { issueNumber: 42, type } });
+    const notice = expect.objectContaining({ userId: 'user-1', category: 'SYSTEM', data: { issueNumber: 42, type } });
     expect(writeNotifications).toHaveBeenCalledWith(prisma.tx, [notice]);
+    // No link: the submitter may not be able to open the repository.
+    expect(vi.mocked(writeNotifications).mock.lastCall?.[1][0]).not.toHaveProperty('link');
     expect(pingRecipients).toHaveBeenCalledWith([notice]);
   }
 
@@ -452,8 +454,8 @@ describe('feedbackSyncScheduler', () => {
     expectStored(prisma, ok, { status: 'open', commentCount: 1, seenCommentIds: [1n] });
   });
 
-  it('an answer that is not an issue, or links outside https → nothing written', async () => {
-    mockGitHub({ comments: 1, html_url: 'javascript:alert(1)' }, onePage([1]));
+  it('an answer that is not an issue → nothing written', async () => {
+    mockGitHub({ comments: -1 }, onePage([1]));
     const prisma = buildFakePrisma([buildSubmission()]);
 
     await runFirstTick(prisma);

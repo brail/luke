@@ -411,14 +411,16 @@ export async function notifyDeduped(
  * Respects per-user notification preferences (disabled entries are excluded).
  * Sends an SSE ping to each notified admin's active connections.
  *
+ * @param exceptUserId - An admin left out, e.g. the one whose action the notice reports.
  * @returns Whether any admin received it.
  */
 export async function notifyAdmins(
   prisma: PrismaClient,
-  params: Omit<NotificationRow, 'userId'>
+  params: Omit<NotificationRow, 'userId'>,
+  exceptUserId?: string
 ): Promise<boolean> {
   const admins = await prisma.user.findMany({
-    where: APPROVED_ADMIN_WHERE,
+    where: { ...APPROVED_ADMIN_WHERE, id: { not: exceptUserId } },
     select: { id: true },
   });
   return bulkNotify(prisma, admins.map(a => a.id), params);

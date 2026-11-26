@@ -13,14 +13,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
+import * as notifications from '../src/lib/notifications';
+import { appRouter } from '../src/routers/index';
+
 import {
   createCallerAs,
   createCallerWithSession,
+  createTestContext,
   createTestUser,
   expectUnauthorized,
   setupTestDb,
 } from './helpers';
-
 
 let prisma: PrismaClient;
 
@@ -30,7 +33,13 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+/** Another active administrator: the one a notice of the submission would reach. */
+async function otherAdmin() {
+  return (await createTestUser('admin')).user;
+}
 
 async function seedFeedbackConfig(repo = 'luke-org/luke'): Promise<string> {
   await prisma.appConfig.createMany({
@@ -91,10 +100,7 @@ describe('feedback.submit', () => {
       description: 'Passi: apri pricing, modifica un parametro, salva.',
     });
 
-    expect(result).toEqual({
-      issueUrl: 'https://github.com/luke-org/luke/issues/42',
-      issueNumber: 42,
-    });
+    expect(result).toEqual({ issueNumber: 42 });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // `RequestInit` isn't recognized by this file's eslint env; the shape only needs
@@ -106,8 +112,9 @@ describe('feedback.submit', () => {
     // Plausible bug: sending the wrong label, or none — silently miscategorizes every report.
     expect(requestBody.labels).toEqual(['bug']);
     expect(requestBody.title).toBe('The price does not save');
-    // Plausible bug: the fallback-to-email display name path masking the real submitter.
-    expect(requestBody.body).toContain(`Inviato da: ${user.firstName} ${user.lastName} (${user.email})`);
+    expect(requestBody.body).toBe(
+      `Passi: apri pricing, modifica un parametro, salva.\n\n---\nInviato da: ${user.firstName} ${user.lastName}`
+    );
 
     const submission = await prisma.feedbackSubmission.findFirst({ where: { issueNumber: 42 } });
     expect(submission).toMatchObject({
@@ -130,6 +137,71 @@ describe('feedback.submit', () => {
     });
   });
 
+  it('signs the issue with the username when the account has no name', async () => {
+    await seedFeedbackConfig();
+    const fetchMock = mockGitHubIssueCreate();
+    const { user, session } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: user.id }, data: { firstName: '', lastName: '' } });
+
+    await createCallerWithSession(session).feedback.submit({ type: 'bug', title: 'x', description: 'y' });
+
+    const requestBody = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(requestBody.body).toBe(`y\n\n---\nInviato da: ${user.username}`);
+  });
+
+  it('notifies every other active administrator once', async () => {
+    await seedFeedbackConfig();
+    mockGitHubIssueCreate({ number: 42 });
+    const { user: submitter, session } = await createTestUser('admin');
+    const admin = await otherAdmin();
+    await createTestUser('editor');
+
+    await createCallerWithSession(session).feedback.submit({
+      type: 'feature',
+      title: 'Aggiungere export PDF',
+      description: 'Servirebbe per i report mensili.',
+    });
+
+    const notices = await prisma.notification.findMany();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      userId: admin.id,
+      category: 'SYSTEM',
+      title: 'Nuovo suggerimento',
+      message: `${submitter.firstName} ${submitter.lastName} ha inviato un suggerimento (#42): «Aggiungere export PDF»`,
+      link: null,
+      data: { type: 'feedback_submitted', issueNumber: 42 },
+    });
+  });
+
+  it('sends no notice when the submission cannot be recorded', async () => {
+    await seedFeedbackConfig();
+    mockGitHubIssueCreate();
+    const { session } = await createTestUser('admin');
+    await otherAdmin();
+    vi.spyOn(prisma.feedbackSubmission, 'create').mockRejectedValue(new Error('database down'));
+
+    await expect(
+      createCallerWithSession(session).feedback.submit({ type: 'bug', title: 'x', description: 'y' })
+    ).rejects.toThrow();
+    expect(await prisma.notification.count()).toBe(0);
+  });
+
+  it('still completes when the notice fails, and logs it', async () => {
+    await seedFeedbackConfig();
+    mockGitHubIssueCreate({ number: 42 });
+    const { session } = await createTestUser('editor');
+    vi.spyOn(notifications, 'notifyAdmins').mockRejectedValue(new Error('notification store down'));
+    const ctx = createTestContext(session);
+    const error = vi.spyOn(ctx.logger, 'error');
+
+    await expect(
+      appRouter.createCaller(ctx).feedback.submit({ type: 'bug', title: 'x', description: 'y' })
+    ).resolves.toEqual({ issueNumber: 42 });
+    expect(await prisma.feedbackSubmission.count({ where: { issueNumber: 42 } })).toBe(1);
+    expect(error).toHaveBeenCalledWith(expect.objectContaining({ issueNumber: 42 }), 'Failed to notify admins of new feedback');
+  });
+
   it('type "feature" uses the enhancement label, not bug', async () => {
     await seedFeedbackConfig();
     const fetchMock = mockGitHubIssueCreate();
@@ -146,6 +218,7 @@ describe('feedback.submit', () => {
     // beforeEach has already truncated AppConfig: no seedFeedbackConfig() here.
     const fetchMock = mockGitHubIssueCreate();
     const { session } = await createTestUser('admin');
+    await otherAdmin();
     const caller = createCallerWithSession(session).feedback;
 
     await expect(
@@ -154,12 +227,14 @@ describe('feedback.submit', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await prisma.feedbackSubmission.count()).toBe(0);
+    expect(await prisma.notification.count()).toBe(0);
   });
 
   it('GitHub responds with an error → INTERNAL_SERVER_ERROR, no orphan submission or audit', async () => {
     await seedFeedbackConfig();
     mockGitHubIssueCreate({ ok: false, errorText: 'Bad credentials' });
     const { session } = await createTestUser('admin');
+    await otherAdmin();
     const caller = createCallerWithSession(session).feedback;
 
     await expect(
@@ -170,6 +245,7 @@ describe('feedback.submit', () => {
     // no issue was actually created on GitHub — orphan state pointing nowhere.
     expect(await prisma.feedbackSubmission.count()).toBe(0);
     expect(await prisma.auditLog.count({ where: { action: 'FEEDBACK_SUBMIT' } })).toBe(0);
+    expect(await prisma.notification.count()).toBe(0);
   });
 
   it.each([
@@ -180,6 +256,7 @@ describe('feedback.submit', () => {
     await seedFeedbackConfig();
     mockGitHubIssueCreate(answer);
     const { session } = await createTestUser('admin');
+    await otherAdmin();
 
     await expect(
       createCallerWithSession(session).feedback.submit({ type: 'bug', title: 'x', description: 'y' })
@@ -187,6 +264,7 @@ describe('feedback.submit', () => {
 
     expect(await prisma.feedbackSubmission.count()).toBe(0);
     expect(await prisma.auditLog.count({ where: { action: 'FEEDBACK_SUBMIT' } })).toBe(0);
+    expect(await prisma.notification.count()).toBe(0);
   });
 
   it('a call GitHub never answers is bounded, and answers the same message', async () => {

@@ -1,13 +1,21 @@
 import { TRPCError } from '@trpc/server';
 
-import { FeedbackSubmitInputSchema, GitHubCreatedIssueSchema } from '@luke/core';
+import { FeedbackSubmitInputSchema, GitHubCreatedIssueSchema, fullName } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getTypedConfig } from '../lib/configManager';
+import { notifyAdmins } from '../lib/notifications';
+import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
 const LABEL_MAP = { bug: ['bug'], feature: ['enhancement'] } as const;
+
+/** The administrators' notice of a new report, by type. */
+const NOTICE = {
+  bug: { title: 'Nuova segnalazione di bug', verb: 'ha segnalato un bug' },
+  feature: { title: 'Nuovo suggerimento', verb: 'ha inviato un suggerimento' },
+} as const;
 
 export const feedbackRouter = router({
   /**
@@ -15,7 +23,7 @@ export const feedbackRouter = router({
    *
    * @auth {authenticated}
    * @input {FeedbackSubmitInputSchema} — feedback type, title and description.
-   * @output {{ issueUrl: string, issueNumber: number }}
+   * @output {{ issueNumber: number }}
    */
   // nosemgrep: luke-procedure-requires-permission -- any signed-in user may report a problem; rate-limited, and the GitHub token is the server's
   submit: protectedProcedure
@@ -34,15 +42,10 @@ export const feedbackRouter = router({
 
       const user = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
-        select: { firstName: true, lastName: true, email: true },
+        select: PERSON_REFERENCE_SELECT,
       });
-      const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || ctx.session.user.email;
-      const body = [
-        input.description,
-        '',
-        `---`,
-        `Inviato da: ${displayName} (${user?.email ?? ctx.session.user.email})`,
-      ].join('\n');
+      const name = fullName(user ?? ctx.session.user);
+      const body = [input.description, '', `---`, `Inviato da: ${name}`].join('\n');
 
       const failed = () =>
         new TRPCError({
@@ -104,6 +107,18 @@ export const feedbackRouter = router({
         metadata: { type: input.type, title: input.title },
       });
 
-      return { issueUrl: issue.html_url, issueNumber: issue.number };
+      // After the submission is recorded; a failed notice never costs it.
+      await notifyAdmins(
+        ctx.prisma,
+        {
+          category: 'SYSTEM',
+          title: NOTICE[input.type].title,
+          message: `${name} ${NOTICE[input.type].verb} (#${issue.number}): «${input.title}»`,
+          data: { type: 'feedback_submitted', issueNumber: issue.number },
+        },
+        ctx.session.user.id
+      ).catch(err => ctx.logger.error({ err, issueNumber: issue.number }, 'Failed to notify admins of new feedback'));
+
+      return { issueNumber: issue.number };
     }),
 });
