@@ -21,7 +21,7 @@ import {
 import { Prisma } from '@luke/db';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
-import { FOREIGN_KEYS, isForeignKeyViolation, isUniqueViolation } from '../lib/error';
+import { FOREIGN_KEYS, isForeignKeyViolation, isRecordNotFound, isUniqueViolation } from '../lib/error';
 
 // ─────────────────────────────────────────────────────────────────
 // Internal types
@@ -551,7 +551,7 @@ export async function removeParameterSet(
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
     );
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+    if (isRecordNotFound(err)) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Set parametri non trovato' });
     }
     if (isForeignKeyViolation(err, FOREIGN_KEYS.quotationParameterSet, FOREIGN_KEYS.merchRowParameterSet)) {

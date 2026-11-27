@@ -5,7 +5,7 @@ import { NagerHolidaysSchema, parseCalendarDate, utcMidnightOf, VendorClosureUps
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
-import { FOREIGN_KEYS, isForeignKeyViolation } from '../lib/error.js';
+import { FOREIGN_KEYS, isForeignKeyViolation, isRecordNotFound } from '../lib/error.js';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
@@ -13,7 +13,7 @@ import { resolveCompanyCountryCode } from '../services/companyProfile.service.js
 /** A closure write whose closure (P2025), vendor or season (foreign key) no longer exists is
  * NOT_FOUND, not a 500. */
 function rethrowClosureNotFound(e: unknown): never {
-  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+  if (isRecordNotFound(e)) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Periodo non trovato' });
   }
   if (isForeignKeyViolation(e, FOREIGN_KEYS.closureVendor, FOREIGN_KEYS.closureSeason)) {
@@ -204,7 +204,11 @@ export const holidaysRouter = router({
     .mutation(async ({ input, ctx }) => {
       // `delete` returns the removed record: the audit entry keeps describing it after the id
       // stops resolving to anything.
-      const deleted = await ctx.prisma.holiday.delete({ where: { id: input.id } });
+      const deleted = await ctx.prisma.holiday.delete({ where: { id: input.id } }).catch((e: unknown) => {
+        // Already deleted (a repeated request): the answer is the same as for any missing holiday.
+        if (isRecordNotFound(e)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Festività non trovata' });
+        throw e;
+      });
       await logAudit(ctx, {
         action: 'HOLIDAY_DELETE',
         targetType: 'Holiday',

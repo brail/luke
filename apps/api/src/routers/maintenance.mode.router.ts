@@ -22,7 +22,13 @@ import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
-import { DEFAULT_STATE, forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
+import {
+  DEFAULT_STATE,
+  forceLogoutNonAdmins,
+  getMaintenanceState,
+  transitionMaintenanceState,
+  writeMaintenanceState,
+} from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router, sessionProcedure } from '../lib/trpc';
@@ -66,7 +72,8 @@ export const maintenanceModeRouter = router({
   /**
    * Schedules maintenance mode to activate at a future time, with a warning ladder
    * (in-app notification + SSE push) at each `warningLeadMinutes` threshold beforehand.
-   * Can be called again while already `SCHEDULED` to reschedule.
+   * Can be called again while already `SCHEDULED` to reschedule; refused with `BAD_REQUEST` while
+   * `ACTIVE` (end it first).
    *
    * @auth {maintenance:mode_manage}
    * @input `{ scheduledAt, message?, forceLogout, warningLeadMinutes, notifyByEmail }`
@@ -86,17 +93,30 @@ export const maintenanceModeRouter = router({
       const totalLeadMinutes = Math.ceil((new Date(input.scheduledAt).getTime() - Date.now()) / 60_000);
       const warningLeadMinutes = input.warningLeadMinutes.filter(t => t <= totalLeadMinutes);
 
-      const state = await writeMaintenanceState(ctx.prisma, {
-        status: 'SCHEDULED',
-        scheduledAt: input.scheduledAt,
-        activatedAt: null,
-        message: input.message ?? null,
-        forceLogout: input.forceLogout,
-        warningLeadMinutes,
-        warningsSent: [],
-        activatedByUserId: ctx.session.user.id,
-        notifyByEmail: input.notifyByEmail,
-      });
+      // A schedule replaces an earlier one, never an active maintenance (#248): that would reopen
+      // the instance, a restore's lockdown included. Checked under the write lock.
+      const scheduled = await transitionMaintenanceState(ctx.prisma, current =>
+        current.status === 'ACTIVE'
+          ? null
+          : {
+              status: 'SCHEDULED',
+              scheduledAt: input.scheduledAt,
+              activatedAt: null,
+              message: input.message ?? null,
+              forceLogout: input.forceLogout,
+              warningLeadMinutes,
+              warningsSent: [],
+              activatedByUserId: ctx.session.user.id,
+              notifyByEmail: input.notifyByEmail,
+            }
+      );
+      if (!scheduled) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: "La modalità manutenzione è attiva: terminala prima di pianificarne un'altra",
+        });
+      }
+      const state = scheduled.next;
 
       // A single query of the approved users, reused for both the in-app notification and the
       // optional email.
@@ -189,12 +209,14 @@ export const maintenanceModeRouter = router({
    * is scheduled.
    */
   cancelScheduled: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
-    const current = await getMaintenanceState(ctx.prisma);
-    if (current.status !== 'SCHEDULED') {
+    // Checked and written under one lock (#248): a cancel can no longer switch off a maintenance
+    // that the scheduler activated after the check.
+    const cancelled = await transitionMaintenanceState(ctx.prisma, current =>
+      current.status === 'SCHEDULED' ? DEFAULT_STATE : null
+    );
+    if (!cancelled) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessuna manutenzione pianificata da annullare' });
     }
-
-    const state = await writeMaintenanceState(ctx.prisma, DEFAULT_STATE);
 
     await logAudit(ctx, {
       action: 'MAINTENANCE_MODE_CANCELLED',
@@ -202,7 +224,7 @@ export const maintenanceModeRouter = router({
       result: 'SUCCESS',
     });
 
-    return state;
+    return cancelled.next;
   }),
 
   /**
@@ -217,14 +239,14 @@ export const maintenanceModeRouter = router({
    * maintenance mode isn't active.
    */
   end: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
-    const current = await getMaintenanceState(ctx.prisma);
-    if (current.status !== 'ACTIVE') {
+    // Checked and written under one lock (#248): of two concurrent requests one ends it, the other
+    // is refused, so the "concluded" email goes out once.
+    const ended = await transitionMaintenanceState(ctx.prisma, current => (current.status === 'ACTIVE' ? DEFAULT_STATE : null));
+    if (!ended) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'La modalità manutenzione non è attiva' });
     }
 
-    const state = await writeMaintenanceState(ctx.prisma, DEFAULT_STATE);
-
-    if (current.notifyByEmail) {
+    if (ended.previous.notifyByEmail) {
       const users = await ctx.prisma.user.findMany({ where: APPROVED_USER_WHERE, select: { email: true } });
       const baseUrl = await getBaseUrl(ctx);
       emailUsers(ctx, users.map(u => u.email), email => sendMaintenanceEndedEmail(ctx.prisma, email, baseUrl));
@@ -236,6 +258,6 @@ export const maintenanceModeRouter = router({
       result: 'SUCCESS',
     });
 
-    return state;
+    return ended.next;
   }),
 });

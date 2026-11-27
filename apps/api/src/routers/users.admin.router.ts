@@ -438,9 +438,9 @@ export const usersAdminRouter = router({
 
       // Token generation and `getConfig` are independent reads/writes — run concurrently. The link
       // is issued under the user row lock, so it goes to the address the account has now, which may
-      // differ from `user.email` read above; earlier links stay valid.
+      // differ from `user.email` read above; it revokes the earlier reset links (#248).
       const [issued, baseUrl] = await Promise.all([
-        ctx.prisma.$transaction(tx => issueUserToken(tx, user.id, 'RESET', { revokePrevious: false })),
+        ctx.prisma.$transaction(tx => issueUserToken(tx, user.id, 'RESET', { revokePrevious: true })),
         getConfigOrDefault(ctx.prisma, 'app.baseUrl'),
       ]);
       if (!issued) {
@@ -453,7 +453,8 @@ export const usersAdminRouter = router({
         // The LOCAL identity (if just created) is deliberately left in place — it holds no
         // password until a link is used, and the next call finds it ready and just resends the
         // link. Only the orphaned token, which nobody received, is cleaned up, mirroring
-        // `requestPasswordReset` in `auth.service.ts`; a link sent earlier is never touched.
+        // `requestPasswordReset` in `auth.service.ts`. The earlier links were revoked at the issue, so
+        // none is left: the admin sends again.
         await ctx.prisma.userToken.delete({ where: { id: issued.userToken.id } }).catch(e => {
           ctx.logger.warn({ err: e, tokenId: issued.userToken.id }, 'Failed to delete orphaned reset token');
         });

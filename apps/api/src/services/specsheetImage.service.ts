@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
+import { FOREIGN_KEYS, isRecordNotFound, refuseOnForeignKey } from '../lib/error';
 import { confirmPendingFile } from '../lib/pendingFile';
 
 import { ingestImageAsset } from './asset.service';
@@ -132,7 +132,7 @@ export async function deleteSpecsheetImage(ctx: Context, imageId: string): Promi
     try {
       deleted = await tx.merchandisingImage.delete({ where: { id: imageId }, select: { isDefault: true } });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') throw imageNotFound();
+      if (isRecordNotFound(err)) throw imageNotFound();
       throw err;
     }
 

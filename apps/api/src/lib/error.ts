@@ -114,6 +114,15 @@ export function isUniqueViolation(err: unknown, ...constraints: [string, ...stri
 }
 
 /**
+ * `true` when `err` is Prisma's "record to update or delete does not exist" (P2025): the row is gone,
+ * or a conditional `where` no longer matches it. Callers map it to their own answer (NOT_FOUND, or
+ * CONFLICT for a stale condition), never a 500.
+ */
+export function isRecordNotFound(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025';
+}
+
+/**
  * `true` when `err` is the database's refusal of an inactive company function on an active event or
  * a template item: SQLSTATE `LK001`, raised by the triggers of migration
  * `20261111120000_company_function_active_triggers` (#242). Prisma reports it as P2039 on a model

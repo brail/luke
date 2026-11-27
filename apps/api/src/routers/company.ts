@@ -653,7 +653,7 @@ const companyTeamRouter = router({
     }),
 
   /**
-   * Adds users to a company team and notifies each added member.
+   * Adds users to a company team and notifies each member actually added.
    *
    * @auth company_team:update
    * @input CompanyTeamMembershipInputSchema
@@ -666,22 +666,23 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const team = await fetchTeam(input.teamId, ctx.prisma);
 
-      await ctx.prisma.$transaction(async tx => {
-        // Only the memberships actually created are recorded: an existing member or a repeated id
-        // is skipped by the insert and gets no grant row.
-        const created = await tx.companyTeamMembership.createManyAndReturn({
+      const created = await ctx.prisma.$transaction(async tx => {
+        // Only the memberships actually created are recorded and notified: an existing member or a
+        // repeated id is skipped by the insert, so a repeated request changes nothing and tells no one.
+        const rows = await tx.companyTeamMembership.createManyAndReturn({
           data: [...new Set(input.userIds)].map(userId => ({ teamId: input.teamId, userId, role: input.role })),
           skipDuplicates: true,
           select: { userId: true, role: true },
         });
-        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_ADDED', input.teamId, created);
+        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_ADDED', input.teamId, rows);
+        return rows;
       }, { timeout: 15000 });
 
       const calendarMsg = team.brandNames.length > 0
         ? `Hai accesso ai calendari di: ${team.brandNames.join(', ')}`
         : 'Hai accesso ai calendari del team';
 
-      await Promise.all(input.userIds.flatMap(userId => [
+      await Promise.all(created.flatMap(({ userId }) => [
         createNotification(ctx.prisma, {
           userId,
           category: 'USER_ACTION',
@@ -704,7 +705,7 @@ const companyTeamRouter = router({
     }),
 
   /**
-   * Removes users from a company team and notifies each removed member.
+   * Removes users from a company team and notifies each member actually removed.
    *
    * @auth company_team:update
    * @input CompanyTeamMembershipRemoveInputSchema
@@ -717,20 +718,21 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const teamName = await fetchTeamName(input.teamId, ctx.prisma);
 
-      await ctx.prisma.$transaction(async tx => {
-        // Only the memberships actually removed are recorded, read under the team's lock.
+      const removed = await ctx.prisma.$transaction(async tx => {
+        // Only the memberships actually removed are recorded and notified, read under the team's lock.
         await lockTeam(tx, input.teamId, { members: true });
-        const removed = await tx.companyTeamMembership.findMany({
+        const rows = await tx.companyTeamMembership.findMany({
           where: { teamId: input.teamId, userId: { in: input.userIds } },
           select: { userId: true },
         });
         await tx.companyTeamMembership.deleteMany({
-          where: { teamId: input.teamId, userId: { in: removed.map(m => m.userId) } },
+          where: { teamId: input.teamId, userId: { in: rows.map(m => m.userId) } },
         });
-        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_REMOVED', input.teamId, removed);
+        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_REMOVED', input.teamId, rows);
+        return rows;
       }, { timeout: 15000 });
 
-      await Promise.all(input.userIds.flatMap(userId => [
+      await Promise.all(removed.flatMap(({ userId }) => [
         createNotification(ctx.prisma, {
           userId,
           category: 'USER_ACTION',

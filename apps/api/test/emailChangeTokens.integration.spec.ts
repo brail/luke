@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type { PrismaClient } from '@luke/db';
 
+import * as auditLog from '../src/lib/auditLog';
 import { issueUserToken, sendVerificationEmail } from '../src/lib/emailHelpers';
 import * as mailer from '../src/lib/mailer';
 import { rateLimitStore } from '../src/lib/ratelimit';
@@ -253,14 +254,88 @@ describe('a link consumed after a change deleted it', () => {
   });
 });
 
-describe('a reset request leaves earlier reset links valid', () => {
-  it('keeps both links of two requests', async () => {
+describe('a new reset link revokes the earlier one (#248)', () => {
+  /** The raw token of the `n`-th reset email sent. */
+  const mailedToken = (n: number) => resetMails.mock.calls[n]![2];
+
+  it('two requests leave only the newest link, and the earlier one no longer works', async () => {
+    const { user } = await createTestUser('editor');
+    const before = await prisma.localCredential.findFirstOrThrow({ where: { identity: { userId: user.id } } });
+
+    await publicAuth().requestPasswordReset({ email: user.email });
+    await publicAuth().requestPasswordReset({ email: user.email });
+
+    const left = (await links(user.id)).filter(l => l.type === 'RESET');
+    expect(left).toEqual([{ type: 'RESET', tokenHash: hash(mailedToken(1)) }]);
+    await expect(
+      confirmPasswordReset(createTestContext(null), { token: mailedToken(0), newPassword: NEW_PASSWORD })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const after = await prisma.localCredential.findFirstOrThrow({ where: { identity: { userId: user.id } } });
+    expect(after.passwordHash).toBe(before.passwordHash);
+  });
+
+  it('a link already sent stays valid when only its audit row then fails', async () => {
+    const { user } = await createTestUser('editor');
+    vi.spyOn(auditLog, 'logAudit').mockRejectedValueOnce(new Error('audit store down'));
+
+    await publicAuth().requestPasswordReset({ email: user.email });
+
+    expect((await links(user.id)).filter(l => l.type === 'RESET')).toEqual([{ type: 'RESET', tokenHash: hash(mailedToken(0)) }]);
+  });
+
+  it('two concurrent requests leave exactly one link', async () => {
     const { user } = await createTestUser('editor');
 
-    await publicAuth().requestPasswordReset({ email: user.email });
-    await publicAuth().requestPasswordReset({ email: user.email });
+    await Promise.all([
+      publicAuth().requestPasswordReset({ email: user.email }),
+      publicAuth().requestPasswordReset({ email: user.email }),
+    ]);
 
-    const left = await links(user.id);
-    expect(left.filter(l => l.type === 'RESET')).toHaveLength(2);
+    expect((await links(user.id)).filter(l => l.type === 'RESET')).toHaveLength(1);
+  });
+
+  it.each([
+    ['an admin-forced link after a self-service one', 'self', 'admin'],
+    ['a self-service link after an admin-forced one', 'admin', 'self'],
+  ] as const)('%s revokes it', async (_label, first, second) => {
+    const { user } = await createTestUser('editor');
+    // A forced local access is for an account that also signs in through LDAP.
+    await prisma.identity.create({ data: { userId: user.id, provider: 'LDAP', providerId: `uid=${user.username}` } });
+    const admin = await createCallerAs('admin');
+    const request = (who: 'self' | 'admin') =>
+      who === 'self'
+        ? publicAuth().requestPasswordReset({ email: user.email })
+        : admin.users.forceLocalAccess({ id: user.id });
+
+    await request(first);
+    await request(second);
+
+    expect((await links(user.id)).filter(l => l.type === 'RESET')).toEqual([{ type: 'RESET', tokenHash: hash(mailedToken(1)) }]);
+  });
+
+  it('an earlier link used while a new one is being issued: the revocation wins, nothing changes', async () => {
+    const { user } = await createTestUser('editor');
+    const raw = await seedLinks(user.id);
+    const before = await prisma.localCredential.findFirstOrThrow({ where: { identity: { userId: user.id } } });
+    const issued = deferred();
+    const release = deferred();
+    const issue = prisma.$transaction(
+      async tx => {
+        await issueUserToken(tx, user.id, 'RESET', { revokePrevious: true });
+        issued.resolve();
+        await release.promise;
+      },
+      { timeout: 10_000 }
+    );
+    await issued.promise;
+
+    const confirm = confirmPasswordReset(createTestContext(null), { token: raw.RESET, newPassword: NEW_PASSWORD });
+    await untilSomeoneWaitsOnALock();
+    release.resolve();
+    await issue;
+
+    await expect(confirm).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const after = await prisma.localCredential.findFirstOrThrow({ where: { identity: { userId: user.id } } });
+    expect(after.passwordHash).toBe(before.passwordHash);
   });
 });

@@ -11,7 +11,7 @@
  *
  * While `SCHEDULED`: for each `warningLeadMinutes` threshold not yet in `warningsSent`, once
  * the countdown crosses it, broadcasts an in-app notification (all users) —
- * `writeMaintenanceState` itself already pushes the SSE state update, so clients with the
+ * every state write already pushes the SSE state update, so clients with the
  * banner open update live regardless of the notification. Once the countdown reaches zero,
  * transitions to `ACTIVE` and force-logs-out non-admins if configured. `ACTIVE` never ends
  * on its own — an admin must call `maintenance.mode.end` explicitly.
@@ -36,8 +36,11 @@ const TIER_DELAY_MS = {
   imminent: 10 * 1000,
 } as const;
 
-/** Runs one tick and returns the delay to wait before the next one. */
-async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<number> {
+/**
+ * Runs one tick and returns the delay to wait before the next one. Exported for its tests, which
+ * drive one tick against a stale cache.
+ */
+export async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<number> {
   const state = await getMaintenanceState(prisma);
   if (state.status !== 'SCHEDULED' || !state.scheduledAt) return IDLE_DELAY_MS;
 
@@ -48,20 +51,33 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
   const delay = await withSchedulerLock(prisma, 'maintenance-mode', async () => {
     const minutesRemaining = (new Date(state.scheduledAt!).getTime() - Date.now()) / 60_000;
 
+    // `state` was read before the lock, from the cache: each write below re-checks, under the
+    // AppConfig write lock, that it is still this schedule (#248), so a cancel or a reschedule that
+    // landed meanwhile is never undone, nor announced.
     if (minutesRemaining <= 0) {
-      log.info('Maintenance mode scheduler: countdown expired, activating automatically');
-      await markActivated(prisma, state);
-      if (state.forceLogout) await forceLogoutNonAdmins(prisma);
+      const activated = await markActivated(prisma, state);
+      if (!activated) {
+        // Cancelled or replaced meanwhile: look again soon, a replacement may be due shortly.
+        log.info('Maintenance mode scheduler: the schedule changed before activation, nothing activated');
+        return TIER_DELAY_MS.imminent;
+      }
+      log.info('Maintenance mode scheduler: countdown expired, activated automatically');
+      if (activated.forceLogout) await forceLogoutNonAdmins(prisma);
       return IDLE_DELAY_MS;
     }
 
-    const crossed = state.warningLeadMinutes.filter(
+    const candidates = state.warningLeadMinutes.filter(
       threshold => minutesRemaining <= threshold && !state.warningsSent.includes(threshold)
     );
+    const crossed = candidates.length > 0 ? await recordWarningsSent(prisma, state, candidates) : [];
+    // Nothing recorded for thresholds this read had crossed: the schedule changed meanwhile (or
+    // another tick recorded them). Look again soon rather than at this read's tier.
+    if (candidates.length > 0 && crossed.length === 0) return TIER_DELAY_MS.imminent;
     if (crossed.length > 0) {
       // Multiple thresholds can be crossed in the same tick (e.g. after scheduler downtime) —
       // a single notification with the most urgent one (closest), not a burst that would redo
       // the same user query + SSE broadcast once per threshold for the same conceptual event.
+      // Recorded first: a warning for a schedule cancelled meanwhile is never sent.
       const mostUrgent = Math.min(...crossed);
       await notifyAllUsers(prisma, {
         category: 'SYSTEM',
@@ -71,8 +87,6 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
           : `Il sistema entrerà in manutenzione tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'}. Salva il lavoro in corso.`,
         data: { type: 'maintenance_mode_warning', minutesRemaining: mostUrgent },
       }).catch(err => log.error({ err, crossed }, 'Maintenance mode scheduler: threshold notification failed'));
-
-      await recordWarningsSent(prisma, state, crossed);
     }
 
     return TIER_DELAY_MS[getMaintenanceUrgencyTier(minutesRemaining)];

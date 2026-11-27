@@ -12,9 +12,15 @@
  */
 
 import { hasPermission, MaintenanceModeStateSchema, Roles, type MaintenanceModeState, type Role } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
+import type { Prisma, PrismaClient } from '@luke/db';
 
-import { UnreadableStoredConfigError, getConfig, saveConfig } from './configManager';
+import {
+  UnreadableStoredConfigError,
+  acquireAppConfigWriteLock,
+  getConfig,
+  saveConfig,
+  writeConfigsTx,
+} from './configManager';
 import { ServiceUnavailableError } from './error';
 import { revokingTransaction } from './sessionRevocation';
 import { sseStore } from './sseStore';
@@ -40,27 +46,39 @@ export const DEFAULT_STATE: MaintenanceModeState = {
 const CACHE_TTL_MS = 5_000;
 let cached: { state: MaintenanceModeState; timestamp: number } | null = null;
 
-/** Reads the current maintenance-mode state, from cache when fresh enough. Missing or corrupt state fails safe to `DEFAULT_STATE` (INACTIVE). */
-export async function getMaintenanceState(prisma: PrismaClient): Promise<MaintenanceModeState> {
-  const now = Date.now();
-  if (cached && now - cached.timestamp < CACHE_TTL_MS) return cached.state;
-
+/** The stored state, never cached. Missing or corrupt state fails safe to `DEFAULT_STATE` (INACTIVE). */
+async function readStoredState(prisma: Prisma.TransactionClient): Promise<MaintenanceModeState> {
   // A row that does not decrypt is corrupt state too; a database error still propagates.
   const raw = await getConfig(prisma, CONFIG_KEY).catch((error: unknown) => {
     if (error instanceof UnreadableStoredConfigError) return null;
     throw error;
   });
-  let state = DEFAULT_STATE;
-  if (raw) {
-    try {
-      state = MaintenanceModeStateSchema.parse(JSON.parse(raw));
-    } catch {
-      state = DEFAULT_STATE;
-    }
+  if (!raw) return DEFAULT_STATE;
+  try {
+    return MaintenanceModeStateSchema.parse(JSON.parse(raw));
+  } catch {
+    return DEFAULT_STATE;
   }
+}
 
+/** Reads the current maintenance-mode state, from cache when fresh enough. Missing or corrupt state fails safe to `DEFAULT_STATE` (INACTIVE). */
+export async function getMaintenanceState(prisma: PrismaClient): Promise<MaintenanceModeState> {
+  const now = Date.now();
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) return cached.state;
+  const state = await readStoredState(prisma);
   cached = { state, timestamp: now };
   return state;
+}
+
+/** A committed state: the cache takes it directly and every connected client is told over SSE. */
+function publish(next: MaintenanceModeState): void {
+  cached = { state: next, timestamp: Date.now() };
+  sseStore.pushToAll({
+    type: 'maintenance-mode',
+    status: next.status,
+    scheduledAt: next.scheduledAt,
+    message: next.message,
+  });
 }
 
 /** Convenience check for `isBlockedByMaintenance` — avoids exposing the full state shape at call sites that only need a boolean. */
@@ -103,35 +121,80 @@ export async function assertNotBlockedByMaintenance(prisma: PrismaClient, role: 
  * it over SSE so every connected client (and every signed-in poll, on its next tick) picks up the
  * change without waiting out the cache TTL.
  *
- * Takes the *whole* state rather than a partial patch: every router mutation (`schedule`,
- * `activateNow`, `cancelScheduled`, `end`) already builds a complete state object, and the two
- * scheduler call sites that only touch one or two fields go through `markActivated`/
- * `recordWarningsSent` below, which read-merge-write internally instead of pushing partial-patch
- * plumbing into this function.
+ * An unconditional write of the *whole* state: `activateNow`, the restore lockdown and tests. A
+ * transition that depends on the current state (`schedule`, `cancelScheduled`, `end`, the scheduler's
+ * `markActivated`/`recordWarningsSent`) goes through `transitionMaintenanceState` instead, which
+ * re-checks it under the lock (#248).
  */
 export async function writeMaintenanceState(prisma: PrismaClient, next: MaintenanceModeState): Promise<MaintenanceModeState> {
+  // `saveConfig` takes the AppConfig write lock, so this unconditional write cannot land inside a
+  // `transitionMaintenanceState` between its check and its write.
   await saveConfig(prisma, CONFIG_KEY, JSON.stringify(next), false);
-
-  cached = { state: next, timestamp: Date.now() };
-
-  sseStore.pushToAll({
-    type: 'maintenance-mode',
-    status: next.status,
-    scheduledAt: next.scheduledAt,
-    message: next.message,
-  });
-
+  publish(next);
   return next;
 }
 
-/** Countdown reached zero: flips to `ACTIVE`, leaving message/forceLogout/warningLeadMinutes/activatedByUserId exactly as set at schedule time. */
-export async function markActivated(prisma: PrismaClient, current: MaintenanceModeState): Promise<MaintenanceModeState> {
-  return writeMaintenanceState(prisma, { ...current, status: 'ACTIVE', activatedAt: new Date().toISOString() });
+/**
+ * A conditional transition (#248, rule 3): under the AppConfig write lock, reads the stored state
+ * uncached and lets `decide` answer the next state, or `null` when the transition no longer applies
+ * (another request or tick got there first). Writes it in the same transaction, then publishes it
+ * after the commit. Side effects (emails, notices, sign-outs, audit) belong to the caller, after this
+ * returns, and only when it returns a transition.
+ *
+ * @returns The state before and after, or `null` when nothing was written.
+ */
+export async function transitionMaintenanceState(
+  prisma: PrismaClient,
+  decide: (current: MaintenanceModeState) => MaintenanceModeState | null
+): Promise<{ previous: MaintenanceModeState; next: MaintenanceModeState } | null> {
+  const transition = await prisma.$transaction(async tx => {
+    await acquireAppConfigWriteLock(tx);
+    const previous = await readStoredState(tx);
+    const next = decide(previous);
+    if (!next) return null;
+    await writeConfigsTx(tx, [{ key: CONFIG_KEY, value: JSON.stringify(next), encrypt: false }]);
+    return { previous, next };
+  });
+  if (transition) publish(transition.next);
+  return transition;
 }
 
-/** Records that the warning-ladder thresholds in `newlySent` have now fired, without touching anything else. */
-export async function recordWarningsSent(prisma: PrismaClient, current: MaintenanceModeState, newlySent: number[]): Promise<MaintenanceModeState> {
-  return writeMaintenanceState(prisma, { ...current, warningsSent: [...current.warningsSent, ...newlySent] });
+/** Whether `current` is still the schedule `expected` was read from: a cancel or a reschedule makes it another. */
+function isSameSchedule(current: MaintenanceModeState, expected: MaintenanceModeState): boolean {
+  return current.status === 'SCHEDULED' && current.scheduledAt === expected.scheduledAt;
+}
+
+/**
+ * Countdown reached zero: flips the schedule `expected` was read from to `ACTIVE`, leaving
+ * message/forceLogout/warningLeadMinutes/activatedByUserId exactly as set at schedule time.
+ *
+ * @returns The activated state, or `null` when that schedule was cancelled or replaced meanwhile.
+ */
+export async function markActivated(prisma: PrismaClient, expected: MaintenanceModeState): Promise<MaintenanceModeState | null> {
+  const transition = await transitionMaintenanceState(prisma, current =>
+    isSameSchedule(current, expected) ? { ...current, status: 'ACTIVE', activatedAt: new Date().toISOString() } : null
+  );
+  return transition?.next ?? null;
+}
+
+/**
+ * Records that the warning-ladder thresholds in `crossed` have fired for the schedule `expected` was
+ * read from, keeping any another tick already recorded.
+ *
+ * @returns The thresholds newly recorded (empty when that schedule is gone or they were recorded already).
+ */
+export async function recordWarningsSent(
+  prisma: PrismaClient,
+  expected: MaintenanceModeState,
+  crossed: number[]
+): Promise<number[]> {
+  const transition = await transitionMaintenanceState(prisma, current => {
+    if (!isSameSchedule(current, expected)) return null;
+    const fresh = crossed.filter(threshold => !current.warningsSent.includes(threshold));
+    return fresh.length > 0 ? { ...current, warningsSent: [...current.warningsSent, ...fresh] } : null;
+  });
+  // The thresholds appended by this transition, after the ones it found.
+  return transition ? transition.next.warningsSent.slice(transition.previous.warningsSent.length) : [];
 }
 
 /**

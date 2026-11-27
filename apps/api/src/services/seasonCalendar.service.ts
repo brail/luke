@@ -19,6 +19,7 @@ import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db'
 
 import { logAuditMany, type AuditContext } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
+import { isRecordNotFound } from '../lib/error';
 import { rootLogger } from '../lib/logger';
 
 import { callerEventVisibility, type BrandScopeCtx } from './brandScope.service';
@@ -437,7 +438,7 @@ function readDates(id: string, read: EventDates) {
 }
 
 function onStaleDates(error: unknown): never {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+  if (isRecordNotFound(error)) {
     throw new TRPCError({ code: 'CONFLICT', message: "L'evento è stato modificato nel frattempo: ricarica e riprova" });
   }
   throw error;
@@ -960,7 +961,11 @@ export async function updateTemplate(
  * Deletes a milestone template and all its items (cascade).
  */
 export async function deleteTemplate(id: string, prisma: PrismaClient) {
-  await prisma.milestoneTemplate.delete({ where: { id } });
+  await prisma.milestoneTemplate.delete({ where: { id } }).catch((e: unknown) => {
+    // Already deleted (a repeated request): the same answer as any missing template.
+    if (isRecordNotFound(e)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
+    throw e;
+  });
 }
 
 /**
@@ -1034,7 +1039,11 @@ export async function updateTemplateItem(
  * Deletes a single template item (and its visibility entries via cascade).
  */
 export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
-  await prisma.milestoneTemplateItem.delete({ where: { id } });
+  await prisma.milestoneTemplateItem.delete({ where: { id } }).catch((e: unknown) => {
+    // Already deleted (a repeated request): the same answer as any missing item.
+    if (isRecordNotFound(e)) throw new TRPCError({ code: 'NOT_FOUND', message: 'Voce del template non trovata' });
+    throw e;
+  });
 }
 
 // ─── Clone ────────────────────────────────────────────────────────────────────

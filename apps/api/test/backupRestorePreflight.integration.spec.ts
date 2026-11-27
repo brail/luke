@@ -19,6 +19,7 @@ import { BACKUP_RESTORE_CONFIRM_PHRASE } from '@luke/core';
 
 import * as dumpPipeline from '../src/lib/backup/dumpPipeline';
 import { getLatestMigrationName } from '../src/lib/backup/dumpPipeline';
+import * as migrationBridge from '../src/lib/backup/migrationBridge';
 import * as restorePipeline from '../src/lib/backup/restorePipeline';
 import { assertDumpReadable, RestorePreconditionError } from '../src/lib/backup/restorePipeline';
 import * as maintenanceMode from '../src/lib/maintenanceMode';
@@ -157,6 +158,50 @@ describe('backup.restore preflight', () => {
       expect(await failedRestoreAuditMetadata()).toMatchObject({ errorCode: 'INTERNAL_SERVER_ERROR' });
     });
 
+    describe('one at a time (#248)', () => {
+      const STAGED = { workDir: '/nonexistent', dumpPath: '/nonexistent/db.dump', stagedFiles: [] };
+
+      function gate() {
+        let open!: () => void;
+        const opened = new Promise<void>(resolve => (open = resolve));
+        return { opened, open };
+      }
+
+      it('a second restore while one runs is refused; the first takes one snapshot and applies once', async () => {
+        snapshotEndsAs('COMPLETED');
+        const apply = vi.spyOn(restorePipeline, 'applyStagedRestore').mockResolvedValue(undefined);
+        const held = gate();
+        staging.mockImplementationOnce(() => held.opened.then(() => STAGED));
+
+        const first = restore();
+        await vi.waitFor(() => expect(staging).toHaveBeenCalledOnce());
+        await expect(restore()).rejects.toMatchObject({ code: 'CONFLICT', message: 'Un ripristino è già in corso' });
+        held.open();
+
+        await expect(first).resolves.toMatchObject({ success: true });
+        expect(await prisma.backupRecord.count({ where: { trigger: 'PRE_RESTORE_SAFETY' } })).toBe(1);
+        expect(apply).toHaveBeenCalledOnce();
+        expect(staging).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        ['staging', () => staging.mockRejectedValueOnce(new Error('unreadable'))],
+        ['the safety snapshot', () => snapshotEndsAs('FAILED')],
+        ['the apply', () => {
+          snapshotEndsAs('COMPLETED');
+          vi.spyOn(restorePipeline, 'applyStagedRestore').mockRejectedValueOnce(new Error('pg_restore failed'));
+        }],
+      ])('a failure at %s releases the guard for the next restore', async (_step, failAt) => {
+        failAt();
+        await expect(restore()).rejects.toThrow();
+
+        // The next restore is not refused as already running: it reaches staging again.
+        staging.mockRejectedValueOnce(new Error('stop here'));
+        await expect(restore()).rejects.not.toMatchObject({ code: 'CONFLICT' });
+        expect(staging).toHaveBeenCalledTimes(2);
+      });
+    });
+
     it('answers a failed restore with a fixed text, the tool output only in its cause', async () => {
       snapshotEndsAs('COMPLETED');
       vi.spyOn(restorePipeline, 'applyStagedRestore').mockRejectedValue(new Error(TOOL_TEXT));
@@ -213,5 +258,64 @@ describe('assertDumpReadable', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(RestorePreconditionError);
+  });
+});
+
+describe('migration bridge, one at a time per source backup (#248)', () => {
+  let prisma: Awaited<ReturnType<typeof setupTestDb>>;
+
+  beforeEach(async () => {
+    prisma = await setupTestDb();
+    vi.spyOn(restorePipeline, 'assertPgToolchainCompatible').mockResolvedValue(undefined);
+    vi.spyOn(migrationBridge, 'classifySchemaCompatibility').mockResolvedValue({
+      classification: 'OLDER',
+      currentSchemaMigrationName: 'current',
+      pendingMigrations: ['next'],
+    } as Awaited<ReturnType<typeof migrationBridge.classifySchemaCompatibility>>); // only the fields the route reads
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function source() {
+    return prisma.backupRecord.create({
+      data: {
+        filename: `bridge-${Math.random()}.lukebak`,
+        scope: 'DB',
+        trigger: 'MANUAL',
+        status: 'COMPLETED',
+        ivHex: '00',
+        authTagHex: '00',
+        wrappedDekHex: '00',
+        schemaMigrationName: 'older',
+      },
+    });
+  }
+
+  async function bridge(id: string) {
+    const caller = await createCallerAs('admin');
+    return caller.maintenance.backup.runMigrationBridge({ id, acknowledgeMigrationBridge: true });
+  }
+
+  it('refuses a second bridge of the same backup until the first job ends, its failure included', async () => {
+    let end!: () => void;
+    const job = vi.spyOn(migrationBridge, 'runMigrationBridgeJob').mockImplementationOnce(
+      () => new Promise<void>(resolve => (end = resolve))
+    );
+    const backup = await source();
+    const other = await source();
+
+    await bridge(backup.id);
+    await expect(bridge(backup.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+    // Another backup's bridge has its own temporary database: it runs.
+    job.mockResolvedValueOnce(undefined);
+    await expect(bridge(other.id)).resolves.toMatchObject({ id: expect.any(String) });
+
+    end();
+    await vi.waitFor(async () => {
+      job.mockResolvedValueOnce(undefined);
+      await expect(bridge(backup.id)).resolves.toMatchObject({ id: expect.any(String) });
+    });
   });
 });

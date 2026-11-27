@@ -300,7 +300,8 @@ with bodies built in code.
   `auth.requestPasswordReset` answers the same generic message whether or not
   the address exists. The link `{app.baseUrl}/auth/reset?token=…` works once,
   for 30 minutes; using it sets the password (creating the local credential if
-  the account has none) and signs out every session.
+  the account has none) and signs out every session. A new request, or an
+  admin's forced local access, revokes the earlier links: only the newest works.
 - **Email verification** — any active account with a real, unverified address
   can get a link: a signed-in user for their own address
   (`auth.requestEmailVerification`), an administrator for any user

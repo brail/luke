@@ -596,17 +596,22 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 
   // Issued only while the account still has the address asked for: under the user row lock, a
   // change of address pending now either finishes first (and nothing is issued) or waits for this
-  // link, then revokes it. Earlier reset links stay valid: a new request does not revoke them.
+  // link, then revokes it. A new request revokes the earlier reset links (#248): only the newest works.
+  // If the email then fails, the new link is deleted too and none is left: the user asks again.
   // Everything from the issue to the send is in the `try`: a failure anywhere answers the same
   // success, or the answer would differ for an address that has a local account.
   let issued: IssuedUserToken | null = null;
+  // Once the email is out the link is the user's: a later failure (the audit row) must not delete it,
+  // the earlier links being already revoked.
+  let sent = false;
   try {
     issued = await ctx.prisma.$transaction(tx =>
-      issueUserToken(tx, user.id, 'RESET', { expectedEmail: email, revokePrevious: false })
+      issueUserToken(tx, user.id, 'RESET', { expectedEmail: email, revokePrevious: true })
     );
     if (issued) {
       const baseUrl = await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
       await sendPasswordResetEmail(ctx.prisma, issued.email, issued.token, baseUrl);
+      sent = true;
 
       await logAudit(ctx, {
         action: 'PASSWORD_RESET_REQUESTED',
@@ -621,7 +626,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     // Delete the orphaned token, if any, and log the error server-side.
     // We don't expose the problem to the user to preserve enumeration protection.
     const tokenId = issued?.userToken.id;
-    if (tokenId) {
+    if (tokenId && !sent) {
       await ctx.prisma.userToken.delete({ where: { id: tokenId } }).catch(e => {
         ctx.logger.warn({ err: e, tokenId }, 'Failed to delete orphaned password reset token');
       });
@@ -629,7 +634,11 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 
     ctx.logger.error(
       { err: error, userId: user.id },
-      issued ? 'Password reset email failed — check SMTP config in AppConfig' : 'Password reset link could not be issued'
+      sent
+        ? 'Password reset request: recording its audit row failed after the email was sent'
+        : issued
+          ? 'Password reset email failed — check SMTP config in AppConfig'
+          : 'Password reset link could not be issued'
     );
 
     await logAudit(ctx, {
@@ -638,7 +647,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       targetId: user.id,
       result: 'FAILURE',
       metadata: {
-        reason: issued ? 'email_send_failed' : 'token_issue_failed',
+        reason: sent ? 'audit_failed' : issued ? 'email_send_failed' : 'token_issue_failed',
         error: toErrorMessage(error),
       },
     });

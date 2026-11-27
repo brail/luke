@@ -72,8 +72,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   seasonCalendar: {
     reason:
-      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), with revokeUserVisibility, upsertNote and deleteNote only on their brand-scope refusal, getSyncStatus by the last-change scope spec, getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone/deleteMilestones by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec, freezePlanningGroup by the freeze spec, holidayOverlapsForGroup by its visibility spec, listGoogleCalendarBindings by the per-team visibility spec, uncancelMilestone, createTemplateItem and updateTemplateItem by the inactive-function spec (#237); it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
-    uncovered: 6,
+      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), with revokeUserVisibility, upsertNote and deleteNote only on their brand-scope refusal, getSyncStatus by the last-change scope spec, getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone/deleteMilestones by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec, freezePlanningGroup by the freeze spec, holidayOverlapsForGroup by its visibility spec, listGoogleCalendarBindings by the per-team visibility spec, uncancelMilestone, createTemplateItem and updateTemplateItem by the inactive-function spec (#237), deleteTemplate and deleteTemplateItem by the repeated-requests spec (#248); it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
+    uncovered: 4,
   },
   integrations: {
     reason:
@@ -84,13 +84,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Depend on an external system or on data the suite doesn't have ────────
   holidays: {
     reason:
-      'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts, listVendorClosures by screenReads.integration.spec.ts; listCountries, deleteHoliday and listVendorClosuresBatch have no test yet',
-    uncovered: 3,
+      'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts, listVendorClosures by screenReads.integration.spec.ts, deleteHoliday by the repeated-requests spec (#248); listCountries and listVendorClosuresBatch have no test yet',
+    uncovered: 2,
   },
   maintenance: {
     reason:
-      'backup/restore are destructive by construction; backup.updateScheduleConfig, which only writes AppConfig, is covered, backup.getScheduleConfig by the AppConfig-defaults spec, and mode.getStatus and the four mode mutations by maintenanceModeAccess.integration.spec.ts, which restores the inactive state after each test',
-    uncovered: 7,
+      'backup/restore are destructive by construction; backup.updateScheduleConfig, which only writes AppConfig, is covered, backup.getScheduleConfig by the AppConfig-defaults spec, and mode.getStatus and the four mode mutations by maintenanceModeAccess.integration.spec.ts, which restores the inactive state after each test; backup.runMigrationBridge, with its job spied, by the restore-preflight spec (#248)',
+    uncovered: 6,
   },
   system: {
     reason:

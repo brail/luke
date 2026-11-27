@@ -189,16 +189,15 @@ describe('users.forceLocalAccess', () => {
     expect(orphanedToken).toBeNull();
   });
 
-  it('email send failed → deletes only the token it created, never a link sent earlier', async () => {
+  it('email send failed → no link is left: the earlier one was revoked at the issue, the new one deleted', async () => {
     const target = await createDualIdentityUser();
-    const earlier = await prisma.userToken.create({
+    await prisma.userToken.create({
       data: { userId: target.id, type: 'RESET', tokenHash: `earlier-${randomUUID()}`, expiresAt: new Date(Date.now() + 60_000) },
     });
 
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), { code: 'INTERNAL_SERVER_ERROR' });
 
-    const tokens = await prisma.userToken.findMany({ where: { userId: target.id, type: 'RESET' } });
-    expect(tokens.map(t => t.id)).toEqual([earlier.id]);
+    expect(await prisma.userToken.count({ where: { userId: target.id, type: 'RESET' } })).toBe(0);
   });
 
   it('a LOCAL identity left under an old username → BAD_REQUEST, nothing created', async () => {

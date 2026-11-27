@@ -175,9 +175,10 @@ export interface IssuedUserToken {
  *
  * - `expectedEmail`: when set and the account's address is no longer that one, nothing is created
  *   and the answer is `null` — a reset asked for an address the account no longer has.
- * - `revokePrevious`: delete the user's earlier links of this type first: on for verification and for
- *   the local-access command, off for a reset request and a forced local access, whose earlier links
- *   stay valid.
+ * - `revokePrevious`: delete the user's earlier links of this type first, so only the newest works
+ *   once this transaction commits: on for every application caller (#248: one valid link at a time,
+ *   owner 2026-11-27); tests turn it off to hold several links. The emails may still arrive out of
+ *   order, the older and now dead one last.
  *
  * @param tx - A transaction client: the lock lasts until it commits.
  * @returns The link, or `null` for no such user or an address other than `expectedEmail`.

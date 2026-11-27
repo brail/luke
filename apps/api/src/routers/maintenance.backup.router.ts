@@ -89,6 +89,25 @@ const DETAIL_IN_LOG = 'il dettaglio è nel log del server';
 /** The fixed answer of a toolchain check (pg_dump, pg_restore, the server's version) that failed for a reason other than a refusal. */
 const TOOLCHAIN_CHECK_FAILED = `Controllo di compatibilità di pg_dump e pg_restore non riuscito: ${DETAIL_IN_LOG}`;
 
+/**
+ * Backup work that must not run twice at once (#248): a second restore would take a second safety
+ * snapshot and run a second `pg_restore --clean` on the live database; two migration bridges of one
+ * backup share its temporary database and directory, and one would drop the other's. In memory, not
+ * in the database: the restored database replaces any lock kept in it, and production runs one API
+ * replica. A restart ends the guarded work together with its guard.
+ */
+// ponytail: per-process guard, one API replica; move it outside the restored database (e.g. a file lock on the backup volume) if the API ever runs more than one replica
+const running = new Set<string>();
+
+/** Takes the guard `key`, or refuses with `busy` while it is held. Returns its release. */
+function claim(key: string, busy: string): () => void {
+  if (running.has(key)) throw new TRPCError({ code: 'CONFLICT', message: busy });
+  running.add(key);
+  return () => {
+    running.delete(key);
+  };
+}
+
 /** The prefix of a staging failure's answer, a refusal's text or the fixed fallback after it. */
 const NOT_RESTORABLE = 'Backup non ripristinabile: ';
 
@@ -298,12 +317,21 @@ export const backupRouter = router({
         throw preflightError(err, TOOLCHAIN_CHECK_FAILED);
       }
 
-      const migrated = await createPendingBackupRecord(ctx.prisma, {
-        scope: 'DB',
-        trigger: 'MIGRATED',
-        createdById: ctx.session.user.id,
-        sourceBackupId: target.id,
-      });
+      // Held until the background job ends, its failure included: it names its temporary database
+      // and directory after the source backup.
+      const release = claim(`bridge:${target.id}`, 'Il migration bridge di questo backup è già in corso');
+      let migrated: { id: string };
+      try {
+        migrated = await createPendingBackupRecord(ctx.prisma, {
+          scope: 'DB',
+          trigger: 'MIGRATED',
+          createdById: ctx.session.user.id,
+          sourceBackupId: target.id,
+        });
+      } catch (err) {
+        release();
+        throw err;
+      }
 
       // Fire-and-forget: runMigrationBridgeJob never throws, it captures every error in the record itself.
       void runMigrationBridgeJob({
@@ -321,7 +349,10 @@ export const backupRouter = router({
         currentSchemaMigrationName: compat.currentSchemaMigrationName,
         createdById: ctx.session.user.id,
         logger: ctx.logger,
-      });
+      })
+        .finally(release)
+        // The job records its own errors; a rejection left is one that could not be recorded.
+        .catch((err: unknown) => ctx.logger.error({ err, migratedBackupId: migrated.id }, 'Migration bridge job failed unrecorded'));
 
       await logAudit(ctx, {
         action: 'BACKUP_MIGRATION_BRIDGE',
@@ -378,161 +409,168 @@ export const backupRouter = router({
     .use(requirePermission('maintenance:backup_restore'))
     .input(BackupRestoreInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const target = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
-      if (!target || target.status !== 'COMPLETED') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Backup non trovato o non completato' });
-      }
-      if (!target.ivHex || !target.authTagHex || !target.wrappedDekHex) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
-      }
-
-      // A backup with a schema different from the current one can leave the DB in an inconsistent
-      // state after pg_restore --clean (missing/unexpected columns, unknown enums). SAME proceeds as
-      // usual; OLDER must first be brought to the current schema via the migration bridge;
-      // NEWER_OR_UNKNOWN is a hard block with no bypass (migrations are forward-only, going backward
-      // would mean inventing legitimately deleted data).
-      const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
-      if (compat.classification !== 'SAME') {
-        const message = compat.classification === 'NEWER_OR_UNKNOWN'
-          ? `Schema del backup ("${target.schemaMigrationName}") più recente o sconosciuto rispetto a quello corrente ("${compat.currentSchemaMigrationName}"). Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova.`
-          : `Schema del backup ("${target.schemaMigrationName}") più vecchio di quello corrente ("${compat.currentSchemaMigrationName}"). Usa prima "Applica migrazioni", poi ripristina il risultato.`;
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
-      }
-
-      // Before anything irreversible: a pg_restore whose major differs from the server's aborts on
-      // its own prologue. Caught here, that costs nothing; caught inside applyStagedRestore it would
-      // already have taken a safety snapshot and put the instance into Maintenance Mode.
+      // One restore at a time (#248), from its first read to its last cleanup: the reads below can
+      // fail while another restore's pg_restore reloads the tables, so the guard comes first.
+      const release = claim('restore', 'Un ripristino è già in corso');
       try {
-        await assertPgToolchainCompatible(ctx.prisma);
-      } catch (err) {
-        throw preflightError(err, TOOLCHAIN_CHECK_FAILED);
-      }
-
-      /** The audit row of a restore that did not complete: a stable code, never the caught message. */
-      const auditRestoreFailure = (errorCode: string) => logAudit(ctx, {
-        action: 'BACKUP_RESTORE',
-        targetType: 'BackupRecord',
-        targetId: target.id,
-        result: 'FAILURE',
-        metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode },
-      });
-
-      // Download, decrypt, unpack and verify the archive before anything else. All of it is
-      // non-destructive, and it is where a backup written by an incompatible pg_dump is caught —
-      // so an unreadable backup costs a temp directory instead of leaving the instance in
-      // Maintenance Mode with a safety snapshot taken for a restore that never had a chance.
-      let staged: StagedRestore;
-      try {
-        staged = await stageBackupArchive({
-          prisma: ctx.prisma,
-          filename: target.filename,
-          ivHex: target.ivHex,
-          authTagHex: target.authTagHex,
-          wrappedDekHex: target.wrappedDekHex,
-          restoreFiles: input.restoreFiles,
-          logger: ctx.logger,
-        });
-      } catch (err) {
-        const error = preflightError(err, `${NOT_RESTORABLE}${DETAIL_IN_LOG}`, NOT_RESTORABLE);
-        // The code the client gets: a refusal or a server fault. The message stays out of the
-        // audit trail — it can carry paths or pg_restore output — and reaches the server log.
-        await auditRestoreFailure(toErrorCode(error));
-        throw error;
-      }
-
-      // Everything from here on owns the staged working directory: a full decrypted copy of the
-      // backup on local disk. The safety snapshot, the maintenance write and the audit writes can
-      // all throw, and none of them is a reason to leave gigabytes behind under ~/.luke.
-      try {
-        // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
-        const safety = await createPendingBackupRecord(ctx.prisma, {
-          scope: 'DB',
-          trigger: 'PRE_RESTORE_SAFETY',
-          createdById: ctx.session.user.id,
-        });
-        await runBackupJob({ prisma: ctx.prisma, backupId: safety.id, scope: 'DB', logger: ctx.logger });
-        const safetyResult = await ctx.prisma.backupRecord.findUnique({
-          where: { id: safety.id },
-          select: { status: true },
-        });
-        if (safetyResult?.status !== 'COMPLETED') {
-          await auditRestoreFailure('INTERNAL_SERVER_ERROR');
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            // The snapshot's own error is on its row in the backup list, for the admin (#223, #255).
-            message: 'Snapshot di sicurezza pre-restore fallito, restore annullato: il dettaglio è nella sua riga in elenco',
-          });
+        const target = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
+        if (!target || target.status !== 'COMPLETED') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Backup non trovato o non completato' });
+        }
+        if (!target.ivHex || !target.authTagHex || !target.wrappedDekHex) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
         }
 
-        // Blocks all non-admin traffic (reads included) and invalidates their sessions before
-        // touching the DB — a restore is already a deliberate action, so activation is immediate,
-        // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
-        // explicitly after verifying that everything works.
-        const maintenanceState = {
-          status: 'ACTIVE' as const,
-          scheduledAt: null,
-          activatedAt: new Date().toISOString(),
-          message: 'Ripristino database in corso',
-          forceLogout: true,
-          warningLeadMinutes: [],
-          warningsSent: [],
-          activatedByUserId: ctx.session.user.id,
-          notifyByEmail: false,
-        };
-        await writeMaintenanceState(ctx.prisma, maintenanceState);
-        await forceLogoutNonAdmins(ctx.prisma);
-        await logAudit(ctx, {
-          action: 'MAINTENANCE_MODE_ACTIVATED',
-          targetType: 'MaintenanceMode',
-          result: 'SUCCESS',
-          metadata: { trigger: 'RESTORE', forceLogout: true },
+        // A backup with a schema different from the current one can leave the DB in an inconsistent
+        // state after pg_restore --clean (missing/unexpected columns, unknown enums). SAME proceeds as
+        // usual; OLDER must first be brought to the current schema via the migration bridge;
+        // NEWER_OR_UNKNOWN is a hard block with no bypass (migrations are forward-only, going backward
+        // would mean inventing legitimately deleted data).
+        const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
+        if (compat.classification !== 'SAME') {
+          const message = compat.classification === 'NEWER_OR_UNKNOWN'
+            ? `Schema del backup ("${target.schemaMigrationName}") più recente o sconosciuto rispetto a quello corrente ("${compat.currentSchemaMigrationName}"). Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova.`
+            : `Schema del backup ("${target.schemaMigrationName}") più vecchio di quello corrente ("${compat.currentSchemaMigrationName}"). Usa prima "Applica migrazioni", poi ripristina il risultato.`;
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
+        }
+
+        // Before anything irreversible: a pg_restore whose major differs from the server's aborts on
+        // its own prologue. Caught here, that costs nothing; caught inside applyStagedRestore it would
+        // already have taken a safety snapshot and put the instance into Maintenance Mode.
+        try {
+          await assertPgToolchainCompatible(ctx.prisma);
+        } catch (err) {
+          throw preflightError(err, TOOLCHAIN_CHECK_FAILED);
+        }
+
+        /** The audit row of a restore that did not complete: a stable code, never the caught message. */
+        const auditRestoreFailure = (errorCode: string) => logAudit(ctx, {
+          action: 'BACKUP_RESTORE',
+          targetType: 'BackupRecord',
+          targetId: target.id,
+          result: 'FAILURE',
+          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode },
         });
 
+        // Download, decrypt, unpack and verify the archive before anything else. All of it is
+        // non-destructive, and it is where a backup written by an incompatible pg_dump is caught —
+        // so an unreadable backup costs a temp directory instead of leaving the instance in
+        // Maintenance Mode with a safety snapshot taken for a restore that never had a chance.
+        let staged: StagedRestore;
         try {
-          await applyStagedRestore({
+          staged = await stageBackupArchive({
             prisma: ctx.prisma,
-            staged,
-            preserveAuditLog: input.preserveAuditLog,
+            filename: target.filename,
+            ivHex: target.ivHex,
+            authTagHex: target.authTagHex,
+            wrappedDekHex: target.wrappedDekHex,
             restoreFiles: input.restoreFiles,
             logger: ctx.logger,
           });
         } catch (err) {
-          await auditRestoreFailure(toErrorCode(err));
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${DETAIL_IN_LOG}`, cause: err });
-        } finally {
-          // `pg_restore` overwrote both halves of the lockdown with the snapshot's copy: the
-          // maintenance state in `app_configs` (INACTIVE there) and `users.tokenVersion` (rolled
-          // back to before the force-logout, so every revoked non-admin JWT is valid again).
-          // Re-assert both — and on the failure path above all, which is exactly when the instance
-          // must not reopen onto a half-restored database.
-          //
-          // In a `finally` rather than after the block, and wrapped so a throw here cannot mask the
-          // restore's own error: the caller must still see why the restore failed.
-          try {
-            await writeMaintenanceState(ctx.prisma, maintenanceState);
-            // Every user row was rewritten, administrators' included: no cached verdict holds.
-            clearTokenVersionCache();
-            await forceLogoutNonAdmins(ctx.prisma);
-          } catch (lockdownErr) {
-            ctx.logger.error({ err: lockdownErr }, 'Restore: could not reassert the post-restore lockdown');
-          }
+          const error = preflightError(err, `${NOT_RESTORABLE}${DETAIL_IN_LOG}`, NOT_RESTORABLE);
+          // The code the client gets: a refusal or a server fault. The message stays out of the
+          // audit trail — it can carry paths or pg_restore output — and reaches the server log.
+          await auditRestoreFailure(toErrorCode(error));
+          throw error;
         }
 
-        await logAudit(ctx, {
-          action: 'BACKUP_RESTORE',
-          targetType: 'BackupRecord',
-          targetId: target.id,
-          result: 'SUCCESS',
-          metadata: {
-            preserveAuditLog: input.preserveAuditLog,
-            restoreFiles: input.restoreFiles,
-            safetySnapshotId: safety.id,
-          },
-        });
+        // Everything from here on owns the staged working directory: a full decrypted copy of the
+        // backup on local disk. The safety snapshot, the maintenance write and the audit writes can
+        // all throw, and none of them is a reason to leave gigabytes behind under ~/.luke.
+        try {
+          // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
+          const safety = await createPendingBackupRecord(ctx.prisma, {
+            scope: 'DB',
+            trigger: 'PRE_RESTORE_SAFETY',
+            createdById: ctx.session.user.id,
+          });
+          await runBackupJob({ prisma: ctx.prisma, backupId: safety.id, scope: 'DB', logger: ctx.logger });
+          const safetyResult = await ctx.prisma.backupRecord.findUnique({
+            where: { id: safety.id },
+            select: { status: true },
+          });
+          if (safetyResult?.status !== 'COMPLETED') {
+            await auditRestoreFailure('INTERNAL_SERVER_ERROR');
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              // The snapshot's own error is on its row in the backup list, for the admin (#223, #255).
+              message: 'Snapshot di sicurezza pre-restore fallito, restore annullato: il dettaglio è nella sua riga in elenco',
+            });
+          }
 
-        return { success: true, safetySnapshotId: safety.id };
+          // Blocks all non-admin traffic (reads included) and invalidates their sessions before
+          // touching the DB — a restore is already a deliberate action, so activation is immediate,
+          // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
+          // explicitly after verifying that everything works.
+          const maintenanceState = {
+            status: 'ACTIVE' as const,
+            scheduledAt: null,
+            activatedAt: new Date().toISOString(),
+            message: 'Ripristino database in corso',
+            forceLogout: true,
+            warningLeadMinutes: [],
+            warningsSent: [],
+            activatedByUserId: ctx.session.user.id,
+            notifyByEmail: false,
+          };
+          await writeMaintenanceState(ctx.prisma, maintenanceState);
+          await forceLogoutNonAdmins(ctx.prisma);
+          await logAudit(ctx, {
+            action: 'MAINTENANCE_MODE_ACTIVATED',
+            targetType: 'MaintenanceMode',
+            result: 'SUCCESS',
+            metadata: { trigger: 'RESTORE', forceLogout: true },
+          });
+
+          try {
+            await applyStagedRestore({
+              prisma: ctx.prisma,
+              staged,
+              preserveAuditLog: input.preserveAuditLog,
+              restoreFiles: input.restoreFiles,
+              logger: ctx.logger,
+            });
+          } catch (err) {
+            await auditRestoreFailure(toErrorCode(err));
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${DETAIL_IN_LOG}`, cause: err });
+          } finally {
+            // `pg_restore` overwrote both halves of the lockdown with the snapshot's copy: the
+            // maintenance state in `app_configs` (INACTIVE there) and `users.tokenVersion` (rolled
+            // back to before the force-logout, so every revoked non-admin JWT is valid again).
+            // Re-assert both — and on the failure path above all, which is exactly when the instance
+            // must not reopen onto a half-restored database.
+            //
+            // In a `finally` rather than after the block, and wrapped so a throw here cannot mask the
+            // restore's own error: the caller must still see why the restore failed.
+            try {
+              await writeMaintenanceState(ctx.prisma, maintenanceState);
+              // Every user row was rewritten, administrators' included: no cached verdict holds.
+              clearTokenVersionCache();
+              await forceLogoutNonAdmins(ctx.prisma);
+            } catch (lockdownErr) {
+              ctx.logger.error({ err: lockdownErr }, 'Restore: could not reassert the post-restore lockdown');
+            }
+          }
+
+          await logAudit(ctx, {
+            action: 'BACKUP_RESTORE',
+            targetType: 'BackupRecord',
+            targetId: target.id,
+            result: 'SUCCESS',
+            metadata: {
+              preserveAuditLog: input.preserveAuditLog,
+              restoreFiles: input.restoreFiles,
+              safetySnapshotId: safety.id,
+            },
+          });
+
+          return { success: true, safetySnapshotId: safety.id };
+        } finally {
+          await discardStagedRestore(staged);
+        }
       } finally {
-        await discardStagedRestore(staged);
+        release();
       }
     }),
 
