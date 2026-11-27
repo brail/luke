@@ -1065,6 +1065,23 @@ a migration folder, any number others plan on — re-read the outbox and check t
 the files on the remote branch (`git ls-tree origin/<branch> docs/decisions/`) and any approved
 design that names it.
 
+---
+
+### A gate passes on its exit code, never on a filtered line of its output (2026-11-27)
+
+**What happened.** During S25 (#299), `pnpm security:sast | grep findings` printed only
+`Ran 74 rules on 830 files: 0 findings.` and the gate was reported green. The second scan of the
+same script (the repository's own rules) had answered `1 finding` — singular, so the filter dropped
+it — and exited 1, which the pipe hid. The pre-commit hook then blocked the commit on that finding
+(`luke-error-message-by-hand`).
+
+**Why it slipped.** A text filter decides what you see, and a pipe reports the last command's exit
+status, not the gate's: one wording the pattern did not expect turned a red gate into a green line.
+
+**Rule.** Judge a gate by its exit code: run it with `; echo "exit=$?"` (or `set -o pipefail`
+before any pipe) and report the code; filter its output only to read why it failed. A script made
+of several scans counts as one gate.
+
 ## React & UI
 
 ### A Radix close-button cannot double as a form's submit button
