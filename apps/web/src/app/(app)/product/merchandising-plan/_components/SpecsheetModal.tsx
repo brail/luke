@@ -174,6 +174,8 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
+  // One image action at a time: a default set on an image being deleted only races its removal.
+  const imageActionPending = setDefaultImageMutation.isPending || deleteImageMutation.isPending;
 
   // `component` is the one required field on a BOM row (MerchandisingComponentInputSchema), and
   // nothing here used to check it: an unnamed row reached the server and the whole batch came back
@@ -364,6 +366,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                             type="button"
                             title="Imposta come default"
                             onClick={() => setDefaultImageMutation.mutate({ id: img.id })}
+                            disabled={imageActionPending}
                             className="bg-background/90 rounded p-1 hover:bg-background"
                           >
                             <Star className="h-3 w-3" />
@@ -374,6 +377,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                             type="button"
                             title="Elimina immagine"
                             onClick={() => deleteImageMutation.mutate({ id: img.id })}
+                            disabled={imageActionPending}
                             className="bg-background/90 rounded p-1 hover:bg-background text-destructive"
                           >
                             <Trash2 className="h-3 w-3" />

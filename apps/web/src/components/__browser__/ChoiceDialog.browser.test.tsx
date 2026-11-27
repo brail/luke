@@ -80,3 +80,14 @@ test('while closing it keeps the text it showed, whatever the caller passes then
   expect(screen.getByText('Prima di passare?').query()).toBeNull();
   await expect.element(screen.getByText('Prima di chiudere?')).toBeInTheDocument();
 });
+
+test('a held Enter does not answer again', async () => {
+  const { screen } = renderDialog(true);
+  const primary = (await screen).getByRole('button', { name: 'Salva' }).element();
+  const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+
+  primary.dispatchEvent(held);
+
+  // The repeat's default action, clicking the focused answer, is cancelled.
+  expect(held.defaultPrevented).toBe(true);
+});

@@ -46,6 +46,8 @@ interface ConfirmDialogProps {
   /**
    * With `confirmPhrase`, false keeps the dialog open after confirming, showing `isLoading`, for a
    * caller that closes it once its action settles (a long one, whose failure the user should see).
+   * `isLoading` must then be that action's own pending state: the dialog confirms again only after
+   * it has gone true and back to false.
    */
   closeOnConfirm?: boolean;
   /** With `confirmPhrase`, keeps the action locked whatever is typed, e.g. while its subject loads. */
@@ -77,8 +79,29 @@ export function ConfirmDialog({
   closeOnConfirm = true,
   confirmDisabled = false,
 }: ConfirmDialogProps) {
+  // One confirmation per opening (#248): `isLoading` turns true only once the caller's mutation is
+  // pending, a render later, so a double click or a held Enter would otherwise confirm twice. Reset
+  // when the dialog opens, and, for a dialog kept open (`closeOnConfirm` false), when its action
+  // settles, so a failed one can be confirmed again. `ChoiceDialog` answers once the same way.
+  const confirmed = useRef(false);
+  const wasLoading = useRef(isLoading);
+  useEffect(() => {
+    if (open) confirmed.current = false;
+  }, [open]);
+  useEffect(() => {
+    if (!closeOnConfirm && wasLoading.current && !isLoading) confirmed.current = false;
+    wasLoading.current = isLoading;
+  }, [isLoading, closeOnConfirm]);
   const handleConfirm = (typed?: string) => {
-    onConfirm(typed);
+    if (confirmed.current) return;
+    confirmed.current = true;
+    try {
+      onConfirm(typed);
+    } catch (error) {
+      // Nothing was started: the action stays available.
+      confirmed.current = false;
+      throw error;
+    }
     if (closeOnConfirm) onOpenChange(false);
   };
 
@@ -167,7 +190,13 @@ export function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="sm:max-w-[425px]" onOpenAutoFocus={handleOpenAutoFocus}> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
+      <AlertDialogContent
+        className="sm:max-w-[425px]" // px: dialog width tuned to this form's content; no exact Tailwind max-w scale match
+        onOpenAutoFocus={handleOpenAutoFocus}
+        // A held Enter repeats: only its first press may confirm. Space is left alone: it activates a
+        // button on release, and a held one in the phrase field must still type spaces.
+        onKeyDown={e => { if (e.repeat && e.key === 'Enter') e.preventDefault(); }}
+      >
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             {getIcon()}
@@ -185,7 +214,8 @@ export function ConfirmDialog({
         {confirmPhrase ? (
           <Form {...form}>
             <form
-              onSubmit={form.handleSubmit(data => handleConfirm(data.typed))}
+              // Built in the handler, not during render: `handleConfirm` reads its guard ref.
+              onSubmit={e => void form.handleSubmit(data => handleConfirm(data.typed))(e)}
               className="grid gap-4"
             >
               <FormField

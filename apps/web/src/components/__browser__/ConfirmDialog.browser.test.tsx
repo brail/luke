@@ -109,3 +109,124 @@ test('cancel never triggers the action', async () => {
   expect(onConfirm).not.toHaveBeenCalled();
   expect(onClosed).toHaveBeenCalled();
 });
+
+/**
+ * Once per opening (#248). These render the dialog open with an inert `onOpenChange`, on purpose:
+ * it stands for a caller that has not re-rendered it closed yet (or the close animation), the
+ * window in which a second click or key used to confirm again.
+ */
+function StaysOpen(props: Partial<Parameters<typeof ConfirmDialog>[0]> & { onConfirm: (phrase?: string) => void }) {
+  return (
+    <ConfirmDialog
+      open
+      onOpenChange={() => {}}
+      title="Elimina brand"
+      description="Azione irreversibile."
+      confirmText="Conferma"
+      {...props}
+    />
+  );
+}
+
+/** Two clicks dispatched back to back, before React can re-render between them. */
+function doubleClick(element: Element) {
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+test('a double click confirms once', async () => {
+  const onConfirm = vi.fn();
+  const screen = await render(<StaysOpen onConfirm={onConfirm} />);
+
+  doubleClick(screen.getByRole('button', { name: 'Conferma' }).element());
+
+  expect(onConfirm).toHaveBeenCalledOnce();
+});
+
+test('a double click on a gated confirm submits once', async () => {
+  const onConfirm = vi.fn();
+  const screen = await render(<StaysOpen onConfirm={onConfirm} confirmPhrase="ELIMINA" />);
+  await screen.getByRole('textbox').fill('ELIMINA');
+  const confirm = screen.getByRole('button', { name: 'Conferma' });
+  await expect.element(confirm).toBeEnabled();
+
+  doubleClick(confirm.element());
+
+  await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith('ELIMINA'));
+  await new Promise(resolve => setTimeout(resolve, 50));
+  expect(onConfirm).toHaveBeenCalledOnce();
+});
+
+test.each([
+  ['plain', undefined],
+  ['gated', 'ELIMINA'],
+])('a held Enter does not confirm again (%s)', async (_label, confirmPhrase) => {
+  const screen = await render(<StaysOpen onConfirm={vi.fn()} confirmPhrase={confirmPhrase} actionType="warning" />);
+  const target = screen.getByRole(confirmPhrase ? 'textbox' : 'button', { name: confirmPhrase ? undefined : 'Conferma' }).element();
+  const press = (repeat: boolean) => new KeyboardEvent('keydown', { key: 'Enter', repeat, bubbles: true, cancelable: true });
+
+  const first = press(false);
+  const held = press(true);
+  target.dispatchEvent(first);
+  target.dispatchEvent(held);
+
+  // The repeat's default action (clicking the focused button, submitting the form) is cancelled.
+  expect(first.defaultPrevented).toBe(false);
+  expect(held.defaultPrevented).toBe(true);
+});
+
+test('kept open after a confirm, it can confirm again once the attempt settles', async () => {
+  const onConfirm = vi.fn();
+  const screen = await render(<StaysOpen onConfirm={onConfirm} confirmPhrase="ELIMINA" closeOnConfirm={false} />);
+  await screen.getByRole('textbox').fill('ELIMINA');
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+  await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+
+  // The caller's mutation runs, then fails: the dialog stays open for a retry.
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} confirmPhrase="ELIMINA" closeOnConfirm={false} isLoading />);
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} confirmPhrase="ELIMINA" closeOnConfirm={false} />);
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+
+  await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2));
+});
+
+test('opened again, it confirms again', async () => {
+  const onConfirm = vi.fn();
+  const screen = await render(<StaysOpen onConfirm={onConfirm} />);
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} open={false} />);
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} />);
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+
+  expect(onConfirm).toHaveBeenCalledTimes(2);
+});
+
+test('closed on confirm, a loading flag falling while it still shows does not confirm again', async () => {
+  const onConfirm = vi.fn();
+  const screen = await render(<StaysOpen onConfirm={onConfirm} />);
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+
+  // A caller passing a combined flag: something else finishes before the dialog has closed.
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} isLoading />);
+  await screen.rerender(<StaysOpen onConfirm={onConfirm} />);
+  await screen.getByRole('button', { name: 'Conferma' }).click();
+
+  expect(onConfirm).toHaveBeenCalledOnce();
+});
+
+test('an onConfirm that throws leaves the action available', async () => {
+  const onConfirm = vi.fn().mockImplementationOnce(() => {
+    throw new Error('no target');
+  });
+  const screen = await render(<StaysOpen onConfirm={onConfirm} />);
+  const confirm = screen.getByRole('button', { name: 'Conferma' }).element();
+  const swallow = (event: ErrorEvent) => event.preventDefault();
+  window.addEventListener('error', swallow);
+
+  confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  window.removeEventListener('error', swallow);
+
+  expect(onConfirm).toHaveBeenCalledTimes(2);
+});
