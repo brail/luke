@@ -12,7 +12,12 @@ import { SpecsheetModal } from '../SpecsheetModal';
 
 const h = vi.hoisted(() => ({
   fetch: vi.fn<(url: string, init: { method: string; headers: Record<string, string> }) => Promise<Response>>(),
-  specsheet: { id: 'spec-1', components: [], images: [] },
+  deleteImage: vi.fn(),
+  specsheet: {
+    id: 'spec-1',
+    components: [],
+    images: [] as Array<{ id: string; url: string; isDefault: boolean; caption: string | null }>,
+  },
 }));
 
 vi.mock('next-auth/react', () => ({
@@ -29,7 +34,7 @@ vi.mock('../../../../../../lib/trpc', () => {
         upsertSpecsheet: mutation,
         upsertComponents: mutation,
         setDefaultImage: mutation,
-        deleteImage: mutation,
+        deleteImage: { useMutation: () => ({ mutate: h.deleteImage, isPending: false }) },
       },
     },
   };
@@ -38,7 +43,11 @@ vi.mock('../../../../../../lib/trpc', () => {
 // The upload reads only the id; the header's other fields render empty, which this test ignores.
 const row = { id: 'row-1' } as ComponentProps<typeof SpecsheetModal>['row'];
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  h.deleteImage.mockReset();
+  h.specsheet.images = [];
+});
 
 test('an image upload carries the session token', async () => {
   h.fetch.mockResolvedValue(new Response(JSON.stringify({ id: 'img-1', publicUrl: '/x.png' }), { status: 200 }));
@@ -54,4 +63,23 @@ test('an image upload carries the session token', async () => {
   const [url, init] = h.fetch.mock.calls[0];
   expect(url).toContain('/upload/specsheet-image/spec-1');
   expect(init.headers).toMatchObject({ Authorization: 'Bearer t' });
+});
+
+/** Deleting a specsheet image cannot be undone, so it asks first (#303). */
+test('deleting an image asks first; Annulla keeps it and the specsheet open', async () => {
+  h.specsheet.images = [{ id: 'img-1', url: '/x.png', isDefault: false, caption: null }];
+  const screen = await render(<SpecsheetModal open onOpenChange={vi.fn()} row={row} canUpdate onSaved={vi.fn()} />);
+
+  await screen.getByTitle('Elimina immagine').click();
+  await expect.element(screen.getByRole('alertdialog')).toBeInTheDocument();
+  expect(h.deleteImage).not.toHaveBeenCalled();
+
+  await screen.getByRole('button', { name: 'Annulla' }).click();
+  expect(h.deleteImage).not.toHaveBeenCalled();
+  await expect.element(screen.getByRole('dialog')).toBeInTheDocument();
+
+  await screen.getByTitle('Elimina immagine').click();
+  await screen.getByRole('button', { name: 'Elimina' }).click();
+  expect(h.deleteImage).toHaveBeenCalledTimes(1);
+  expect(h.deleteImage).toHaveBeenCalledWith({ id: 'img-1' });
 });

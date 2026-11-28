@@ -14,6 +14,7 @@ import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { PageHeader } from '../../../components/PageHeader';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -58,6 +59,8 @@ export default function ProfilePage() {
   const formatDate = useFormatDate();
   const { copy } = useCopyToClipboard();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  // Signing out everywhere ends this session too: it asks first (#303).
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false);
 
   // Query that fetches the user profile data
   const {
@@ -75,9 +78,7 @@ export default function ProfilePage() {
       // This session ended too; the pushed `session-revoked` may get there first (`endSession` runs once).
       endSession();
     },
-    onError: error => {
-      toast.error(`Errore: ${error.message}`);
-    },
+    onError: error => toast.error(getTrpcErrorMessage(error)),
   });
 
   // Mutation to request a verification email
@@ -167,10 +168,6 @@ export default function ProfilePage() {
     triggerBlobDownload(blob, `profile_${user.username}.json`);
 
     toast.success('Profilo esportato con successo');
-  };
-
-  const handleLogoutAllDevices = () => {
-    revokeAllSessionsMutation.mutate();
   };
 
   return (
@@ -309,8 +306,8 @@ export default function ProfilePage() {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full justify-start text-red-600 hover:text-red-700"
-                onClick={handleLogoutAllDevices}
+                className="w-full justify-start text-destructive hover:text-destructive"
+                onClick={() => setConfirmLogoutAll(true)}
                 disabled={revokeAllSessionsMutation.isPending}
               >
                 <LogOut className="h-4 w-4 mr-2" />
@@ -389,6 +386,18 @@ export default function ProfilePage() {
           />
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmLogoutAll}
+        onOpenChange={setConfirmLogoutAll}
+        title="Logout da tutti i dispositivi"
+        description="Verrai disconnesso da tutti i dispositivi, compreso questo, e dovrai effettuare nuovamente il login."
+        confirmText="Esci da tutti"
+        cancelText="Annulla"
+        actionType="revokeSessions"
+        onConfirm={() => revokeAllSessionsMutation.mutate()}
+        isLoading={revokeAllSessionsMutation.isPending}
+      />
     </div>
   );
 }

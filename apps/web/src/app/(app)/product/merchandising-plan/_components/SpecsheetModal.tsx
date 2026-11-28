@@ -15,6 +15,7 @@ import {
   buildSpecsheetImageUploadUrl,
 } from '@luke/core';
 
+import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -122,6 +123,9 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
 
   // Sections collapsed state
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // The image whose deletion awaits confirmation: it cannot be undone (#303).
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
 
   const { upload: uploadImage, isUploading: uploadingImage } = useStorageUpload({
     url: specsheet ? buildSpecsheetImageUploadUrl(specsheet.id) : '',
@@ -376,7 +380,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                           <button
                             type="button"
                             title="Elimina immagine"
-                            onClick={() => deleteImageMutation.mutate({ id: img.id })}
+                            onClick={() => setDeletingImageId(img.id)}
                             disabled={imageActionPending}
                             className="bg-background/90 rounded p-1 hover:bg-background text-destructive"
                           >
@@ -576,6 +580,19 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
         </DialogFooter>
           </form>
         </Form>
+
+        {/* Outside the header form; rendered in its own portal, nested over this dialog. */}
+        <ConfirmDialog
+          open={!!deletingImageId}
+          onOpenChange={next => { if (!next) setDeletingImageId(null); }}
+          title="Elimina immagine"
+          description="Sei sicuro di voler eliminare questa immagine della specsheet? L'operazione è irreversibile."
+          confirmText="Elimina"
+          cancelText="Annulla"
+          actionType="delete"
+          onConfirm={() => { if (deletingImageId) deleteImageMutation.mutate({ id: deletingImageId }); }}
+          isLoading={deleteImageMutation.isPending}
+        />
       </DialogContent>
     </Dialog>
   );
