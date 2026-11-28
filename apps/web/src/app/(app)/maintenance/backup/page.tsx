@@ -34,6 +34,7 @@ import {
 import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { triggerUrlDownload } from '../../../../lib/download';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -192,6 +193,11 @@ export default function MaintenanceBackupPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per backup or bridge request (#248): a retry after a lost answer replays it instead of
+  // starting a second job. The page stays mounted, so each opening of a dialog is a new action.
+  const createAction = useIdempotentAction(createMutation, { open: createOpen });
+  const bridgeAction = useIdempotentAction(bridgeMutation, { open: restoreTarget !== null });
+
   const prepareExportMutation = trpc.maintenance.backup.prepareExport.useMutation({
     onSuccess: ({ token, filename }) => {
       if (!exportTarget) return;
@@ -334,7 +340,7 @@ export default function MaintenanceBackupPage() {
         onOpenChange={setCreateOpen}
         isLoading={createMutation.isPending}
         onConfirm={({ scope, label }: { scope: BackupScopeChoice; label?: string }) =>
-          createMutation.mutate({ scope, label })
+          createAction.submit({ scope, label })
         }
       />
 
@@ -359,7 +365,7 @@ export default function MaintenanceBackupPage() {
         }
         isBridging={bridgeMutation.isPending}
         onRunMigrationBridge={() =>
-          restoreTarget && bridgeMutation.mutate({ id: restoreTarget.id, acknowledgeMigrationBridge: true })
+          restoreTarget && bridgeAction.submit({ id: restoreTarget.id, acknowledgeMigrationBridge: true })
         }
       />
 

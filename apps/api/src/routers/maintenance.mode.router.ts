@@ -21,6 +21,7 @@ import {
 import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
 import {
   DEFAULT_STATE,
@@ -82,7 +83,13 @@ export const maintenanceModeRouter = router({
   schedule: protectedProcedure
     .use(requirePermission('maintenance:mode_manage'))
     .input(MaintenanceModeScheduleInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
+      // Checked here, after the idempotency middleware: a replay of an accepted schedule returns
+      // its stored answer even once `scheduledAt` has passed; a new request must still be ahead.
+      if (new Date(input.scheduledAt).getTime() <= Date.now()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'La data pianificata deve essere nel futuro' });
+      }
       // A threshold farther out than the total time available can never fire as a real
       // "advance warning" — e.g. scheduling for 5 minutes from now, the "15 minutes before"
       // threshold is already in the past and would fire immediately, lumped in with the others.

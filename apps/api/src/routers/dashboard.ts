@@ -22,6 +22,7 @@ import { type Prisma } from '@luke/db';
 import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router, selfProcedure } from '../lib/trpc';
 import { allowedBrandIds } from '../services/brandScope.service';
@@ -114,6 +115,7 @@ export const dashboardRouter = router({
    */
   upsertTask: selfProcedure
     .input(DashboardTaskInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const { id, label, done, dueDate } = input;

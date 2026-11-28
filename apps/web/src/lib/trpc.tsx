@@ -1,17 +1,15 @@
 'use client';
 
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchStreamLink, httpLink, splitLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
-import { TRPC_MAX_BATCH_SIZE, sendsUnbatched } from '@luke/core';
 
 import { queryRetryDelay, refetchOnReconnectWithJitter, shouldRetryQuery } from './queryRetry';
 import { endSession, isSessionEnded } from './sessionEnd';
-import { trpcFetch } from './trpcFetch';
+import { browserLinks } from './trpcLinks';
 
 /**
  * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
@@ -67,7 +65,7 @@ export function createQueryClient(): QueryClient {
 
 /**
  * Wraps children with the tRPC and React Query providers: a `createQueryClient` client, its jittered
- * reconnect refetch, and a `Bearer` JWT header from the NextAuth session on every tRPC request.
+ * reconnect refetch, and `browserLinks` with the NextAuth session's token.
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
@@ -77,37 +75,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => refetchOnReconnectWithJitter(queryClient), [queryClient]);
 
-  const trpcClient = React.useMemo(() => {
-    // Headers for authentication and trace correlation, on every request.
-    const headers = () => {
-      // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
-      // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
-      const values: Record<string, string> = {
-        'x-luke-trace-id':
-          crypto.randomUUID?.() ||
-          Math.random().toString(36).substring(2) + Date.now().toString(36),
-      };
-      if (accessToken) values.authorization = `Bearer ${accessToken}`;
-      return values;
-    };
-    // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
-    // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
-    const url = '/trpc';
-    return trpc.createClient({
-      links: [
-        // Essential and background calls (profile, refresh, sign-out, heartbeat, SSE ticket) go
-        // alone: the API's limiter counts a batch that mixes them with other calls in the normal
-        // lane, so the profile would share the page's budget (ADR-051).
-        splitLink({
-          condition: op => sendsUnbatched(op.path),
-          true: httpLink({ url, fetch: trpcFetch, headers }),
-          false: httpBatchStreamLink({ url, maxItems: TRPC_MAX_BATCH_SIZE, fetch: trpcFetch, headers }),
-        }),
-      ],
-    });
-  },
-    [accessToken]
-  );
+  const trpcClient = React.useMemo(() => trpc.createClient({ links: browserLinks(accessToken) }), [accessToken]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>

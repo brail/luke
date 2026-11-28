@@ -40,7 +40,7 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
   const { t } = await import('../src/lib/t');
   const { buildRateLimitExceededError } = await import('../src/lib/rateLimitError');
   // From the freshly loaded module, or the formatter's `instanceof` would see another class.
-  const { ServiceUnavailableError, SessionEndedError } = await import('../src/lib/error');
+  const { IdempotencyRefusedError, ServiceUnavailableError, SessionEndedError } = await import('../src/lib/error');
 
   const failWith = (err: Error) =>
     t.procedure.query(() => {
@@ -62,6 +62,7 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
     authUnavailable: failWith(new ServiceUnavailableError('auth_unavailable')),
     rateLimited: failWith(buildRateLimitExceededError(60_000)),
     sessionEnded: failWith(new SessionEndedError()),
+    idempotencyInFlight: failWith(new IdempotencyRefusedError('inFlight', 'Questa operazione è già in corso: attendi che finisca')),
     explicitWithZodCause: failWith(
       new TRPCError({
         code: 'BAD_REQUEST',
@@ -207,6 +208,14 @@ describe('trpcErrorFormatter in production', () => {
     expect((await callError(router, 'sessionEnded')).data).toMatchObject({ code: 'UNAUTHORIZED', sessionEnded: true });
     // The wrong current password is an UNAUTHORIZED too: it must never sign anyone out.
     expect((await callError(router, 'UNAUTHORIZED')).data).not.toHaveProperty('sessionEnded');
+  });
+
+  it("marks the idempotency layer's CONFLICT, and only that one (#248)", async () => {
+    const router = await loadRouter('production');
+
+    expect((await callError(router, 'idempotencyInFlight')).data).toMatchObject({ code: 'CONFLICT', idempotency: 'inFlight' });
+    // A procedure's own CONFLICT is a refusal: the web starts a new action after it.
+    expect((await callError(router, 'CONFLICT')).data).not.toHaveProperty('idempotency');
   });
 
   it('keeps retryAfterSeconds on a rate-limit error', async () => {

@@ -133,10 +133,5 @@
     "react-hooks/refs": {
       "count": 1
     }
-  },
-  "src/lib/trpc.tsx": {
-    "react-hooks/purity": {
-      "count": 2
-    }
   }
 }

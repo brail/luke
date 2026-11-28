@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-react';
 
 import type { MaintenanceModeView } from '@luke/core';
 
+import { idempotencyKeyOf } from '../../../../../lib/idempotencyKey';
 import MaintenanceModePage from '../page';
 
 /**
@@ -28,7 +29,7 @@ vi.mock('../../../../../lib/trpc', () => {
       maintenance: {
         mode: {
           getStatus: { useQuery: () => ({ data: h.state, isLoading: false }) },
-          schedule: { useMutation: () => ({ mutate: h.schedule, isPending: false }) },
+          schedule: { useMutation: () => ({ mutateAsync: h.schedule, isPending: false }) },
           activateNow: mutation,
           cancelScheduled: mutation,
           end: mutation,
@@ -52,6 +53,7 @@ test('a window typed on the page is a wall time of the profile zone, which the f
 
   // 01:00 in Los Angeles is 09:00 UTC.
   expect(h.schedule).toHaveBeenCalledWith(expect.objectContaining({ scheduledAt: '2030-01-15T09:00:00.000Z' }));
+  expect(idempotencyKeyOf(h.schedule.mock.calls[0]?.[0])).toBeDefined();
 });
 
 test('a profile change while the form is open does not reinterpret what is typed', async () => {

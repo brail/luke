@@ -38,6 +38,7 @@ import { bandBadgeStyle, isHexColor } from '../../../../lib/alertBandStyle';
 import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
+import { uuidV4 } from '../../../../lib/uuid';
 
 const EMPTY_BAND: AlertBand = {
   minDaysToDeadline: 0,
@@ -194,7 +195,7 @@ function BandSetEditor({
   // `moveBand`/`removeBand` would jump focus and local state (e.g. open select)
   // to the wrong row after reordering or removal.
   const [ids, setIds] = useState(() =>
-    bands.map(() => crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36))
+    bands.map(() => uuidV4())
   );
 
   const updateBand = (index: number, patch: Partial<AlertBand>) => {
@@ -220,7 +221,7 @@ function BandSetEditor({
 
   const addBand = () => {
     onChange([...bands, { ...EMPTY_BAND }]);
-    setIds([...ids, crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)]);
+    setIds([...ids, uuidV4()]);
   };
 
   return (

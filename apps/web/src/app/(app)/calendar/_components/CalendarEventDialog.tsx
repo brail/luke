@@ -48,6 +48,7 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { functionLabel, offeredFunctions } from '../../../../lib/companyFunction';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import {
   UNTOUCHED_SIDES,
   applyLinkedEdit,
@@ -377,10 +378,15 @@ export function CalendarEventDialog({
   const createMutation = trpc.seasonCalendar.createMilestone.useMutation({
     onSuccess: () => { toast.success('Evento creato'); onSaved(); onClose(); },
     onError: (err, variables) => {
-      if (hideFromSaver.ask(err, () => createMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
+      // Confirmed, the same action goes again under its key: a lost answer to it then replays.
+      if (hideFromSaver.ask(err, () => resubmitCreate(variables, sent => ({ ...sent, confirmHidesFromCaller: true })))) return;
       toast.error(getTrpcErrorMessage(err));
     },
   });
+
+  // One key per create (#248): a retry after a lost answer replays instead of creating the event
+  // twice. The create dialog mounts only while open, so a new opening is a new action.
+  const { submit: submitCreate, resubmit: resubmitCreate } = useIdempotentAction(createMutation);
 
   const utils = trpc.useUtils();
   const updateMutation = trpc.seasonCalendar.updateMilestone.useMutation({
@@ -517,7 +523,7 @@ export function CalendarEventDialog({
       // The form was filled from `event`: its dates are what this save is based on.
       updateMutation.mutate({ id: event.id, data: updatePayload, expected: expectedDates(event) });
     } else {
-      createMutation.mutate({ planningGroupId: data.planningGroupId, ...payload });
+      submitCreate({ planningGroupId: data.planningGroupId, ...payload });
     }
   };
 

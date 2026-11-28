@@ -21,6 +21,7 @@ import {
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -97,6 +98,7 @@ export const vendorsRouter = router({
     .use(requirePermission('vendors:create'))
     .use(withRateLimit('configMutations'))
     .input(VendorInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       if (input.navVendorId) {
         const conflict = await ctx.prisma.vendor.findUnique({

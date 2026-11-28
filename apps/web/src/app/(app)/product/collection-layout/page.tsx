@@ -17,6 +17,7 @@ import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
 import { triggerDownload } from '../../../../lib/download';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -220,6 +221,12 @@ export default function CollectionLayoutPage() {
     }
   );
 
+  // One key per create or duplicate (#248): a retry after a lost answer replays instead of adding
+  // a second group or row. The page stays mounted, so each opening of a create dialog is a new action.
+  const { submit: submitCreateGroup } = useIdempotentAction(createGroupMutation, { open: groupDialog?.mode === 'create' });
+  const { submit: submitCreateRow } = useIdempotentAction(createRowMutation, { open: rowDrawer?.mode === 'create' });
+  const { submit: submitDuplicateRow } = useIdempotentAction(duplicateRowMutation);
+
   const updateSettingsMutation =
     trpc.collectionLayout.updateSettings.useMutation({
       onSuccess: () => invalidateLayout(),
@@ -261,10 +268,7 @@ export default function CollectionLayoutPage() {
   const handleGroupSubmit = (name: string, skuBudget: number | null) => {
     if (!layout) return;
     if (groupDialog?.mode === 'create') {
-      createGroupMutation.mutate({
-        collectionLayoutId: layout.id,
-        data: { name, skuBudget },
-      });
+      submitCreateGroup({ collectionLayoutId: layout.id, data: { name, skuBudget } });
     } else if (groupDialog?.mode === 'edit' && groupDialog.group) {
       updateGroupMutation.mutate({
         groupId: groupDialog.group.id,
@@ -294,7 +298,7 @@ export default function CollectionLayoutPage() {
 
   const handleRowSubmit = (data: CollectionLayoutRowInput, nextRowId?: string) => {
     if (rowDrawer?.mode === 'create') {
-      createRowMutation.mutate(data);
+      submitCreateRow(data);
     } else if (rowDrawer?.mode === 'edit' && rowDrawer.rowId) {
       updateRowMutation.mutate({ rowId: rowDrawer.rowId, data }, {
         // Saved on the way to another row (#55): open it instead of closing the drawer.
@@ -432,7 +436,7 @@ export default function CollectionLayoutPage() {
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={openEditRow}
-                onDuplicateRow={(rowId, includeQuotations) => duplicateRowMutation.mutate({ rowId, includeQuotations })}
+                onDuplicateRow={(rowId, includeQuotations) => submitDuplicateRow({ rowId, includeQuotations })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
                 onDeleteGroup={groupId =>
@@ -494,7 +498,7 @@ export default function CollectionLayoutPage() {
                   openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={openEditRow}
-                onDuplicateRow={(rowId, includeQuotations) => duplicateRowMutation.mutate({ rowId, includeQuotations })}
+                onDuplicateRow={(rowId, includeQuotations) => submitDuplicateRow({ rowId, includeQuotations })}
                 onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
                 onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
                 onDeleteGroup={groupId =>

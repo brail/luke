@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { calendarDateOf, type CalendarDate } from '@luke/core';
 
 import { useFormatDate } from '../../../hooks/useFormatDate';
+import { useIdempotentAction } from '../../../lib/idempotencyKey';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
@@ -44,9 +45,16 @@ export function TasksWidget() {
   const invalidate = () => utils.dashboard.getTasks.invalidate();
 
   const upsertMutation = trpc.dashboard.upsertTask.useMutation({
-    onSuccess: invalidate,
+    onSuccess: (_task, { id, label }) => {
+      // A create's text is cleared on success, not at submit: a failed create keeps it for the
+      // retry, and text typed meanwhile is a new task and stays.
+      if (!id) setNewLabel(current => (current.trim() === label ? '' : current));
+      void invalidate();
+    },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
+  // A create carries its action's key (#248); a tick by id, on the same mutation, carries none.
+  const createAction = useIdempotentAction(upsertMutation);
 
   const deleteMutation = trpc.dashboard.deleteTask.useMutation({
     onSuccess: () => {
@@ -58,9 +66,9 @@ export function TasksWidget() {
 
   function handleAdd() {
     const label = newLabel.trim();
-    if (!label) return;
-    upsertMutation.mutate({ label });
-    setNewLabel('');
+    // Enter is not stopped by the disabled button: the text stays until the create succeeds.
+    if (!label || upsertMutation.isPending) return;
+    createAction.submit({ label });
   }
 
   return (

@@ -27,6 +27,7 @@ import type { PrismaClient } from '@luke/db';
 import { APPROVED_USER_WHERE } from '../lib/approvedUsers';
 import { logAudit } from '../lib/auditLog';
 import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
@@ -228,6 +229,7 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:update'))
     .use(withRateLimit('configMutations'))
     .input(MerchandisingPlanRowInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const plan = await resolveMerchPlanBrandAccess(ctx, input.planId);
       await assertParameterSetOfPlan(ctx.prisma, input.pricingParameterSetId, plan);

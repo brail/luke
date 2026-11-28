@@ -4,6 +4,7 @@ import { FeedbackSubmitInputSchema, GitHubCreatedIssueSchema, fullName } from '@
 
 import { logAudit } from '../lib/auditLog';
 import { getTypedConfig } from '../lib/configManager';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { notifyAdmins } from '../lib/notifications';
 import { PERSON_REFERENCE_SELECT } from '../lib/personReference';
 import { withRateLimit } from '../lib/ratelimit';
@@ -29,6 +30,7 @@ export const feedbackRouter = router({
   submit: protectedProcedure
     .use(withRateLimit('configMutations'))
     .input(FeedbackSubmitInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const [token, repo] = await Promise.all([
         getTypedConfig(ctx.prisma, 'integrations.github.feedbackToken'),

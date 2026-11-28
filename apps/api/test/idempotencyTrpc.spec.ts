@@ -61,7 +61,8 @@ describe('withIdempotency — a request still in progress', () => {
     const next = vi.fn(() => first.promise);
 
     const a = call(next);
-    await expect(call(next)).rejects.toMatchObject({ code: 'CONFLICT' });
+    // The user reads it as a toast (#248).
+    await expect(call(next)).rejects.toMatchObject({ code: 'CONFLICT', refusal: 'inFlight', message: 'Questa operazione è già in corso: attendi che finisca' });
     expect(next).toHaveBeenCalledTimes(1);
 
     first.settle({ ok: true, data: 'created' });

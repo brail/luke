@@ -170,6 +170,10 @@ Prefer these helpers to manual `refetch()` calls and to ad-hoc `onSuccess`
 invalidations. The React Query client in [`src/lib/trpc.tsx`](src/lib/trpc.tsx)
 sets queries to a 60-second `staleTime` and no refetch on window focus, and
 mutations to no retry, so a failed mutation is never resubmitted automatically.
+A create a repeat would duplicate sends one `Idempotency-Key` per user action
+([`src/lib/idempotencyKey.ts`](src/lib/idempotencyKey.ts), #248), so a retry
+after a lost answer runs once; the tRPC links, which send such a call and the
+essential ones unbatched, are in [`src/lib/trpcLinks.ts`](src/lib/trpcLinks.ts).
 A query retries a network failure or a 5xx twice with jittered backoff, a 429
 once after the server's `Retry-After` (up to a minute), and no other 4xx
 ([`src/lib/queryRetry.ts`](src/lib/queryRetry.ts)). When the network comes back,

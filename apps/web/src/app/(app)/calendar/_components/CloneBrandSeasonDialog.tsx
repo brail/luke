@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -115,6 +116,10 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per clone (#248): a retry after a lost answer replays instead of cloning twice. The
+  // dialog stays mounted, so each opening is a new action.
+  const { submit: submitClone } = useIdempotentAction(cloneMutation, { open });
+
   // The dialog stays mounted across open/close, so without this reset it reopens on the source
   // calendar and group selection of the previous clone.
   useEffect(() => {
@@ -141,7 +146,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
   };
 
   const handleClone = (data: CloneFormData) => {
-    cloneMutation.mutate({
+    submitClone({
       sourceBrandId: data.sourceBrandId,
       sourceSeasonId: data.sourceSeasonId,
       targetBrandId,

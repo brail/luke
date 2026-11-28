@@ -7,6 +7,7 @@
 
 import { TRPCError } from '@trpc/server';
 
+import { IdempotencyRefusedError } from './error';
 import { idempotencyStore } from './idempotency';
 
 /**
@@ -31,7 +32,8 @@ export function withIdempotency({ scope = 'caller' }: { scope?: 'caller' | 'anon
   // with the stricter MiddlewareResult type that t.middleware requires — verified
   // empirically: with a precise type instead of `any`, `.use()` rejects the
   // function on every router that uses it (same error everywhere).
-  return async ({ ctx, next, path, type, input }: any) => {
+  // Named so a test can find it among a procedure's middlewares (`_def.middlewares`).
+  return async function idempotency({ ctx, next, path, type, input }: any) {
     // Only for mutations (queries don't need idempotency)
     if (type !== 'mutation') {
       return next();
@@ -82,17 +84,11 @@ export function withIdempotency({ scope = 'caller' }: { scope?: 'caller' | 'anon
     switch (begun.kind) {
       case 'hit':
         return begun.response;
+      // Both reach the user as a toast; one key is one action.
       case 'conflict':
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message:
-            'Idempotency-Key already used with different request body. Each key must identify a single operation.',
-        });
+        throw new IdempotencyRefusedError('conflict', 'Questa operazione è già stata inviata con dati diversi: ricarica e riprova');
       case 'inFlight':
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'A request with this Idempotency-Key is still in progress. Retry once it has finished.',
-        });
+        throw new IdempotencyRefusedError('inFlight', 'Questa operazione è già in corso: attendi che finisca');
       case 'full':
         throw new TRPCError({
           code: 'TOO_MANY_REQUESTS',

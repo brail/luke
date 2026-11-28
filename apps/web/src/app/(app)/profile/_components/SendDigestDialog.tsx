@@ -25,6 +25,7 @@ import {
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { useFormatDate } from '../../../../hooks/useFormatDate';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -51,6 +52,9 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
   const isPending = digestMutation.isPending;
+  // One key per send (#248): a retry after a lost answer replays instead of mailing the recap twice.
+  // The dialog stays mounted, so each opening is a new action.
+  const { submit: submitDigest } = useIdempotentAction(digestMutation, { open });
 
   // The dialog stays mounted across open/close: closing clears the range, so the next opening starts
   // from today once the profile zone is known; a range already typed is never overwritten, not even
@@ -74,7 +78,7 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => digestMutation.mutate(data))} className="grid gap-4">
+          <form onSubmit={form.handleSubmit(data => submitDigest(data))} className="grid gap-4">
             <div className="grid grid-cols-2 gap-3 py-2">
               <FormField
                 control={form.control}

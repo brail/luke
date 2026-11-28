@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
+import { useIdempotentAction } from '../../../../../lib/idempotencyKey';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -118,6 +119,10 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per save (#248): a retry after a lost answer replays instead of adding the period twice.
+  // The dialog stays mounted, so each opening is a new action.
+  const upsertAction = useIdempotentAction(upsertMutation, { open: dialogOpen });
+
   const deleteMutation = trpc.holidays.deleteVendorClosure.useMutation({
     onSuccess: () => {
       toast.success('Periodo eliminato');
@@ -166,7 +171,7 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
 
   function handleSave(data: ClosureForm) {
     if (!season?.id) return;
-    upsertMutation.mutate({
+    upsertAction.submit({
       id: editTarget ?? undefined,
       vendorId,
       seasonId: season.id,

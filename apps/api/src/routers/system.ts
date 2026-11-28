@@ -1,6 +1,7 @@
 import { CalendarDigestRangeInputSchema } from '@luke/core';
 
 import { runDigestNow } from '../lib/calendarDigestScheduler';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -25,6 +26,7 @@ export const systemRouter = router({
     // a new `rateLimit.*` AppConfig key.
     .use(withRateLimit('exportGeneration'))
     .input(CalendarDigestRangeInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       await runDigestNow(ctx.prisma, ctx.logger, input, ctx.session.user.id);
       return { ok: true };

@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-react';
 
 import { calendarDateIn } from '@luke/core';
 
+import { idempotencyKeyOf } from '../../../../../lib/idempotencyKey';
 import { SendDigestDialog } from '../SendDigestDialog';
 
 /**
@@ -23,7 +24,7 @@ const { meQuery, mutateMock } = vi.hoisted(() => ({
 vi.mock('../../../../../lib/trpc', () => ({
   trpc: {
     me: { get: { useQuery: () => meQuery } },
-    system: { triggerCalendarDigest: { useMutation: () => ({ mutate: mutateMock, isPending: false }) } },
+    system: { triggerCalendarDigest: { useMutation: () => ({ mutateAsync: mutateMock, isPending: false }) } },
   },
 }));
 
@@ -61,6 +62,7 @@ test.each(['Pacific/Kiritimati', 'Pacific/Pago_Pago'])('defaults to today in the
 
   // The mutation receives the schema's output, the two calendar dates.
   const sent = mutateMock.mock.calls[0]?.[0] as { from: string; to: string } | undefined;
+  expect(idempotencyKeyOf(sent)).toBeDefined();
   expect([before, after]).toContain(sent?.from);
   expect(sent?.to).toBe(sent?.from);
 });

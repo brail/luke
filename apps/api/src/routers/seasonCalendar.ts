@@ -44,6 +44,7 @@ import {
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
 import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey, refuseOnInactiveFunction } from '../lib/error.js';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { PERSON_REFERENCE_SELECT } from '../lib/personReference.js';
@@ -319,6 +320,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
     .input(CalendarEventCreateInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
@@ -794,6 +796,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
     .input(ApplyTemplateInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
 
@@ -878,6 +881,7 @@ export const seasonCalendarRouter = router({
   createTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:create'))
     .input(z.object({ templateId: z.uuid() }).and(MilestoneTemplateItemBaseSchema))
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const { templateId, ...data } = input;
       const result = await createTemplateItem(templateId, data, ctx.prisma);
@@ -935,6 +939,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
     .input(CloneSeasonCalendarInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.sourceBrandId);
       await assertBrandAccess(ctx, input.targetBrandId);

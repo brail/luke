@@ -30,6 +30,7 @@ import { Prisma, type PrismaClient } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -176,6 +177,7 @@ const groupsRouter = router({
         data: CollectionGroupInputSchema,
       })
     )
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       await assertUnlocked('COLLECTION_LAYOUT', input.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
@@ -273,6 +275,7 @@ const rowsRouter = router({
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, removePicture: _removePicture, quotations, phaseChangeNote: _phaseChangeNote, ...rowInput } = input;
 
@@ -498,6 +501,7 @@ const rowsRouter = router({
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowDuplicateInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
       const result = await duplicateRow(input.rowId, ctx.prisma, ctx.session!.user.id, input.includeQuotations);

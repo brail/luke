@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { useIdempotentAction } from '../../../../../lib/idempotencyKey';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -76,13 +77,17 @@ export function CreateRevisionDialog({
     onError: e => toast.error(getTrpcErrorMessage(e)),
   });
 
+  // One key per revision (#248): a retry after a lost answer replays instead of cutting a second
+  // revision. The dialog stays mounted, so each opening is a new action.
+  const { submit: submitCreate } = useIdempotentAction(createMutation, { open });
+
   const selectedRevisionType = revisionTypeItems.find(i => i.value === revisionTypeValue);
 
   const canSubmit = revisionTypeValue.length > 0;
 
   const handleSubmit = () => {
     if (!revisionTypeValue) return;
-    createMutation.mutate({
+    submitCreate({
       collectionLayoutId: layout.id,
       revisionTypeValue,
       notes: notes.trim() || null,

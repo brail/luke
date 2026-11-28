@@ -17,6 +17,7 @@ import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -60,6 +61,9 @@ export default function MaintenanceModePage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per schedule (#248): a retry after a lost answer replays it instead of scheduling again.
+  const scheduleAction = useIdempotentAction(scheduleMutation);
+
   const activateMutation = trpc.maintenance.mode.activateNow.useMutation({
     onSuccess: () => {
       toast.success('Modalità manutenzione attivata');
@@ -92,7 +96,7 @@ export default function MaintenanceModePage() {
       toast.error('Seleziona una data e un\'ora valide');
       return;
     }
-    scheduleMutation.mutate({
+    scheduleAction.submit({
       // A wall time the zone skips moves past the gap; a repeated one is its first occurrence.
       scheduledAt: instantAt(date, time, formZone).toISOString(),
       message: message.trim() || undefined,

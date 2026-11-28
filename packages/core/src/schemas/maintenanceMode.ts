@@ -11,18 +11,18 @@ export const MaintenanceModeStatusSchema = z.enum(['INACTIVE', 'SCHEDULED', 'ACT
 /** Default warning thresholds (minutes before activation) when the admin doesn't override them. */
 export const DEFAULT_WARNING_LEAD_MINUTES = [15, 5, 1];
 
-export const MaintenanceModeScheduleInputSchema = z
-  .object({
-    scheduledAt: TimedInstantSchema,
-    message: z.string().max(500).trim().optional(),
-    forceLogout: z.boolean().default(false),
-    warningLeadMinutes: z.array(z.number().int().positive()).max(10).default(DEFAULT_WARNING_LEAD_MINUTES),
-    notifyByEmail: z.boolean().default(false),
-  })
-  .refine(data => new Date(data.scheduledAt).getTime() > Date.now(), {
-    message: 'La data pianificata deve essere nel futuro',
-    path: ['scheduledAt'],
-  });
+/**
+ * Structural rules only. "`scheduledAt` in the future" depends on the clock, so `schedule` checks it
+ * when it runs: an idempotent replay of a schedule accepted earlier must still parse once that time
+ * has passed (#248).
+ */
+export const MaintenanceModeScheduleInputSchema = z.object({
+  scheduledAt: TimedInstantSchema,
+  message: z.string().max(500).trim().optional(),
+  forceLogout: z.boolean().default(false),
+  warningLeadMinutes: z.array(z.number().int().positive()).max(10).default(DEFAULT_WARNING_LEAD_MINUTES),
+  notifyByEmail: z.boolean().default(false),
+});
 
 export const MaintenanceModeActivateInputSchema = z.object({
   message: z.string().max(500).trim().optional(),

@@ -6,6 +6,7 @@ import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { FOREIGN_KEYS, isForeignKeyViolation, isRecordNotFound } from '../lib/error.js';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
@@ -329,6 +330,7 @@ export const holidaysRouter = router({
   upsertVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:configure'))
     .input(VendorClosureUpsertInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const data = {
         countryCode: input.countryCode,

@@ -15,6 +15,7 @@ import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -47,8 +48,13 @@ export default function VendorsPage() {
 
   const createMutation = trpc.vendors.create.useMutation({
     onSuccess: () => { invalidate(); setIsDialogOpen(false); toast.success('Fornitore creato con successo'); },
-    onError: error => toast.error(getError(error)),
+    // Not `getError`: a create's CONFLICT is the NAV link taken or the action's idempotency key
+    // reused (#248), each with its own server text, which the NAV override would misname.
+    onError: error => toast.error(getTrpcErrorMessage(error)),
   });
+  // One key per new vendor (#248): a retry after a lost answer replays instead of adding it twice.
+  // The page stays mounted, so each opening of the dialog for a new vendor is a new action.
+  const createAction = useIdempotentAction(createMutation, { open: isDialogOpen && !editingVendor });
 
   const updateMutation = trpc.vendors.update.useMutation({
     onSuccess: () => { invalidate(); setIsDialogOpen(false); setEditingVendor(null); toast.success('Fornitore aggiornato con successo'); },
@@ -87,7 +93,7 @@ export default function VendorsPage() {
     if (editingVendor) {
       await updateMutation.mutateAsync({ id: editingVendor.id, data });
     } else {
-      await createMutation.mutateAsync(data);
+      await createAction.submitAsync(data);
     }
   };
 

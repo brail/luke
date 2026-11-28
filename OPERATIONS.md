@@ -196,8 +196,14 @@ split at the same number, so a busy page sends a second request instead.
 
 Mutations that chain `withIdempotency()` accept an `Idempotency-Key` header
 carrying a UUID v4: `auth.login`, `me.changePassword`, `config.set`,
-`config.update`, `config.setMultiple`, `users.create` and `users.update`.
-Queries are never deduplicated.
+`config.update`, `config.setMultiple`, `users.create`, `users.update`, and the
+creates a repeat would duplicate (#248), listed in `KEYED_CREATES` in
+`apps/api/test/idempotentCreates.integration.spec.ts`. The web sends those
+creates with one key per user action (`useIdempotentAction`,
+`apps/web/src/lib/idempotencyKey.ts`): a retry after a lost answer replays the
+first result instead of creating again, and a refusal by the procedure itself
+(which stores nothing) ends the action, so the next submit is a new one. A call with a key travels alone, not in
+a tRPC batch (`apps/web/src/lib/trpcLinks.ts`). Queries are never deduplicated.
 
 - **The header is optional.** Without it the mutation runs with no protection.
 - **Same key and same input within five minutes:** the stored result is returned
@@ -268,7 +274,7 @@ text, and a neutral one for a 503 without a reason, such as a proxy's page:
 | No valid sign-in strategy stored (the same answer for every account), a login whose password the directory verified and whose user record could not be written, or a signed-in password check LDAP could not complete — see the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback); reason `auth_unavailable` | `SERVICE_UNAVAILABLE` | 503 |
 | A signed-in call during maintenance, for a role that cannot bypass it; reason `maintenance` | `SERVICE_UNAVAILABLE` | 503 |
 | Login with a proven password during maintenance, for a role that cannot bypass it (message `MAINTENANCE_ACTIVE`) | `FORBIDDEN` | 403 |
-| Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
+| Idempotency key reused with a different input, or a request with the same key still in progress (each with an Italian message the web shows as is, and `data.idempotency`: `conflict` or `inFlight`) | `CONFLICT` | 409 |
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 | A settings test (LDAP, mail, NAV, storage, Google) or the NAV preview that the external system refused | `PRECONDITION_FAILED` | 412 |

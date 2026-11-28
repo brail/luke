@@ -29,6 +29,7 @@ import {
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
 import { functionLabel, offeredFunctions } from '../../../../../lib/companyFunction';
+import { useIdempotentAction } from '../../../../../lib/idempotencyKey';
 import { suggestedTemplateOffset } from '../../../../../lib/templateOffset';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
@@ -126,6 +127,10 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per new item (#248): a retry after a lost answer replays instead of adding it twice. The
+  // dialog stays mounted, so each opening is a new action.
+  const { submit: submitCreate } = useIdempotentAction(createMutation, { open });
+
   const updateMutation = trpc.seasonCalendar.updateTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiornato'); onSaved(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
@@ -148,7 +153,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     if (isEdit) {
       updateMutation.mutate({ id: item.id, ...payload });
     } else {
-      createMutation.mutate({ templateId, ...payload });
+      submitCreate({ templateId, ...payload });
     }
   };
 

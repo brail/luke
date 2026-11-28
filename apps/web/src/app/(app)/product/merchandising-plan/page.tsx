@@ -11,6 +11,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -110,6 +111,10 @@ export default function MerchandisingPlanPage() {
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per new row (#248): a retry after a lost answer replays instead of adding it twice. The
+  // page stays mounted, so each opening of the create dialog is a new action.
+  const createRowAction = useIdempotentAction(createRowMutation, { open: rowDialog?.mode === 'create' });
+
   // ─── Render ─────────────────────────────────────────────────────
   const isLoading = contextLoading || planLoading || rowsLoading || ensurePlanMutation.isPending;
 
@@ -189,7 +194,7 @@ export default function MerchandisingPlanPage() {
           seasonId={season?.id ?? ''}
           onSubmit={data => {
             if (rowDialog?.mode === 'create') {
-              createRowMutation.mutate({ ...data, planId: plan.id });
+              createRowAction.submit({ ...data, planId: plan.id });
             } else if (rowDialog?.row) {
               updateRowMutation.mutate({ id: rowDialog.row.id, data });
             }

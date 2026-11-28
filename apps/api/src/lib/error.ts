@@ -297,6 +297,21 @@ export class SessionEndedError extends TRPCError {
 }
 
 /**
+ * A `CONFLICT` from the idempotency layer (`withIdempotency`, #248), not from the procedure: the key's
+ * first request is still running (`inFlight`), or the key was used with other data (`conflict`).
+ * The formatter sends `data.idempotency`, so the web keeps the action's key: neither answer means
+ * the request ran and stored nothing, as a refusal by the procedure itself does.
+ */
+export class IdempotencyRefusedError extends TRPCError {
+  constructor(
+    readonly refusal: 'inFlight' | 'conflict',
+    message: string
+  ) {
+    super({ code: 'CONFLICT', message });
+  }
+}
+
+/**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
  * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
  *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it
@@ -304,7 +319,8 @@ export class SessionEndedError extends TRPCError {
  * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
  *   and this keeps every issue with the field it belongs to;
  * - `unavailableReason`, for a `ServiceUnavailableError`: why the service is unavailable;
- * - `sessionEnded`, for a `SessionEndedError`: the session is over, sign out.
+ * - `sessionEnded`, for a `SessionEndedError`: the session is over, sign out;
+ * - `idempotency`, for an `IdempotencyRefusedError`: which refusal of the idempotency layer.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
   data: TRPCDefaultErrorShape['data'] & {
@@ -312,6 +328,7 @@ export interface LukeErrorShape extends TRPCDefaultErrorShape {
     zodIssues?: ZodIssueData[];
     unavailableReason?: ServiceUnavailableReason;
     sessionEnded?: true;
+    idempotency?: IdempotencyRefusedError['refusal'];
   };
 }
 
@@ -334,7 +351,8 @@ function clientMessage(shape: TRPCDefaultErrorShape, error: TRPCError): string {
  * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
  * Decides which message reaches the client (see `clientMessage`) and surfaces
  * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`), `unavailableReason` for a
- * `ServiceUnavailableError` and `sessionEnded` for a `SessionEndedError`.
+ * `ServiceUnavailableError`, `sessionEnded` for a `SessionEndedError` and `idempotency` for an
+ * `IdempotencyRefusedError`.
  */
 export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
   const retryAfterSeconds = isRateLimitExceededCause(error.cause)
@@ -356,6 +374,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
       ...(zodIssues !== undefined && { zodIssues }),
       ...(error instanceof ServiceUnavailableError && { unavailableReason: error.reason }),
       ...(error instanceof SessionEndedError && { sessionEnded: true as const }),
+      ...(error instanceof IdempotencyRefusedError && { idempotency: error.refusal }),
     },
   };
 };

@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { FeedbackSubmitInputSchema } from '@luke/core';
 
+import { useIdempotentAction } from '../lib/idempotencyKey';
 import { trpc } from '../lib/trpc';
 import { getTrpcErrorMessage } from '../lib/trpcErrorMessages';
 
@@ -70,6 +71,10 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     },
   });
 
+  // One key per report (#248): a retry after a lost answer replays instead of opening a second issue.
+  // The dialog stays mounted, so each opening is a new action.
+  const { submit: submitReport } = useIdempotentAction(submit, { open });
+
   const type = form.watch('type');
 
   // The dialog stays mounted for the lifetime of the sidebar, so without this reset a report
@@ -96,7 +101,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => submit.mutate(data))} className="grid gap-4">
+          <form onSubmit={form.handleSubmit(data => submitReport(data))} className="grid gap-4">
             <div className="space-y-4 py-2">
               <FormField
                 control={form.control}

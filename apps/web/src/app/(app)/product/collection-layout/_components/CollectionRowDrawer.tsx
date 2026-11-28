@@ -29,6 +29,7 @@ import { Form } from '../../../../../components/ui/form';
 import { triggerDownload } from '../../../../../lib/download';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { uuidV4 } from '../../../../../lib/uuid';
 
 import { ChangePhaseDialog } from './ChangePhaseDialog';
 import { ChangePlanningGroupDialog } from './ChangePlanningGroupDialog';
@@ -264,9 +265,7 @@ export function CollectionRowDrawer({
   const handleAddQuotation = () => {
     if (!row?.id) return;
     editQuotations(prev => [...prev, {
-      // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
-      // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
-      id: crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36),
+      id: uuidV4(),
       rowId: row.id,
       order: prev.length,
       pricingParameterSetId: null,

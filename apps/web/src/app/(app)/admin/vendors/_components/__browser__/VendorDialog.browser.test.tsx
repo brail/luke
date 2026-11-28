@@ -32,7 +32,7 @@ vi.mock('../../../../../../lib/trpc', () => {
       holidays: {
         listCountries: { useQuery: () => ({ data: [] }) },
         listVendorClosures: { useQuery: (...args: unknown[]) => { closuresQuery(...args); return closures; } },
-        upsertVendorClosure: { useMutation: () => ({ mutate: upsertClosure, isPending: false }) },
+        upsertVendorClosure: { useMutation: () => ({ mutateAsync: upsertClosure, isPending: false }) },
         deleteVendorClosure: { useMutation: idleMutation },
         confirmVendorClosures: { useMutation: idleMutation },
         prefillVendorClosures: { useMutation: idleMutation },

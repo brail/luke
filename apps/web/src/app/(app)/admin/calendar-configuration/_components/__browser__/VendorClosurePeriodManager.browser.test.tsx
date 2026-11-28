@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { idempotencyKeyOf } from '../../../../../../lib/idempotencyKey';
 import { VendorClosurePeriodManager } from '../VendorClosurePeriodManager';
 
 /**
@@ -26,7 +27,7 @@ vi.mock('../../../../../../lib/trpc', () => ({
     holidays: {
       listCountries: { useQuery: () => ({ data: [] }) },
       listVendorClosures: { useQuery: () => closures },
-      upsertVendorClosure: { useMutation: () => ({ mutate: upsertMock, isPending: false }) },
+      upsertVendorClosure: { useMutation: () => ({ mutateAsync: upsertMock, isPending: false }) },
       deleteVendorClosure: { useMutation: idleMutation },
       confirmVendorClosures: { useMutation: idleMutation },
       prefillVendorClosures: { useMutation: idleMutation },
@@ -58,4 +59,5 @@ test('an edited closure is saved as the calendar days it shows', async () => {
 
   await vi.waitFor(() => expect(upsertMock).toHaveBeenCalledTimes(1));
   expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ startDate: '2026-08-10', endDate: '2026-08-21' }));
+  expect(idempotencyKeyOf(upsertMock.mock.calls[0]?.[0])).toBeDefined();
 });

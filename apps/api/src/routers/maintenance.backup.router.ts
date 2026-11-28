@@ -34,6 +34,7 @@ import {
 } from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfigs } from '../lib/configManager';
 import { toErrorCode } from '../lib/error';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
 import { clearTokenVersionCache } from '../lib/tokenVersionCache';
@@ -250,6 +251,7 @@ export const backupRouter = router({
   create: protectedProcedure
     .use(requirePermission('maintenance:backup_create'))
     .input(BackupCreateInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
       const record = await createPendingBackupRecord(ctx.prisma, {
         scope: input.scope,
@@ -292,6 +294,7 @@ export const backupRouter = router({
   runMigrationBridge: protectedProcedure
     .use(requirePermission('maintenance:backup_restore'))
     .input(RunMigrationBridgeInputSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
       const target = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
       if (!target || target.status !== 'COMPLETED') {

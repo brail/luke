@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from '../../../../components/ui/select';
 import { useFormatDate } from '../../../../hooks/useFormatDate';
+import { useIdempotentAction } from '../../../../lib/idempotencyKey';
 import { narrowRouterOutput, trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -105,6 +106,10 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // One key per apply (#248): a retry after a lost answer replays instead of applying twice. The
+  // dialog stays mounted, so each opening is a new action.
+  const { submitBuilt: submitApply } = useIdempotentAction(applyMutation, { open });
+
   // The dialog stays mounted across open/close, so without this reset it reopens on the group and
   // template picked last time.
   useEffect(() => {
@@ -124,7 +129,9 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
   };
 
   const handleApply = (data: ApplyTemplateFormData) => {
-    applyMutation.mutate({ ...data, force: hasMilestones });
+    // `force` comes from the group list, not from the form: frozen with the attempt, so a retry after
+    // the list refreshed (the group now has the events of the lost answer) still replays.
+    submitApply(data, entered => ({ ...entered, force: hasMilestones }));
   };
 
   return (
