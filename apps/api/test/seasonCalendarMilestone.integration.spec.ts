@@ -27,6 +27,7 @@ import {
   grantBrandAccess,
   setupTestDb,
 } from './helpers';
+import { holdRow, whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -237,6 +238,9 @@ describe('cancelMilestone — retiring without destroying', () => {
     expect(after.cancelledAt).not.toBeNull();
     expect(after.cancelReason).toBe('campionatura annullata');
     expect(after.cancelledByUserId).toBe(adminSession.user.id);
+    const audit = await prisma.auditLog.findMany({ where: { action: 'CALENDAR_EVENT_CANCEL', targetId: event.id } });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.metadata).toMatchObject({ reason: 'campionatura annullata' });
   });
 
   it('the reason is mandatory, not whitespace only and under 500 characters', async () => {
@@ -263,6 +267,22 @@ describe('cancelMilestone — retiring without destroying', () => {
     await expect(
       asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'di nuovo' })
     ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('of two concurrent cancels, the second conflicts and keeps the first one\'s reason (#249)', async () => {
+    const event = await createEvent();
+    // The first cancel holds the event row and commits while the second is past its own check.
+    const outcome = await whileHeld(
+      holdRow('calendar_events', event.id),
+      () => asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'seconda' }),
+      holder => holder.query(
+        `UPDATE calendar_events SET "cancelledAt" = now(), "cancelReason" = 'prima' WHERE id = $1`, [event.id]
+      )
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    expect((await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).cancelReason).toBe('prima');
+    expect(await prisma.auditLog.count({ where: { action: 'CALENDAR_EVENT_CANCEL', targetId: event.id } })).toBe(0);
   });
 
   it('a cancelled event can no longer be moved', async () => {

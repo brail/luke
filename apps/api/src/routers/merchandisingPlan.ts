@@ -430,7 +430,8 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Replaces the entire BOM component list for a specsheet (deleteMany + createMany in a transaction).
+   * Replaces the entire BOM component list for a specsheet (deleteMany + createMany in a transaction,
+   * under the specsheet's row lock: two concurrent saves apply one after the other, never merged).
    *
    * @auth merchandising_plan:update
    * @input { specsheetId, components: MerchandisingComponentInput[] }
@@ -448,11 +449,15 @@ export const merchandisingPlanRouter = router({
     .mutation(async ({ input, ctx }) => {
       await resolveMerchSpecsheetBrandAccess(ctx, input.specsheetId);
 
-      await ctx.prisma.$transaction([
-        ctx.prisma.merchandisingComponent.deleteMany({
-          where: { specsheetId: input.specsheetId },
-        }),
-        ctx.prisma.merchandisingComponent.createMany({
+      await ctx.prisma.$transaction(async tx => {
+        // Raw SQL exception: a row lock inside an interactive transaction. A second save waits here
+        // until this one commits, then replaces its lines. NO KEY: the components' foreign key checks
+        // do not wait on it. No row: the specsheet was deleted since the access check.
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM merchandising_specsheets WHERE id = ${input.specsheetId} FOR NO KEY UPDATE`;
+        if (locked.length === 0) throw new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
+        await tx.merchandisingComponent.deleteMany({ where: { specsheetId: input.specsheetId } });
+        await tx.merchandisingComponent.createMany({
           data: input.components.map((c, i) => ({
             specsheetId: input.specsheetId,
             order: c.order ?? i,
@@ -463,14 +468,16 @@ export const merchandisingPlanRouter = router({
             color: c.color ?? null,
             pantoneNotes: c.pantoneNotes ?? null,
           })),
-        }),
-      ]);
-      await logAudit(ctx, {
-        action: 'MERCHANDISING_COMPONENTS_UPSERT',
-        targetType: 'MerchandisingSpecsheet',
-        targetId: input.specsheetId,
-        result: 'SUCCESS',
-        metadata: { count: input.components.length },
+        });
+        // Required, here and below: a failed insert aborts the transaction, so swallowing it would
+        // answer a rolled-back write as done.
+        await logAudit(ctx, {
+          action: 'MERCHANDISING_COMPONENTS_UPSERT',
+          targetType: 'MerchandisingSpecsheet',
+          targetId: input.specsheetId,
+          result: 'SUCCESS',
+          metadata: { count: input.components.length },
+        }, { tx, required: true });
       });
       return { success: true };
     }),
@@ -528,7 +535,8 @@ export const merchandisingPlanRouter = router({
   /**
    * Assigns (or removes when `userId` is null) a user to a plan row.
    *
-   * Sends an in-app notification to the newly assigned user (or the previously assigned user on removal).
+   * Sends an in-app notification to the newly assigned user, and to the previous assignee whenever they are
+   * replaced (removal, or a direct reassignment: owner #63 a).
    *
    * @auth merchandising_plan:update
    * @input { rowId, userId: string | null }
@@ -565,39 +573,49 @@ export const merchandisingPlanRouter = router({
         }
       }
 
-      const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
-        where: { id: input.rowId },
-        select: { assignedUserId: true, articleCode: true },
+      // The assignee replaced is read under the row lock, so two concurrent assignments apply one
+      // after the other and each notifies from what it actually replaced. Raw SQL exception: a row
+      // lock inside an interactive transaction.
+      const { result, replaced } = await ctx.prisma.$transaction(async tx => {
+        const [current] = await tx.$queryRaw<{ assignedUserId: string | null }[]>`
+          SELECT "assignedUserId" FROM merchandising_plan_rows WHERE id = ${input.rowId} FOR NO KEY UPDATE`;
+        if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+        const updated = await tx.merchandisingPlanRow.update({
+          where: { id: input.rowId },
+          data: { assignedUserId: input.userId },
+        });
+        await logAudit(ctx, {
+          action: 'MERCHANDISING_ROW_ASSIGN_USER',
+          targetType: 'MerchandisingPlanRow',
+          targetId: input.rowId,
+          result: 'SUCCESS',
+          metadata: { userId: input.userId },
+        }, { tx, required: true });
+        return { result: updated, replaced: current.assignedUserId };
       });
 
-      const result = await ctx.prisma.merchandisingPlanRow.update({
-        where: { id: input.rowId },
-        data: { assignedUserId: input.userId },
-      });
-      await logAudit(ctx, {
-        action: 'MERCHANDISING_ROW_ASSIGN_USER',
-        targetType: 'MerchandisingPlanRow',
-        targetId: input.rowId,
-        result: 'SUCCESS',
-        metadata: { userId: input.userId },
-      });
-
-      if (input.userId && input.userId !== existingRow?.assignedUserId) {
-        await createNotification(ctx.prisma, {
+      const rowLabel = result.articleCode ?? input.rowId;
+      // The assignment is committed: a notification failure is logged, never answered as a failed assignment.
+      const notify = (data: Parameters<typeof createNotification>[1]) =>
+        createNotification(ctx.prisma, data)
+          .catch((err: unknown) => ctx.logger.error({ err, rowId: input.rowId, userId: data.userId }, 'assignment notification failed after commit'));
+      if (input.userId && input.userId !== replaced) {
+        await notify({
           userId: input.userId,
           category: 'WORKFLOW',
           title: 'Riga assegnata',
-          message: `Sei stato assegnato alla riga ${existingRow?.articleCode ?? input.rowId}`,
+          message: `Sei stato assegnato alla riga ${rowLabel}`,
           link: '/product/merchandising-plan',
           data: { rowId: input.rowId },
         });
       }
-      if (!input.userId && existingRow?.assignedUserId) {
-        await createNotification(ctx.prisma, {
-          userId: existingRow.assignedUserId,
+      // Removed by an unassignment or by a direct reassignment to someone else (owner #63 a).
+      if (replaced && replaced !== input.userId) {
+        await notify({
+          userId: replaced,
           category: 'WORKFLOW',
           title: 'Riga rimossa',
-          message: `Sei stato rimosso dalla riga ${existingRow.articleCode ?? input.rowId}`,
+          message: `Sei stato rimosso dalla riga ${rowLabel}`,
           data: { rowId: input.rowId },
         });
       }

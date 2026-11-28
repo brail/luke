@@ -43,7 +43,7 @@ import {
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
-import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey, refuseOnInactiveFunction } from '../lib/error.js';
+import { FOREIGN_KEYS, isRecordNotFound, isUniqueViolation, refuseOnForeignKey, refuseOnInactiveFunction } from '../lib/error.js';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -626,12 +626,22 @@ export const seasonCalendarRouter = router({
       if (event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento già annullato' });
       await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
-      const result = await ctx.prisma.calendarEvent.update({
-        where: { id: input.id },
-        data: { cancelledAt: new Date(), cancelReason: input.reason, cancelledByUserId: ctx.session.user.id },
+      const result = await ctx.prisma.$transaction(async tx => {
+        // Conditional on the check above (rule 3): of two concurrent cancels one writes, the other
+        // finds nothing left to cancel — one reason, one audit row, one notification.
+        const cancelled = await tx.calendarEvent.update({
+          where: { id: input.id, cancelledAt: null },
+          data: { cancelledAt: new Date(), cancelReason: input.reason, cancelledByUserId: ctx.session.user.id },
+        }).catch(async (err: unknown) => {
+          if (!isRecordNotFound(err)) throw err;
+          const exists = await tx.calendarEvent.count({ where: { id: input.id } });
+          throw exists
+            ? new TRPCError({ code: 'CONFLICT', message: 'Evento già annullato' })
+            : new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+        });
+        await logAudit(ctx, { action: 'CALENDAR_EVENT_CANCEL', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: cancelled.title, calendarId: event.calendarId, reason: input.reason } }, { tx, required: true });
+        return cancelled;
       });
-
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_CANCEL', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: event.title, calendarId: event.calendarId, reason: input.reason } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on cancel'));
 

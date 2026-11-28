@@ -482,10 +482,12 @@ export const usersCoreRouter = router({
             where: { id },
             select: { role: true, isActive: true, username: true },
           });
+          // Deleted since the read above, by a deletion that held the lock first: nothing to update.
+          if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
 
           if (
             updateData.role !== undefined &&
-            updateData.role !== current?.role &&
+            updateData.role !== current.role &&
             !can(ctx, '*:*')
           ) {
             logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
@@ -502,14 +504,14 @@ export const usersCoreRouter = router({
           const changesIdentity = attemptedPrivilegedFields.length > 0;
 
           const revokesSessions =
-            (updateData.role !== undefined && updateData.role !== current?.role) ||
+            (updateData.role !== undefined && updateData.role !== current.role) ||
             (updateData.isActive !== undefined &&
-              updateData.isActive !== current?.isActive) ||
+              updateData.isActive !== current.isActive) ||
             passwordHash !== undefined ||
             changesIdentity;
 
           const removesAdminPrivilege =
-            current?.role === 'admin' &&
+            current.role === 'admin' &&
             ((updateData.role !== undefined && updateData.role !== 'admin') ||
               updateData.isActive === false);
 
@@ -560,7 +562,7 @@ export const usersCoreRouter = router({
           // (#229): one conditional write, under the row lock above. None moved is fine (an
           // external-only account). One already filed under the new name belongs to another
           // account: the unique index refuses it, answered below.
-          if (current && updateData.username !== undefined && updateData.username !== current.username) {
+          if (updateData.username !== undefined && updateData.username !== current.username) {
             await tx.identity.updateMany({
               where: { userId: id, provider: 'LOCAL', providerId: current.username },
               data: { providerId: updated.username },
@@ -574,9 +576,9 @@ export const usersCoreRouter = router({
           }
 
           // In the transaction: an access change is never saved without its row.
-          const roleChanged = !!current && updated.role !== current.role;
-          const activeChanged = !!current && updated.isActive !== current.isActive;
-          if (current && (roleChanged || activeChanged)) {
+          const roleChanged = updated.role !== current.role;
+          const activeChanged = updated.isActive !== current.isActive;
+          if (roleChanged || activeChanged) {
             await logAudit(ctx, {
               action: 'USER_ACCESS_CHANGED',
               targetType: 'User',
@@ -621,15 +623,15 @@ export const usersCoreRouter = router({
 
       // The mutation is already committed: a notification failure must not
       // masquerade as a failure of the update itself.
-      if (updateData.role && updateData.role !== current?.role) {
+      if (updateData.role && updateData.role !== current.role) {
         invalidateRbacCache();
         try {
           await createNotification(ctx.prisma, {
             userId: input.id,
             category: 'WORKFLOW',
             title: 'Ruolo aggiornato',
-            message: `Il tuo ruolo è cambiato da "${current?.role}" a "${updateData.role}"`,
-            data: { oldRole: current?.role, newRole: updateData.role },
+            message: `Il tuo ruolo è cambiato da "${current.role}" a "${updateData.role}"`,
+            data: { oldRole: current.role, newRole: updateData.role },
           });
         } catch (err) {
           ctx.logger.error({ err, userId: input.id }, 'Role change notification failed after a successful update');
@@ -650,7 +652,7 @@ export const usersCoreRouter = router({
         }
       }
 
-      if (typeof updateData.isActive === 'boolean' && updateData.isActive !== current?.isActive) {
+      if (typeof updateData.isActive === 'boolean' && updateData.isActive !== current.isActive) {
         try {
           await createNotification(ctx.prisma, {
             userId: input.id,

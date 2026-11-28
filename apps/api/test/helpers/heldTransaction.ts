@@ -15,6 +15,7 @@ import { expect } from 'vitest';
 
 import { APP_CONFIG_WRITE_LOCK_KEY } from '../../src/lib/configManager';
 import { LAST_ADMIN_LOCK_KEY } from '../../src/lib/lastAdminGuard';
+import { CALENDAR_FREEZE_LOCK_KEY } from '../../src/services/seasonCalendar.service';
 
 export async function whileHeld<T>(
   hold: (holder: Client) => Promise<unknown>,
@@ -98,3 +99,11 @@ export const holdUserRow = (userId: string) => (holder: Client) =>
 /** Holds the AppConfig write lock (`acquireAppConfigWriteLock`), for `whileHeld`. */
 export const holdAppConfigWriteLock = (holder: Client) =>
   holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [APP_CONFIG_WRITE_LOCK_KEY]);
+
+/** Holds row `id` of `table` as a writer's `FOR NO KEY UPDATE` row lock does, for `whileHeld`. */
+export const holdRow = (table: string, id: string) => (holder: Client) =>
+  holder.query(`SELECT 1 FROM ${table} WHERE id = $1 FOR NO KEY UPDATE`, [id]);
+
+/** Holds the calendar freeze lock (`acquireCalendarFreezeLock`), for `whileHeld`. */
+export const holdCalendarFreezeLock = (holder: Client) =>
+  holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [CALENDAR_FREEZE_LOCK_KEY]);

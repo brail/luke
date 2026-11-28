@@ -201,6 +201,7 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
  */
 export async function unfreezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
+    await acquireCalendarFreezeLock(tx);
     const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
     if (!group) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
@@ -233,6 +234,7 @@ export async function unfreezePlanningGroup(planningGroupId: string, prisma: Pri
  */
 export async function amendPlanningGroupFreeze(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
+    await acquireCalendarFreezeLock(tx);
     const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
     if (!group) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
@@ -292,13 +294,14 @@ export function isEventDateLocked(event: LockableEvent, timeZone: string, now: D
 
 // ─── Delete ──────────────────────────────────────────────────────────────────
 
-const CALENDAR_FREEZE_LOCK_KEY = 'calendar-freeze';
+export const CALENDAR_FREEZE_LOCK_KEY = 'calendar-freeze';
 
 /**
  * Serializes freezing a planning group with deleting events, and deletes with each other. Freeze
  * writes every event's baseline (row locks) before it sets the group's `frozenAt`; a delete waiting
  * on one of those rows is re-checked by Postgres against the event row alone, so without this it
- * would delete a phase event of a group that froze meanwhile. Raw SQL by exception (CLAUDE.md): a transaction-scoped
+ * would delete a phase event of a group that froze meanwhile. Unfreeze and amend take it too, so an
+ * amend cannot write baselines into a group an unfreeze is clearing. Raw SQL by exception (CLAUDE.md): a transaction-scoped
  * advisory lock, so it must run inside a `$transaction` callback.
  */
 // ponytail: one lock for every calendar; key it by planning group if freezes and deletes contend.

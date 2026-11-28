@@ -11,6 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@luke/db';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, setupTestDb, type CalendarFixture } from './helpers';
+import { holdCalendarFreezeLock, whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -44,5 +45,60 @@ describe('seasonCalendar.freezePlanningGroup', () => {
       .toEqual({ baselineStartAt: startAt });
     await expect(createCallerWithSession(admin).seasonCalendar.freezePlanningGroup({ planningGroupId: calendar.planningGroupId }))
       .rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('amend and unfreeze take the freeze lock (#249)', () => {
+  it('an amend that waited for an unfreeze finds the group unfrozen and writes no baseline', async () => {
+    const group = await createCalendarFixture(prisma, { prefix: 'PGA' });
+    const event = await prisma.calendarEvent.create({
+      data: { calendarId: group.calendarId, planningGroupId: group.planningGroupId, title: 'Late', startAt: new Date('2031-06-01'), allDay: true },
+    });
+    await prisma.planningGroup.update({ where: { id: group.planningGroupId }, data: { frozenAt: new Date() } });
+
+    // The unfreeze holds the lock and commits while the amend waits on it.
+    const outcome = await whileHeld(
+      holdCalendarFreezeLock,
+      () => createCallerWithSession(admin).seasonCalendar.amendPlanningGroupFreeze({ planningGroupId: group.planningGroupId }),
+      holder => holder.query('UPDATE planning_groups SET "frozenAt" = NULL WHERE id = $1', [group.planningGroupId])
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id }, select: { baselineStartAt: true } }))
+      .toEqual({ baselineStartAt: null });
+  });
+
+  it('an unfreeze waits for the lock, then clears the freeze and every baseline', async () => {
+    const group = await createCalendarFixture(prisma, { prefix: 'PGU' });
+    const startAt = new Date('2031-06-01');
+    const event = await prisma.calendarEvent.create({
+      data: { calendarId: group.calendarId, planningGroupId: group.planningGroupId, title: 'Gate', startAt, allDay: true, baselineStartAt: startAt },
+    });
+    await prisma.planningGroup.update({ where: { id: group.planningGroupId }, data: { frozenAt: new Date() } });
+
+    const outcome = await whileHeld(
+      holdCalendarFreezeLock,
+      () => createCallerWithSession(admin).seasonCalendar.unfreezePlanningGroup({ planningGroupId: group.planningGroupId })
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    expect((await prisma.planningGroup.findUniqueOrThrow({ where: { id: group.planningGroupId } })).frozenAt).toBeNull();
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id }, select: { baselineStartAt: true } }))
+      .toEqual({ baselineStartAt: null });
+  });
+
+  it('an amend gives an event added after the freeze its own baseline', async () => {
+    const group = await createCalendarFixture(prisma, { prefix: 'PGB' });
+    await prisma.planningGroup.update({ where: { id: group.planningGroupId }, data: { frozenAt: new Date() } });
+    const startAt = new Date('2031-07-01');
+    const event = await prisma.calendarEvent.create({
+      data: { calendarId: group.calendarId, planningGroupId: group.planningGroupId, title: 'Later', startAt, allDay: true },
+    });
+
+    const result = await createCallerWithSession(admin).seasonCalendar.amendPlanningGroupFreeze({ planningGroupId: group.planningGroupId });
+
+    expect(result.amendedCount).toBe(1);
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id }, select: { baselineStartAt: true } }))
+      .toEqual({ baselineStartAt: startAt });
   });
 });

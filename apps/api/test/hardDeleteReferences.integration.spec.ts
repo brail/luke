@@ -14,8 +14,8 @@ import type { PrismaClient } from '@luke/db';
 
 import { REFERENCE_KEYS } from '../src/services/catalogDelete.service';
 
-import { createCallerAs, setupTestDb } from './helpers';
-import { whileHeld } from './helpers/heldTransaction';
+import { createCallerAs, createTestUser, setupTestDb } from './helpers';
+import { holdLastAdminLock, holdUserRow, whileHeld } from './helpers/heldTransaction';
 
 let prisma: PrismaClient;
 
@@ -110,5 +110,34 @@ describe.each(['brand', 'season'] as const)('%s.hardDelete', kind => {
 
     expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'BAD_REQUEST' } });
     expect(await remaining(idOf(ids))).toBe(1);
+  });
+});
+
+describe('users.update and users.hardDelete on one user, concurrently (#249)', () => {
+  it('an update that waited for a deletion answers NOT_FOUND, not a 500', async () => {
+    const admin = await createCallerAs('admin');
+    const { user } = await createTestUser('viewer');
+
+    // The deletion holds the lock both take first and commits while the update waits on it.
+    const outcome = await whileHeld(
+      holdLastAdminLock,
+      () => admin.users.update({ id: user.id, password: 'Another-passw0rd!' }),
+      holder => holder.query('DELETE FROM users WHERE id = $1', [user.id])
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'NOT_FOUND' } });
+  });
+
+  it('a deletion that waited for an update of the user row goes through', async () => {
+    const admin = await createCallerAs('admin');
+    const { user } = await createTestUser('viewer');
+
+    const outcome = await whileHeld(
+      holdUserRow(user.id),
+      () => admin.users.hardDelete({ id: user.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    expect(await prisma.user.findUnique({ where: { id: user.id } })).toBeNull();
   });
 });
